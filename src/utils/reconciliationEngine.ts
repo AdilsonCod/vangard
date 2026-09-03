@@ -286,22 +286,166 @@ export interface RedeParseResult {
   };
 }
 
+type RedeResumoInfo = NonNullable<RedeParseResult['resumoInfo']>;
+
+interface RedeHeaderCandidate {
+  sheetName: string;
+  headerRowIdx: number;
+  score: number;
+}
+
+const REDE_HEADER_ALIASES = {
+  date: [
+    'data', 'data venda', 'data da venda', 'data recebimento', 'data do recebimento',
+    'data pagamento', 'data do pagamento', 'data credito', 'data liquidacao',
+    'data prevista', 'previsao pagamento', 'previsao recebimento', 'dt venda',
+    'dt pagamento', 'dt credito'
+  ],
+  value: [
+    'valor', 'valor bruto', 'valor liquido', 'valor da venda', 'valor da parcela',
+    'valor pago', 'valor creditado', 'valor a receber', 'bruto', 'liquido',
+    'vlr bruto', 'vlr liquido', 'montante'
+  ],
+  identifier: [
+    'nsu', 'tid', 'autorizacao', 'codigo autorizacao', 'numero autorizacao',
+    'numero do rv', 'numero rv', 'rv', 'comprovante', 'documento'
+  ],
+  modality: [
+    'modalidade', 'tipo venda', 'tipo de venda', 'tipo transacao',
+    'forma pagamento', 'produto', 'operacao', 'bandeira'
+  ],
+  fee: ['mdr', 'taxa', 'taxa administrativa', 'desconto', 'comissao'],
+  status: ['status', 'situacao']
+};
+
+function headerCellMatches(cell: string, aliases: string[]): boolean {
+  return aliases.some(alias => {
+    const normalizedAlias = normalizeKey(alias);
+    return cell === normalizedAlias || cell.includes(normalizedAlias);
+  });
+}
+
+/**
+ * Identifica uma linha de cabeçalho pela estrutura de colunas, e não apenas por
+ * palavras soltas. Isso evita classificar textos da capa, como
+ * "Pagamentos: são os valores...", como se fossem uma tabela.
+ */
+function scoreRedeHeaderRow(row: any[]): number | null {
+  const cells = (row || [])
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean);
+
+  if (cells.length < 3) return null;
+
+  // Cabeçalhos reais são curtos e distribuídos em várias colunas. Parágrafos
+  // explicativos da capa normalmente ocupam uma única célula muito longa.
+  const normalizedCells = cells
+    .filter(cell => cell.length <= 100)
+    .map(normalizeKey)
+    .filter(Boolean);
+  if (normalizedCells.length < 3) return null;
+
+  const matches = {
+    date: normalizedCells.some(cell => headerCellMatches(cell, REDE_HEADER_ALIASES.date)),
+    value: normalizedCells.some(cell => headerCellMatches(cell, REDE_HEADER_ALIASES.value)),
+    identifier: normalizedCells.some(cell => headerCellMatches(cell, REDE_HEADER_ALIASES.identifier)),
+    modality: normalizedCells.some(cell => headerCellMatches(cell, REDE_HEADER_ALIASES.modality)),
+    fee: normalizedCells.some(cell => headerCellMatches(cell, REDE_HEADER_ALIASES.fee)),
+    status: normalizedCells.some(cell => headerCellMatches(cell, REDE_HEADER_ALIASES.status))
+  };
+
+  const structuralGroups = [matches.date, matches.identifier, matches.modality].filter(Boolean).length;
+  if (!matches.value || structuralGroups === 0) return null;
+
+  return (
+    (matches.date ? 35 : 0) +
+    (matches.value ? 35 : 0) +
+    (matches.identifier ? 20 : 0) +
+    (matches.modality ? 20 : 0) +
+    (matches.fee ? 8 : 0) +
+    (matches.status ? 5 : 0) +
+    Math.min(normalizedCells.length, 20)
+  );
+}
+
+function findResumoAmount(matrix: any[][], labelAliases: string[]): number | undefined {
+  for (let rowIdx = 0; rowIdx < matrix.length; rowIdx++) {
+    const row = matrix[rowIdx] || [];
+    for (let colIdx = 0; colIdx < row.length; colIdx++) {
+      const label = normalizeKey(String(row[colIdx] ?? ''));
+      if (!labelAliases.some(alias => label.includes(normalizeKey(alias)))) continue;
+
+      const nearbyValues: any[] = [];
+      for (let rowOffset = 0; rowOffset <= 3; rowOffset++) {
+        const nearbyRow = matrix[rowIdx + rowOffset] || [];
+        for (let colOffset = -1; colOffset <= 3; colOffset++) {
+          if (rowOffset === 0 && colOffset === 0) continue;
+          nearbyValues.push(nearbyRow[colIdx + colOffset]);
+        }
+      }
+
+      const amountValue = nearbyValues.find(value => {
+        if (typeof value === 'number') return true;
+        const text = String(value ?? '').trim();
+        return /\d/.test(text) && (/R\$/i.test(text) || /^-?[\d.,]+$/.test(text));
+      });
+
+      if (amountValue !== undefined) return cleanCurrency(amountValue);
+    }
+  }
+  return undefined;
+}
+
+function extractRedeResumo(matrix: any[][], sheetName: string): RedeResumoInfo | undefined {
+  const textDump = matrix.map(row => (row || []).map(value => String(value ?? '')).join(' ')).join('\n');
+  const periodoMatch = textDump.match(/PER[ÍI]ODO:\s*([0-9/]+)\s*(?:A|AT[ÉE]|-)\s*([0-9/]+)/i);
+  const emissaoMatch = textDump.match(/DATA\s+DE\s+EMISS[ÃA]O:\s*([0-9/]+(?:\s+[0-9:]+)?)/i);
+  const estabelecimentoMatch = textDump.match(/Estabelecimentos?\s+selecionados?:\s*([^\r\n]+)/i);
+  const liquidoRecebido = findResumoAmount(matrix, ['liquido recebido no periodo']);
+  const cobrancas = findResumoAmount(matrix, ['cobrancas no periodo']);
+  const aReceber = findResumoAmount(matrix, ['a receber no periodo']);
+
+  if (!periodoMatch && !emissaoMatch && liquidoRecebido === undefined && cobrancas === undefined && aReceber === undefined) {
+    return undefined;
+  }
+
+  return {
+    periodo: periodoMatch ? `${periodoMatch[1]} a ${periodoMatch[2]}` : undefined,
+    dataEmissao: emissaoMatch?.[1]?.trim(),
+    liquidoRecebido,
+    cobrancas,
+    aReceber,
+    estabelecimento: estabelecimentoMatch?.[1]?.trim(),
+    isOnlyResumo: true,
+    nomeAbaProcessada: sheetName
+  };
+}
+
 export async function parseRedeFile(file: File): Promise<RedeParseResult> {
   const pagamentos: AdquirenteRedePagamento[] = [];
   const recebidos: AdquirenteRedeRecebido[] = [];
-  let resumoInfo: { periodo?: string, liquidoRecebido?: number, isOnlyResumo?: boolean, nomeAbaProcessada?: string } | undefined = undefined;
+  let resumoInfo: RedeResumoInfo | undefined;
   let pagamentosRows: any[] = [];
 
   try {
     const arrayBuffer = await file.arrayBuffer();
-    // Usa XLSX para TODOS os formatos (CSV, XLS, XLSX, HTML tables exportadas)
-    // Isso garante que o sistema suporte planilhas com n abas ou CSVs chatos
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+    const isTextFile = /\.(csv|txt)$/i.test(file.name);
+    let workbook: XLSX.WorkBook;
 
-    let bestSheetName = '';
-    let bestHeaderRowIdx = -1;
-    let bestScore = -1;
-    let fallbackMatrix: any[][] = [];
+    if (isTextFile) {
+      // SheetJS pode interpretar bytes UTF-8 de CSV como Windows-1252 (ex.:
+      // "PERÍODO" vira "PERÃODO"). Decodificar explicitamente preserva
+      // acentos, NBSP e os nomes de colunas usados pelo detector.
+      const bytes = new Uint8Array(arrayBuffer);
+      let decodedText = new TextDecoder('utf-8').decode(bytes);
+      if (decodedText.includes('\uFFFD')) {
+        decodedText = new TextDecoder('windows-1252').decode(bytes);
+      }
+      workbook = XLSX.read(decodedText, { type: 'string', cellDates: true });
+    } else {
+      workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+    }
+    let bestCandidate: RedeHeaderCandidate | null = null;
 
     // Vasculha TODAS as abas e todas as primeiras linhas para achar a tabela de transações
     for (const sheetName of workbook.SheetNames) {
@@ -309,59 +453,45 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
       const rawMatrix: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       if (rawMatrix.length === 0) continue;
 
-      // 1. Extração oportunista de Resumo
+      // 1. Extração oportunista de Resumo/Capa
       const normSheet = normalizeKey(sheetName);
       if (normSheet.includes('resumo') || normSheet.includes('capa') || normSheet.includes('inicio') || workbook.SheetNames.length === 1) {
-        const textDump = rawMatrix.map(r => r.join(' ')).join('\n');
-        const liqMatch = textDump.match(/L[íi]quido recebido no per[íi]odo[\s,;\r\n]*"?R?\$?\s*([0-9.,]+)"?/i);
-        const periodoMatch = textDump.match(/PER[ÍI]ODO:\s*([0-9\/\sA-Za-z]+)/i);
-        if ((liqMatch || periodoMatch) && !resumoInfo) {
-          resumoInfo = {
-            periodo: periodoMatch ? periodoMatch[1].trim() : undefined,
-            liquidoRecebido: liqMatch ? cleanCurrency(liqMatch[1]) : undefined,
-            isOnlyResumo: true,
-            nomeAbaProcessada: sheetName
-          };
-        }
+        resumoInfo ||= extractRedeResumo(rawMatrix, sheetName);
       }
 
-      // 2. Procura a linha de cabeçalho
+      // 2. Procura um cabeçalho tabular. O nome da aba ajuda na escolha, mas
+      // nunca substitui a presença real de colunas de data + valor.
       let sheetScoreBoost = 0;
-      if (normSheet.includes('pagamento') || normSheet.includes('pagto') || normSheet.includes('venda')) sheetScoreBoost += 20;
+      if (normSheet === 'pagamentos') sheetScoreBoost += 120;
+      else if (normSheet.includes('pagamento') || normSheet.includes('pagto')) sheetScoreBoost += 90;
+      else if (normSheet.includes('venda')) sheetScoreBoost += 35;
+      if (normSheet.includes('resumo') || normSheet.includes('capa') || normSheet.includes('inicio')) sheetScoreBoost -= 80;
+      if (normSheet.includes('futuro') || normSheet.includes('ajuste') || normSheet.includes('cancelamento')) sheetScoreBoost -= 30;
 
-      for (let i = 0; i < Math.min(100, rawMatrix.length); i++) {
+      for (let i = 0; i < Math.min(500, rawMatrix.length); i++) {
         const row = rawMatrix[i] || [];
-        const rowStr = row.map(c => normalizeKey(String(c))).join(' ');
-        
-        let matchCount = 0;
-        if (rowStr.includes('modalidade') || rowStr.includes('tipovenda') || rowStr.includes('produto') || rowStr.includes('operacao')) matchCount += 2;
-        if (rowStr.includes('venda') || rowStr.includes('transacao') || rowStr.includes('competencia')) matchCount += 2;
-        if (rowStr.includes('bruto') || rowStr.includes('vlrbruto') || rowStr.includes('valortotal') || rowStr.includes('valorvenda')) matchCount += 2;
-        if (rowStr.includes('liquido') || rowStr.includes('vlrliquido') || rowStr.includes('valorliquido') || rowStr.includes('valorreceber')) matchCount += 2;
-        
-        if (rowStr.includes('taxa') || rowStr.includes('mdr') || rowStr.includes('desconto')) matchCount += 1;
-        if (rowStr.includes('nsu') || rowStr.includes('cv') || rowStr.includes('autorizacao') || rowStr.includes('tid')) matchCount += 1;
-        if (rowStr.includes('data') || rowStr.includes('dt') || rowStr.includes('bandeira')) matchCount += 1;
-
-        // Limiar: pelo menos 3 pontos para garantir que é um cabeçalho de transações
-        if (matchCount >= 3) {
-          const totalScore = matchCount * 10 + sheetScoreBoost + (rawMatrix.length - i);
-          if (totalScore > bestScore) {
-            bestScore = totalScore;
-            bestHeaderRowIdx = i;
-            bestSheetName = sheetName;
+        const headerScore = scoreRedeHeaderRow(row);
+        if (headerScore !== null) {
+          // A posição só desempata. O código anterior somava o tamanho da aba,
+          // fazendo capas longas vencerem a aba Pagamentos.
+          const totalScore = headerScore + sheetScoreBoost - (i * 0.01);
+          if (!bestCandidate || totalScore > bestCandidate.score) {
+            bestCandidate = { sheetName, headerRowIdx: i, score: totalScore };
           }
         }
       }
-
-      if (fallbackMatrix.length === 0) fallbackMatrix = rawMatrix;
     }
 
-    if (bestSheetName && bestHeaderRowIdx !== -1) {
-      const sheet = workbook.Sheets[bestSheetName];
-      pagamentosRows = XLSX.utils.sheet_to_json(sheet, { range: bestHeaderRowIdx });
+    if (bestCandidate) {
+      const sheet = workbook.Sheets[bestCandidate.sheetName];
+      pagamentosRows = XLSX.utils.sheet_to_json(sheet, {
+        range: bestCandidate.headerRowIdx,
+        defval: '',
+        blankrows: false,
+        raw: true
+      });
       console.log('--- DBG REDE ---');
-      console.log(`Melhor aba: ${bestSheetName}, Linha de cabeçalho: ${bestHeaderRowIdx}, Score: ${bestScore}`);
+      console.log(`Melhor aba: ${bestCandidate.sheetName}, Linha de cabeçalho: ${bestCandidate.headerRowIdx}, Score: ${bestCandidate.score}`);
       console.log(`Linhas extraídas: ${pagamentosRows.length}`);
       if (pagamentosRows.length > 0) {
         console.log('Primeira linha (raw):', pagamentosRows[0]);
@@ -369,7 +499,12 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
       
       if (resumoInfo) {
         resumoInfo.isOnlyResumo = false; // Tem transações
-        resumoInfo.nomeAbaProcessada = bestSheetName;
+        resumoInfo.nomeAbaProcessada = bestCandidate.sheetName;
+      } else {
+        resumoInfo = {
+          isOnlyResumo: false,
+          nomeAbaProcessada: bestCandidate.sheetName
+        };
       }
     } else {
       console.log('--- DBG REDE --- Nenhum cabeçalho válido encontrado nas abas.');
@@ -382,20 +517,23 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
 
   // Mapeia as linhas encontradas da Adquirente (Rede)
   const mappedPagamentos: AdquirenteRedePagamento[] = pagamentosRows
-    .map((row, idx) => {
+    .flatMap((row, idx): AdquirenteRedePagamento[] => {
       // Datas — suporta todos os formatos comuns do relatório Rede
       const dataRecebimento = parseDateString(
         getProp(row,
           'data do recebimento', 'data recebimento', 'data do pagamento', 'data pagamento',
           'data liquidacao', 'data credito', 'previsao de pagamento', 'dt pagamento', 'dt credito',
-          'data de credito', 'data credit', 'dt. credito', 'dt credito', 'dt. pagamento'
+          'data de credito', 'data credit', 'dt. credito', 'dt credito', 'dt. pagamento',
+          'data prevista do pagamento', 'data prevista de pagamento', 'data prevista',
+          'data efetiva do pagamento', 'data efetiva', 'data do credito'
         )
       );
       const dataVenda = parseDateString(
         getProp(row,
           'data original da venda', 'data da venda', 'data venda', 'data transacao',
           'data da transacao', 'data operacao', 'data', 'dt venda', 'dt transacao',
-          'dt. venda', 'dt. transacao', 'competencia', 'data de venda', 'data captura'
+          'dt. venda', 'dt. transacao', 'competencia', 'data de venda', 'data captura',
+          'data original', 'data da captura', 'data do pedido'
         )
       );
 
@@ -405,21 +543,25 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
           'valor bruto da parcela original', 'valor bruto original', 'valor bruto',
           'bruto', 'valor da venda', 'valor transacao', 'valor total', 'valor',
           'vlr bruto', 'vlr. bruto', 'vl bruto', 'vl. bruto', 'total bruto',
-          'valor venda', 'vl. da venda', 'vlr da venda'
+          'valor venda', 'vl. da venda', 'vlr da venda', 'valor da parcela',
+          'valor original da venda', 'valor original', 'montante bruto'
         )
       );
       const taxaMdrPerc = cleanTaxRate(
         getProp(row,
           'taxa mdr', 'taxa mdr (%)', 'mdr (%)', 'mdr', 'taxa (%)', 'taxa',
           'desconto taxa (%)', '% mdr', '% taxa', 'taxa retida', 'taxa desc',
-          'taxa de desconto', '% desconto', 'percentual mdr', 'taxa (%)'
+          'taxa de desconto', '% desconto', 'percentual mdr', 'taxa (%)',
+          'taxa administrativa (%)', 'percentual taxa administrativa', 'percentual da taxa'
         )
       );
       const valorMdr = cleanCurrency(
         getProp(row,
           'valor mdr descontado', 'valor mdr', 'desconto mdr', 'taxa descontada',
           'descontos', 'vlr mdr', 'valor desconto', 'desconto', 'valor taxa',
-          'vlr. desconto', 'vl desconto', 'taxa cobrada', 'mdr retido'
+          'vlr. desconto', 'vl desconto', 'taxa cobrada', 'mdr retido',
+          'valor taxa administrativa', 'taxa administrativa (r$)', 'valor da taxa',
+          'valor comissao', 'comissao'
         )
       );
       const valorLiquido = cleanCurrency(
@@ -427,14 +569,15 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
           'valor liquido da parcela', 'valor liquido', 'valor líquido', 'liquido',
           'líquido', 'valor a receber', 'valor pago', 'valor creditado',
           'vlr liquido', 'vlr líquido', 'vlr. liquido', 'vl liquido', 'vl. liquido',
-          'total liquido', 'valor liq', 'vlr liq'
+          'total liquido', 'valor liq', 'vlr liq', 'valor liquido pago',
+          'valor efetivo', 'montante liquido'
         )
       );
 
       // Identificadores
-      const tid = String(getProp(row, 'tid', 'id tid', 'identificador', 'id transacao', 'transacao id') || '').trim();
-      const nsuCv = String(getProp(row, 'nsu/cv', 'nsu / cv', 'nsu', 'cv', 'numero comprovante', 'comprovante', 'nsu cv', 'num. comprovante', 'numero do comprovante') || '').trim();
-      const numAutorizacao = String(getProp(row, 'numero da autorizacao', 'número da autorização', 'autorizacao', 'autorização', 'cod autorizacao', 'código de autorização', 'num autorizacao', 'cod. autorizacao') || '').trim();
+      const tid = String(getProp(row, 'tid', 'id tid', 'identificador', 'id transacao', 'transacao id', 'numero tid') || '').trim();
+      const nsuCv = String(getProp(row, 'nsu/cv', 'nsu / cv', 'nsu', 'cv', 'numero comprovante', 'comprovante', 'nsu cv', 'num. comprovante', 'numero do comprovante', 'numero do nsu', 'numero nsu', 'numero do rv', 'numero rv', 'rv') || '').trim();
+      const numAutorizacao = String(getProp(row, 'numero da autorizacao', 'número da autorização', 'autorizacao', 'autorização', 'cod autorizacao', 'código de autorização', 'num autorizacao', 'cod. autorizacao', 'codigo autorizacao', 'codigo de autorizacao') || '').trim();
 
       // Modalidade — suporta "Tipo de Venda", "Tipo Transação", "Produto Rede", etc.
       const modalidadeOriginal = String(
@@ -443,7 +586,8 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
           'operacao', 'operação', 'produto', 'forma de pagamento',
           'tipo de transacao', 'tipo transacao', 'tipo',
           'tipo de venda', 'tipo venda', 'produto rede', 'tipo operacao',
-          'descricao', 'descricao da modalidade'
+          'descricao', 'descricao da modalidade', 'produto da venda',
+          'tipo do produto', 'meio de captura'
         ) || ''
       ).trim();
 
@@ -469,15 +613,16 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
       const temDataAlguma = !!(dataVenda || dataRecebimento);
       const temIdentificador = !!(tid || nsuCv || numAutorizacao);
       if (!temValorAlgum && !temDataAlguma && !temIdentificador) {
-        return null;
+        return [];
       }
 
       // Calcula valores derivados se algum estiver ausente
-      const vBruto = valorBruto || (valorLiquido > 0 && valorMdr >= 0 ? valorLiquido + valorMdr : 0);
-      const vMdr = valorMdr || (vBruto > valorLiquido && valorLiquido > 0 ? vBruto - valorLiquido : 0);
+      const valorMdrAbs = Math.abs(valorMdr);
+      const vBruto = valorBruto || (valorLiquido > 0 ? valorLiquido + valorMdrAbs : 0);
+      const vMdr = valorMdrAbs || (vBruto > valorLiquido && valorLiquido > 0 ? vBruto - valorLiquido : 0);
       const vLiquido = valorLiquido || (vBruto - vMdr > 0 ? vBruto - vMdr : vBruto);
 
-      return {
+      return [{
         id: `rede_pag_${idx + 1}_${tid || nsuCv || Date.now()}`,
         dataRecebimento,
         dataVenda: dataVenda || dataRecebimento,
@@ -492,13 +637,12 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
         modalidadeOriginal: modalidadeOriginal || modalidade,
         bandeira,
         status
-      };
-    })
-    .filter((p): p is AdquirenteRedePagamento => p !== null);
+      }];
+    });
 
   pagamentos.push(...mappedPagamentos);
 
-  return { pagamentos, recebidos: [], resumoInfo };
+  return { pagamentos, recebidos, resumoInfo };
 }
 
 // Ingestão 4: Previsão de Recebíveis Futuros (exportacao-relatorio-previsao...xlsx)

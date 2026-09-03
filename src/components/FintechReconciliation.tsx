@@ -102,6 +102,10 @@ export function FintechReconciliation() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [showSessionsModal, setShowSessionsModal] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  
+  // New States for Bulk Audit Actions
+  const [selectedAuditRows, setSelectedAuditRows] = useState<Set<string>>(new Set());
+  const [bulkAuditStatus, setBulkAuditStatus] = useState<StatusDivergencia | ''>('');
   const [selectedUnidade, setSelectedUnidade] = useState<string>('Sudoeste');
 
   const [kpis, setKpis] = useState<ReconciliationKPIs>({
@@ -435,27 +439,58 @@ export function FintechReconciliation() {
       showToast('Nenhum item conciliado novo para efetivar.');
       return;
     }
+    
+    processSettlement(conciliatedItems);
+  };
 
+  const handleSettleDailyBatch = (date: string) => {
+    const batchItems = items.filter(i => i.dataVenda === date);
+    
+    // Check if there are divergences. If the user clicks "Baixar Lote", we will only launch the CONCILIADO ones, OR force them to be CONCILIADO?
+    // Let's force all non-DIVERGENTE to be CONCILIADO and launch them.
+    const validItems = batchItems.filter(i => i.status === 'CONCILIADO' || i.status === 'PROCESSANDO');
+    const itemsToSettle = validItems.filter(i => !settledItems.has(i.id));
+
+    if (itemsToSettle.length === 0) {
+      showToast('Nenhum item válido para baixar neste lote.');
+      return;
+    }
+
+    // Force status to CONCILIADO before processing
+    const newItems = items.map(item => {
+      if (itemsToSettle.some(i => i.id === item.id)) {
+        return { ...item, status: 'CONCILIADO' as ConciliationStatus };
+      }
+      return item;
+    });
+    setItems(newItems);
+
+    processSettlement(itemsToSettle);
+  };
+
+  const processSettlement = (itemsToProcess: ConciliationItem[]) => {
     let count = 0;
     const newSettled = new Set(settledItems);
-    conciliatedItems.forEach(item => {
+    itemsToProcess.forEach(item => {
+      const isExpense = item.valorLiquido < 0;
+      
       addTransaction({
         id: crypto.randomUUID(),
         unitId: currentUser?.unitId || 'ALL',
-        type: 'INCOME',
-        category: item.regra === 'REGRA_1_CLUBE_PREVISAO' ? 'Mensalidades Clube' : 'Atendimentos Cartão',
-        description: `[Conciliado] ${item.clienteOuDesc} - ${item.modalidadeOuPlano} (${item.identificador})`,
-        amount: item.valorLiquido,
+        type: isExpense ? 'EXPENSE' : 'INCOME',
+        category: isExpense ? 'Taxas e Estornos (MDR)' : (item.regra === 'REGRA_1_CLUBE_PREVISAO' ? 'Mensalidades Clube' : 'Atendimentos Cartão'),
+        description: `[Lote Conciliado] ${item.clienteOuDesc} - ${item.modalidadeOuPlano} (${item.identificador})`,
+        amount: Math.abs(item.valorLiquido),
         date: item.dataLiquidacaoEfetiva || item.dataVenda,
-        status: 'RECEBIDO',
-        classification: 'RECEBIMENTO_OPERACIONAL',
+        status: isExpense ? 'PAGO' : 'RECEBIDO',
+        classification: isExpense ? 'DESPESA_OPERACIONAL' : 'RECEBIMENTO_OPERACIONAL',
       } as any);
       newSettled.add(item.id);
       count++;
     });
 
     setSettledItems(newSettled);
-    showToast(`${count} recebimentos efetivados com sucesso no Caixa!`);
+    showToast(`${count} transações efetivadas com sucesso no Caixa Oficial!`);
   };
 
   const handleSaveSession = async () => {
@@ -464,11 +499,16 @@ export function FintechReconciliation() {
       return;
     }
     
+    const suggestedName = `Conciliação de ${new Date().toLocaleDateString('pt-BR')}`;
+    const sessionName = prompt('Digite um nome para este Lote/Conciliação:', suggestedName);
+    if (sessionName === null) return; // Usuário cancelou
+
     setIsSaving(true);
     try {
       const sessionId = currentSessionId || 'session_' + Date.now();
       const report = {
         id: sessionId,
+        name: sessionName || suggestedName,
         createdAt: currentSessionId ? undefined : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         unidade: selectedUnidade,
@@ -575,6 +615,64 @@ export function FintechReconciliation() {
     setItems(newItems);
     setIsManualReconModalOpen(false);
     showToast('Conciliação manual aplicada com sucesso!');
+  };
+
+  // Funções de Bulk Action na Auditoria
+  const handleToggleSelectAll = (e: React.ChangeEvent<HTMLInputElement>, filteredItems: ConciliationItem[]) => {
+    if (e.target.checked) {
+      const allIds = new Set(filteredItems.map(i => i.id));
+      setSelectedAuditRows(allIds);
+    } else {
+      setSelectedAuditRows(new Set());
+    }
+  };
+
+  const handleToggleSelectRow = (id: string) => {
+    const newSet = new Set(selectedAuditRows);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedAuditRows(newSet);
+  };
+
+  const handleBulkStatusChange = () => {
+    if (!bulkAuditStatus || selectedAuditRows.size === 0) return;
+    
+    const newItems = items.map(item => {
+      if (selectedAuditRows.has(item.id)) {
+        return {
+          ...item,
+          status: bulkAuditStatus,
+          statusDescricao: `Status alterado em lote para ${bulkAuditStatus}`
+        };
+      }
+      return item;
+    });
+    
+    setItems(newItems);
+    setSelectedAuditRows(new Set());
+    setBulkAuditStatus('');
+    showToast(`${selectedAuditRows.size} itens atualizados com sucesso!`);
+  };
+
+  const handleTratarEstorno = (itemId: string) => {
+    const newItems = items.map(item => {
+      if (item.id === itemId) {
+        return {
+          ...item,
+          valorBruto: 0,
+          valorLiquido: -(item.valorMdrRetido || 0), // O líquido passa a ser apenas a taxa como despesa
+          mdrTaxaEfetiva: 0,
+          status: 'CONCILIADO', // Já coloca como conciliado para ser lançado no caixa como despesa
+          statusDescricao: 'Estorno/Cancelamento tratado. Mantida apenas a taxa paga.'
+        };
+      }
+      return item;
+    });
+    setItems(newItems);
+    showToast('Estorno tratado com sucesso! Valor bruto zerado, restou apenas a taxa MDR.');
   };
 
   // Exportar Relatório Excel Consolidado
@@ -1161,6 +1259,10 @@ export function FintechReconciliation() {
                   <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <CheckCircle className="w-3.5 h-3.5" /> {redePagamentos.length} transações (Aba Pagamentos)
                   </span>
+                ) : redeResumoInfo?.isOnlyResumo ? (
+                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5" /> Resumo carregado — sem transações
+                  </span>
                 ) : (
                   <span className="text-gray-400">Pendente</span>
                 )}
@@ -1168,7 +1270,7 @@ export function FintechReconciliation() {
             </div>
             {fileNames.rede && (
               <p className="text-[11px] text-gray-500 dark:text-zinc-400 truncate bg-gray-50 dark:bg-zinc-800/50 px-2 py-1 rounded">
-                📊 {fileNames.rede} (Aba Pagamentos)
+                📊 {fileNames.rede}{redeResumoInfo?.nomeAbaProcessada ? ` (Aba: ${redeResumoInfo.nomeAbaProcessada})` : ''}
               </p>
             )}
           </div>
@@ -1572,13 +1674,23 @@ export function FintechReconciliation() {
                             </td>
                             <td className="py-3 px-4 text-center">{renderStatusBadge(dc.status)}</td>
                             <td className="py-3 px-4 text-right">
-                              <button
-                                onClick={() => toggleExpandDate(dc.data)}
-                                className="p-1 text-gray-400 hover:text-gray-900 dark:hover:text-white transition rounded-lg"
-                                title="Expandir Transações do Dia"
-                              >
-                                {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                              </button>
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => handleSettleDailyBatch(dc.data)}
+                                  className="px-2 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 dark:text-emerald-400 font-bold rounded flex items-center gap-1 transition"
+                                  title="Lançar lote deste dia direto no caixa"
+                                >
+                                  <Save className="w-3 h-3" />
+                                  Baixar
+                                </button>
+                                <button
+                                  onClick={() => toggleExpandDate(dc.data)}
+                                  className="p-1 text-gray-400 hover:text-gray-900 dark:hover:text-white transition rounded-lg"
+                                  title="Expandir Transações do Dia"
+                                >
+                                  {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                </button>
+                              </div>
                             </td>
                           </tr>
 
@@ -1648,6 +1760,34 @@ export function FintechReconciliation() {
                                               </p>
                                             </div>
                                             <div>{renderStatusBadge(item.status)}</div>
+                                            
+                                            {/* Ações Rápidas (Apenas se não estiver liquidado) */}
+                                            {!isSettled && (
+                                              <div className="flex items-center gap-2 border-l border-gray-200 dark:border-zinc-700 pl-4 ml-2">
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleManualReconciliation(item.id);
+                                                  }}
+                                                  className="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] font-bold rounded transition"
+                                                  title="Corrigir Manualmente"
+                                                >
+                                                  Corrigir
+                                                </button>
+                                                {(item.modalidadeOuPlano?.toLowerCase().includes('estorno') || item.modalidadeOuPlano?.toLowerCase().includes('cancelamento') || item.statusDescricao?.toLowerCase().includes('estorno')) && (
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleTratarEstorno(item.id);
+                                                    }}
+                                                    className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 text-[10px] font-bold rounded transition"
+                                                    title="Zerar Bruto e manter Taxa MDR"
+                                                  >
+                                                    Tratar Estorno
+                                                  </button>
+                                                )}
+                                              </div>
+                                            )}
                                           </div>
                                         </div>
                                       );
@@ -2762,10 +2902,47 @@ export function FintechReconciliation() {
               </div>
             </div>
 
+            {selectedAuditRows.size > 0 && (
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl flex items-center justify-between">
+                <span className="text-sm font-bold text-blue-800 dark:text-blue-300">
+                  {selectedAuditRows.size} itens selecionados
+                </span>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={bulkAuditStatus}
+                    onChange={e => setBulkAuditStatus(e.target.value as StatusDivergencia)}
+                    className="px-3 py-1.5 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg text-xs font-bold"
+                  >
+                    <option value="">Alterar status para...</option>
+                    <option value="CONCILIADO">CONCILIADO</option>
+                    <option value="PENDENTE_LIQUIDACAO">PENDENTE D+31</option>
+                    <option value="DIVERGENCIA_TAXA">DIVERGÊNCIA DE TAXA</option>
+                    <option value="NAO_AUTORIZADO">NÃO AUTORIZADO</option>
+                    <option value="NAO_ENCONTRADO_REDE">NÃO ENCONTRADO NA REDE</option>
+                  </select>
+                  <button
+                    onClick={handleBulkStatusChange}
+                    disabled={!bulkAuditStatus}
+                    className="px-4 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Aplicar
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-zinc-800 text-[11px] font-black uppercase text-gray-400 tracking-wider bg-gray-50/50 dark:bg-zinc-800/30">
+                    <th className="py-3 px-4 w-10 text-center">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-gray-300"
+                        checked={filteredDivergences.length > 0 && selectedAuditRows.size === filteredDivergences.length}
+                        onChange={(e) => handleToggleSelectAll(e, filteredDivergences)}
+                      />
+                    </th>
                     <th className="py-3 px-4">Regra</th>
                     <th className="py-3 px-4">Referência / Cliente</th>
                     <th className="py-3 px-4">Data</th>
@@ -2781,6 +2958,14 @@ export function FintechReconciliation() {
                 <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
                   {filteredDivergences.map((item) => (
                     <tr key={item.id} className="hover:bg-gray-50/60 dark:hover:bg-zinc-800/40">
+                      <td className="py-3 px-4 text-center">
+                        <input 
+                          type="checkbox" 
+                          className="rounded border-gray-300"
+                          checked={selectedAuditRows.has(item.id)}
+                          onChange={() => handleToggleSelectRow(item.id)}
+                        />
+                      </td>
                       <td className="py-3 px-4 font-bold text-gray-500">
                         {item.regra === 'REGRA_1_CLUBE_PREVISAO' ? 'Clube (D+31)' : 'PDV / Rede'}
                       </td>
@@ -2806,19 +2991,30 @@ export function FintechReconciliation() {
                         {item.statusDescricao}
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <button
-                          onClick={() => handleManualReconciliation(item.id)}
-                          className="px-2.5 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-400 font-bold rounded-lg transition"
-                          title="Forçar Conciliação / Alterar Status"
-                        >
-                          Corrigir
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleManualReconciliation(item.id)}
+                            className="px-2.5 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-400 font-bold rounded-lg transition"
+                            title="Forçar Conciliação / Alterar Status"
+                          >
+                            Corrigir
+                          </button>
+                          {(item.modalidadeOuPlano?.toLowerCase().includes('estorno') || item.modalidadeOuPlano?.toLowerCase().includes('cancelamento') || item.statusDescricao?.toLowerCase().includes('estorno')) && (
+                            <button
+                              onClick={() => handleTratarEstorno(item.id)}
+                              className="px-2.5 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/50 dark:text-orange-400 font-bold rounded-lg transition text-xs whitespace-nowrap"
+                              title="Zerar valor bruto e lançar MDR como despesa"
+                            >
+                              Tratar Estorno
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
                   {filteredDivergences.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="text-center py-8 text-emerald-600 font-bold">
+                      <td colSpan={11} className="text-center py-8 text-emerald-600 font-bold">
                         Nenhuma divergência encontrada para este filtro!
                       </td>
                     </tr>
@@ -2935,13 +3131,13 @@ kpis = resultado['kpis']`}
                       <div>
                         <div className="flex items-center gap-2">
                           <p className="font-bold text-gray-900 dark:text-white text-sm flex items-center gap-2">
-                            Relatório: {new Date(s.createdAt).toLocaleString('pt-BR')}
+                            Lote: {s.name || new Date(s.createdAt).toLocaleString('pt-BR')}
+                            {s.unidade && (
+                              <span className="text-[10px] font-bold bg-gray-200 dark:bg-zinc-800 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded ml-2">
+                                {s.unidade}
+                              </span>
+                            )}
                           </p>
-                          {s.unidade && (
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 text-[10px] font-bold rounded-full uppercase">
-                              {s.unidade}
-                            </span>
-                          )}
                         </div>
                         <p className="text-xs text-gray-500 mt-1">
                           {s.items?.length || 0} transações processadas | Total Bruto: {(s.kpis?.totalBruto || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
