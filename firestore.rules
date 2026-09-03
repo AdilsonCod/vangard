@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Basic rules for the development phase without Firebase Auth
+    match /{document=**} {
+      allow read, write: if request.time < timestamp.date(2027, 1, 1);
+    }
+  }
+}
+

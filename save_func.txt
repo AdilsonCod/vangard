@@ -1,0 +1,201 @@
+366:  const handleSave = async () => {
+367-    setIsSaving(true);
+368-    const monthStr = `${selectedYear}-${selectedMonth}`;
+369-    
+370-    try {
+371-      if (importType === 'DPOTE_PDF' && dpoteReport) {
+372-        const unitIds = new Set<string>();
+373-        
+374-        for (const barber of dpoteReport.barbers) {
+375-           const userId = manualUserMapping[barber.name];
+376-           if (!userId) continue;
+377-           
+378-           const user = users.find(u => u.id === userId);
+379-           if (user && user.unit) {
+380-              unitIds.add(user.unit);
+381-           }
+382-           
+383-           const userUnit = user?.unit || 'ALL';
+384-           const statId = `${monthStr}_${userId}`;
+385-           const currentStat = monthlyBarberStats.find(s => s.id === statId) || {
+386-              id: statId, barberId: userId, unitId: userUnit, month: monthStr,
+387-              faturamentoTotal: 0, faturamentoAssinatura: 0, comissao: 0, clientesAtendidos: 0,
+388-              servicosRealizados: 0, vendaProdutosValor: 0, vendasProdutosQtd: 0, taxaRetorno: 0, clientesNovos: 0, clientesSemPreferencia: 0
+389-           };
+390-           
+391-           const fatAssinatura = (barber.potPercentage / 100) * dpoteReport.totalAssinaturas;
+392-           
+393-           await updateMonthlyBarberStats({
+394-              ...currentStat,
+395-              faturamentoAssinatura: (currentStat.faturamentoAssinatura || 0) + fatAssinatura,
+396-           });
+397-           
+398-           const lastDay = new Date(parseInt(selectedYear), parseInt(selectedMonth), 0);
+399-           const dateStr = `${selectedYear}-${selectedMonth}-${String(lastDay.getDate()).padStart(2, '0')}`;
+400-
+401-           await addPayment({
+402-              id: 'pay_' + Date.now() + Math.random().toString(36).substring(2, 9),
+403-              userId: userId,
+404-              date: dateStr,
+405-              commissionAvulso: 0,
+406-              commissionProductGeneral: 0,
+407-              commissionProductAvant: 0,
+408-              commissionSubscriptions: barber.commission,
+409-              discount: 0,
+410-              discountDescription: '',
+411-              amountToBePaid: barber.commission,
+412-              status: 'PENDENTE',
+413-              isPaid: false,
+414-              potPercentage: barber.potPercentage,
+415-              potData: barber.services.map(s => ({
+416-                  id: 'pot_' + Date.now() + Math.random().toString(36).substring(2, 9),
+417-                  name: s.name,
+418-                  quantity: s.quantity,
+419-                  tokens: s.tokens
+420-              }))
+421-           });
+422-        }
+423-        
+424-        for (const uId of unitIds) {
+425-           const statId = `${monthStr}_${uId}`;
+426-           const currentUnitStat = monthlyUnitStats.find(s => s.id === statId) || {
+427-             id: statId, unitId: uId, month: monthStr, faturamentoTotal: 0, faturamentoAssinatura: 0, assinantes: 0, clientesNovos: 0, clientesSemPreferencia: 0, clientesAtendidos: 0, servicosRealizados: 0, vendaProdutosValor: 0, vendasProdutosQtd: 0
+428-           };
+429-           
+430-           await updateMonthlyUnitStats({
+431-              ...currentUnitStat,
+432-              faturamentoAssinatura: (currentUnitStat.faturamentoAssinatura || 0) + dpoteReport.totalAssinaturas
+433-           });
+434-        }
+435-      } else if (importType === 'CATALOGO') {
+436-        let currentCatalog = [...catalog];
+437-        let currentCategories = [...categories];
+438-        let updatedCategories = false;
+439-        
+440-        for (const item of parsedData) {
+441-          if (!item.itemNome) continue;
+442-          
+443-          let catId = '';
+444-          if (item.categoriaNome) {
+445-             let cat = currentCategories.find(c => c.name.toLowerCase() === item.categoriaNome.toLowerCase());
+446-             if (!cat) {
+447-               catId = 'cat_' + Date.now() + Math.random().toString(36).substring(2, 9);
+448-               const newCat = {
+449-                 id: catId,
+450-                 name: item.categoriaNome,
+451-                 type: 'SERVICE'
+452-               };
+453-               currentCategories.push(newCat);
+454-               updatedCategories = true;
+455-             } else {
+456-               catId = cat.id;
+457-             }
+458-          }
+459-          
+460-          const existingItemIndex = currentCatalog.findIndex(c => c.name.toLowerCase() === item.itemNome.toLowerCase());
+461-          if (existingItemIndex >= 0) {
+462-             currentCatalog[existingItemIndex] = {
+463-               ...currentCatalog[existingItemIndex],
+464-               price: item.valorTotal || currentCatalog[existingItemIndex].price,
+465-               type: catId || currentCatalog[existingItemIndex].type
+466-             };
+467-          } else {
+468-             currentCatalog.push({
+469-               id: 'item_' + Date.now() + Math.random().toString(36).substring(2, 9),
+470-               name: item.itemNome,
+471-               type: catId || '',
+472-               price: item.valorTotal || 0,
+473-               unit: 'ALL',
+474-               visibleToRoles: ['ADMIN', 'MANAGER', 'BARBER']
+475-             });
+476-          }
+477-        }
+478-        
+479-        if (updatedCategories) {
+480-          await updateCategories(currentCategories);
+481-        }
+482-        await updateCatalog(currentCatalog);
+483-      } else if (importType === 'UNIDADE_ITENS') {
+484-        for (const group of groupedData) {
+485-          if (!group.unitId) continue;
+486-          
+487-          const statId = `${monthStr}_${group.unitId}`;
+488-          const current = monthlyUnitStats.find(s => s.id === statId) || {
+489-            id: statId,
+490-            unitId: group.unitId,
+491-            month: monthStr,
+492-            faturamentoTotal: 0,
+493-            faturamentoAssinatura: 0,
+494-            assinantes: 0,
+495-            clientesNovos: 0,
+496-            clientesSemPreferencia: 0,
+497-            clientesAtendidos: 0,
+498-            servicosRealizados: 0,
+499-            vendaProdutosValor: 0,
+500-            vendasProdutosQtd: 0,
+501-            extraCounts: {},
+502-            extraValues: {}
+503-          } as MonthlyUnitStats;
+504-          
+505-          const updated = {
+506-            ...current,
+507-            extraCounts: { ...current.extraCounts },
+508-            extraValues: { ...current.extraValues }
+509-          };
+510-          
+511-          let totalAddedFaturamento = 0;
+512-          let addedServicos = 0;
+513-          let addedProdutosValor = 0;
+514-          let addedProdutosQtd = 0;
+515-          
+516-          for (const item of group.items) {
+517-             const catItem = catalog.find(c => c.name.toLowerCase() === item.itemNome.toLowerCase());
+518-             const key = catItem ? catItem.id : item.itemNome;
+519-             
+520-             updated.extraCounts[key] = (updated.extraCounts[key] || 0) + item.quantidade;
+521-             updated.extraValues[key] = (updated.extraValues[key] || 0) + item.valorTotal;
+522-             
+523-             totalAddedFaturamento += item.valorTotal;
+524-             if (catItem && catItem.type === 'PRODUTO') {
+525-                addedProdutosValor += item.valorTotal;
+526-                addedProdutosQtd += item.quantidade;
+527-             } else {
+528-                addedServicos += item.quantidade;
+529-             }
+530-          }
+531-          
+532-          updated.faturamentoTotal += totalAddedFaturamento;
+533-          updated.servicosRealizados += addedServicos;
+534-          updated.vendaProdutosValor = (updated.vendaProdutosValor || 0) + addedProdutosValor;
+535-          updated.vendasProdutosQtd = (updated.vendasProdutosQtd || 0) + addedProdutosQtd;
+536-          
+537-          await updateMonthlyUnitStats(updated);
+538-        }
+539-      } else if (importType === 'UNIDADE') {
+540-        for (const group of groupedData) {
+541-          if (!group.unitId) continue;
+542-          
+543-          const statId = `${monthStr}_${group.unitId}`;
+544-          const current = monthlyUnitStats.find(s => s.id === statId) || {
+545-            id: statId,
+546-            unitId: group.unitId,
+547-            month: monthStr,
+548-            faturamentoTotal: 0,
+549-            faturamentoAssinatura: 0,
+550-            assinantes: 0,
+551-            clientesNovos: 0,
+552-            clientesSemPreferencia: 0,
+553-            clientesAtendidos: 0,
+554-            servicosRealizados: 0,
+555-            vendaProdutosValor: 0,
+556-            vendasProdutosQtd: 0,
+557-            extraCounts: {},
+558-            extraValues: {}
+559-          } as MonthlyUnitStats;
+560-          
+561-          const updated = {
+562-            ...current,
+563-            faturamentoTotal: current.faturamentoTotal + group.faturamentoTotal,
+564-            faturamentoAssinatura: current.faturamentoAssinatura + group.faturamentoAssinatura,
+565-            assinantes: group.assinantes > 0 ? group.assinantes : current.assinantes,
+566-            clientesNovos: current.clientesNovos + group.clientesNovos,

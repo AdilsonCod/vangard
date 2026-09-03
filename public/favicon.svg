@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Outer Wrapper Group with subtle shadow filtering -->
+  <g transform="translate(0, 0)">
+    
+    <!-- 1. The Monogram 'V' & Bottom Base -->
+    <path d="
+      M 150 178 
+      L 220 178 
+      C 220 193, 214 200, 206 208
+      L 242 360
+      L 270 360
+      L 306 208
+      C 298 200, 292 193, 292 178
+      L 362 178
+      L 362 192
+      C 346 192, 338 202, 332 218
+      L 282 360
+      L 290 360
+      C 298 360, 310 366, 310 380
+      L 310 436
+      C 310 445, 320 448, 328 448
+      L 328 456
+      L 184 456
+      L 184 448
+      C 192 448, 202 445, 202 436
+      L 202 380
+      C 202 366, 214 360, 222 360
+      L 230 360
+      L 180 218
+      C 174 202, 166 192, 150 192
+      Z
+    " fill="#FFFFFF" />
+
+    <!-- 2. Barber Pole Center Cylinder (Solid White Background for the Stripes) -->
+    <path d="
+      M 226 158
+      L 286 158
+      L 286 360
+      L 226 360
+      Z
+    " fill="#FFFFFF" />
+
+    <!-- 3. Diagonal Black Stripes overlay on the cylinder -->
+    <g fill="#000000">
+      <!-- Topmost slanted stripe -->
+      <path d="M 226 148 L 286 192 L 286 215 L 226 171 Z" />
+      <!-- Middle-upper slanted stripe -->
+      <path d="M 226 206 L 286 250 L 286 273 L 226 229 Z" />
+      <!-- Middle-lower slanted stripe -->
+      <path d="M 226 264 L 286 308 L 286 331 L 226 287 Z" />
+      <!-- Bottom slanted stripe -->
+      <path d="M 226 322 L 286 366 L 286 375 L 226 345 Z" />
+    </g>
+
+    <!-- 4. Barber Pole Cap and Base Accents (Pure White) -->
+    <g fill="#FFFFFF">
+      <!-- Top Spire Pin / Diamond -->
+      <path d="M 256 64 L 270 88 L 256 112 L 242 88 Z" />
+      
+      <!-- Upper Rounded Dome -->
+      <path d="M 220 144 C 220 120, 292 120, 292 144 Z" />
+      
+      <!-- Dome Ring / Collar Shelf -->
+      <path d="M 212 144 L 300 144 L 300 154 L 212 154 Z" />
+      
+      <!-- Neck connection under shelf -->
+      <path d="M 226 154 L 286 154 L 286 160 L 226 160 Z" />
+
+      <!-- Horizontal divider lines/shelves over the bottom base to define the collar -->
+      <path d="M 220 360 L 292 360 L 292 366 L 220 366 Z" />
+      <path d="M 214 374 L 298 374 L 298 382 L 214 382 Z" />
+    </g>
+
+  </g>
+</svg>

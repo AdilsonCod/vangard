@@ -1,0 +1,8 @@
+{
+  "name": "Vans guard",
+  "description": "Gerencie comissões, vendas e metas por unidade com registros diários e dashboards de desempenho para barbeiros e gestores.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

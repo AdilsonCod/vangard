@@ -1,0 +1,291 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User of the system",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "role"
+      ]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Category for catalog items",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "Subcategory": {
+      "title": "Subcategory",
+      "description": "Subcategory for catalog items",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "categoryId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "categoryId"
+      ]
+    },
+    "CatalogItem": {
+      "title": "CatalogItem",
+      "description": "Item in the catalog",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "subcategoryId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type"
+      ]
+    },
+    "Target": {
+      "title": "Target",
+      "description": "Targets for a barber",
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "object"
+        },
+        "clientsServed": {
+          "type": "number"
+        },
+        "uniqueClientsServed": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "items",
+        "clientsServed",
+        "uniqueClientsServed"
+      ]
+    },
+    "DailyEntry": {
+      "title": "DailyEntry",
+      "description": "Daily entry for a barber",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "isDayOff": {
+          "type": "boolean"
+        },
+        "workedDays": {
+          "type": "array"
+        },
+        "clientsServed": {
+          "type": "number"
+        },
+        "uniqueClientsServed": {
+          "type": "number"
+        },
+        "items": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "date",
+        "isDayOff",
+        "clientsServed",
+        "uniqueClientsServed",
+        "items"
+      ]
+    },
+    "PaymentRecord": {
+      "title": "PaymentRecord",
+      "description": "Payment record for a barber",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "commissionAvulso": {
+          "type": "number"
+        },
+        "commissionProductGeneral": {
+          "type": "number"
+        },
+        "commissionProductAvant": {
+          "type": "number"
+        },
+        "commissionSubscriptions": {
+          "type": "number"
+        },
+        "discount": {
+          "type": "number"
+        },
+        "discountDescription": {
+          "type": "string"
+        },
+        "discounts": {
+          "type": "array"
+        },
+        "amountToBePaid": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        },
+        "isPaid": {
+          "type": "boolean"
+        },
+        "potData": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "date",
+        "commissionAvulso",
+        "commissionProductGeneral",
+        "commissionProductAvant",
+        "commissionSubscriptions",
+        "discount",
+        "discountDescription",
+        "amountToBePaid",
+        "status",
+        "isPaid",
+        "potData"
+      ]
+    },
+    "ReconciliationReport": {
+      "title": "ReconciliationReport",
+      "description": "A saved reconciliation report containing processed transactions",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "kpis": {
+          "type": "object"
+        },
+        "items": {
+          "type": "array"
+        },
+        "dailyClosings": {
+          "type": "array"
+        },
+        "batches": {
+          "type": "array"
+        },
+        "unidade": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "createdAt",
+        "items"
+      ]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": "User",
+      "description": "Collection of users"
+    },
+    "categories": {
+      "schema": "Category",
+      "description": "Collection of categories"
+    },
+    "subcategories": {
+      "schema": "Subcategory",
+      "description": "Collection of subcategories"
+    },
+    "catalog": {
+      "schema": "CatalogItem",
+      "description": "Collection of catalog items"
+    },
+    "targets": {
+      "schema": "Target",
+      "description": "Collection of targets by user ID"
+    },
+    "entries": {
+      "schema": "DailyEntry",
+      "description": "Collection of daily entries"
+    },
+    "payments": {
+      "schema": "PaymentRecord",
+      "description": "Collection of payment records"
+    },
+    "reconciliation_reports": {
+      "schema": "ReconciliationReport",
+      "description": "Collection of saved reconciliation reports"
+    }
+  }
+}
