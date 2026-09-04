@@ -131,6 +131,27 @@ export function BarberReportsView() {
                    </span>
                 </div>
 
+                <div className="p-5 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-900/20">
+                   <span className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2">Participação nas assinaturas</span>
+                   <span className="text-2xl font-black text-indigo-700 dark:text-indigo-300 font-mono">
+                     {currentStats.percentualAssinatura || 0}%
+                   </span>
+                </div>
+
+                <div className="p-5 bg-gray-50 dark:bg-zinc-800/50 rounded-xl border border-gray-100 dark:border-zinc-800">
+                   <span className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-2">Serviços de assinatura</span>
+                   <span className="text-2xl font-black text-gray-900 dark:text-zinc-100 font-mono">
+                     {currentStats.servicosAssinatura || 0}
+                   </span>
+                </div>
+
+                <div className="p-5 bg-gray-50 dark:bg-zinc-800/50 rounded-xl border border-gray-100 dark:border-zinc-800">
+                   <span className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-2">Fichas de assinatura</span>
+                   <span className="text-2xl font-black text-gray-900 dark:text-zinc-100 font-mono">
+                     {currentStats.fichasAssinatura || 0}
+                   </span>
+                </div>
+
                 <div className="p-5 bg-blue-50/50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900/20">
                    <span className="block text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-2">Comissão</span>
                    <span className="text-2xl font-black text-blue-700 dark:text-blue-300 font-mono">

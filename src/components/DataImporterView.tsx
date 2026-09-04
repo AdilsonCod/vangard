@@ -7,13 +7,17 @@ import {
   AlertCircle,
   Save,
   X,
-  Calendar,
   RefreshCcw,
   Settings,
+  TableProperties,
+  ShieldCheck,
 } from "lucide-react";
 import { Category, MonthlyBarberStats, MonthlyUnitStats } from "../types";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db } from "../firebase";
+import { hydrateXlsxSharedStrings } from "../utils/xlsxSharedStrings";
 import { parseDPotePDF, DPoteReport, parseDPoteSpreadsheet } from "../DPoteParser";
 import { parseCashbarberProductsSpreadsheet, parseCashbarberProductsPDF, CashbarberProductReport } from "../CashbarberParser";
 
@@ -30,6 +34,7 @@ export default function DataImporterView() {
     categories,
     updateCategories,
     addPayment,
+    payments,
   } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -46,16 +51,24 @@ export default function DataImporterView() {
     | "PRODUTOS"
     | "UNIDADE"
     | "UNIDADE_ITENS"
+    | "UNIDADE_SERVICOS"
+    | "UNIDADE_PRODUTOS"
     | "CATALOGO"
     | "DPOTE_PDF"
     | "CASHBARBER_PRODUTOS"
   >("SERVICOS");
+  const isUnitItemsImport = ["UNIDADE_ITENS", "UNIDADE_SERVICOS", "UNIDADE_PRODUTOS"].includes(importType);
   const [targetUnitId, setTargetUnitId] = useState<string>("");
 
   const [isParsing, setIsParsing] = useState(false);
   const [rawHeaders, setRawHeaders] = useState<string[]>([]);
   const [rawData, setRawData] = useState<any[]>([]);
   const [isMappingColumns, setIsMappingColumns] = useState(false);
+  const [availableSheets, setAvailableSheets] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState("");
+  const [fileFingerprint, setFileFingerprint] = useState("");
+  const [parseWarnings, setParseWarnings] = useState<string[]>([]);
+  const [importSummary, setImportSummary] = useState({ read: 0, valid: 0, ignored: 0 });
 
   const [columnMapping, setColumnMapping] = useState({
     profissional: "",
@@ -83,32 +96,149 @@ export default function DataImporterView() {
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const sha256 = async (value: ArrayBuffer | string) => {
+    const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  };
 
-    setFile(file);
+  const resetImportResult = () => {
     setParsedData([]);
+    setRawData([]);
+    setRawHeaders([]);
     setDpoteReport(null);
+    setCashbarberReport(null);
     setSuccessMessage("");
+    setErrorMessage("");
+    setParseWarnings([]);
+    setImportSummary({ read: 0, valid: 0, ignored: 0 });
     setIsMappingColumns(false);
+  };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
 
+    if (selectedFile.size > 30 * 1024 * 1024) {
+      setFile(null);
+      setErrorMessage("O arquivo excede o limite de 30 MB. Divida-o em arquivos menores antes de importar.");
+      e.target.value = "";
+      return;
+    }
+
+    setFile(selectedFile);
+    resetImportResult();
+    setAvailableSheets([]);
+    setSelectedSheet("");
+
+    const normalizedName = selectedFile.name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    const detectedType = normalizedName.includes("matriz ass")
+      ? "DPOTE_PDF"
+      : normalizedName.includes("produtos barbeiros")
+        ? "CASHBARBER_PRODUTOS"
+        : normalizedName.includes("servicos barbeiros")
+          ? "SERVICOS"
+          : normalizedName.includes("servicos realizados")
+            ? "UNIDADE_SERVICOS"
+            : normalizedName.includes("relatorio produtos")
+              ? "UNIDADE_PRODUTOS"
+              : null;
+    if (detectedType) {
+      setImportType(detectedType);
+      setSuccessMessage("Tipo de relatório identificado automaticamente pelo nome do arquivo.");
+    }
+
+    try {
+      const buffer = await selectedFile.arrayBuffer();
+      setFileFingerprint(await sha256(buffer));
+
+      if (/\.xlsx?$/i.test(selectedFile.name)) {
+        const bytes = new Uint8Array(buffer);
+        const workbook = XLSX.read(bytes, { type: "array" });
+        hydrateXlsxSharedStrings(workbook, bytes);
+        setAvailableSheets(workbook.SheetNames);
+        setSelectedSheet(workbook.SheetNames[0] || "");
+      }
+    } catch (error) {
+      console.error("Erro ao inspecionar arquivo:", error);
+      setFileFingerprint("");
+      setErrorMessage("Não foi possível inspecionar o arquivo selecionado.");
+    }
+  };
+
+  const getWorksheetRows = (worksheet: XLSX.WorkSheet) => {
+    const matrix = XLSX.utils.sheet_to_json<(string | number)[]>(worksheet, {
+      header: 1,
+      defval: "",
+      raw: false,
+    });
+    const keywords = [
+      "profissional", "barbeiro", "funcionario", "colaborador", "servico",
+      "produto", "item", "descricao", "quantidade", "qtd", "valor", "total",
+      "comissao", "unidade", "filial", "loja", "categoria", "cliente",
+    ];
+    let headerIndex = 0;
+    let bestScore = -1;
+
+    matrix.slice(0, 30).forEach((row, index) => {
+      const values = row.map((cell) => String(cell ?? "").trim()).filter(Boolean);
+      if (values.length < 2) return;
+      const normalized = values.join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const hits = keywords.filter((keyword) => normalized.includes(keyword)).length;
+      const score = hits * 10 + values.length;
+      if (score > bestScore) {
+        bestScore = score;
+        headerIndex = index;
+      }
+    });
+
+    return {
+      rows: XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false, range: headerIndex }) as any[],
+      headerIndex,
+    };
   };
 
   const parseCurrency = (val: string | number): number => {
       if (!val) return 0;
       if (typeof val === "number") return val;
-      const cleaned = String(val)
-        .replace(/R\$/g, "")
-        .replace(/\./g, "")
-        .replace(/,/g, ".")
-        .trim();
-      return parseFloat(cleaned) || 0;
+      let cleaned = String(val).replace(/R\$/gi, "").replace(/\s/g, "").trim();
+      const negative = /^\(.*\)$/.test(cleaned) || cleaned.startsWith("-");
+      cleaned = cleaned.replace(/[()\-+]/g, "").replace(/[^\d.,]/g, "");
+
+      const lastComma = cleaned.lastIndexOf(",");
+      const lastDot = cleaned.lastIndexOf(".");
+      if (lastComma >= 0 && lastDot >= 0) {
+        cleaned = lastComma > lastDot
+          ? cleaned.replace(/\./g, "").replace(",", ".")
+          : cleaned.replace(/,/g, "");
+      } else if (lastComma >= 0) {
+        cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+      } else if ((cleaned.match(/\./g) || []).length > 1) {
+        const parts = cleaned.split(".");
+        const decimal = parts.at(-1)?.length === 2 ? `.${parts.pop()}` : "";
+        cleaned = `${parts.join("")}${decimal}`;
+      } else if (lastDot >= 0 && cleaned.length - lastDot - 1 === 3) {
+        cleaned = cleaned.replace(".", "");
+      }
+
+      const parsed = Number.parseFloat(cleaned) || 0;
+      return negative ? -parsed : parsed;
     };
 
-    const handleParsedRawData = (data: any[]) => {
+    const parseWholeNumber = (val: unknown): number => {
+      if (typeof val === "number") return Math.round(val);
+      const normalized = String(val ?? "").replace(/[^\d-]/g, "");
+      return Number.parseInt(normalized, 10) || 0;
+    };
+
+    const handleParsedRawData = (data: any[], warnings: string[] = []) => {
       if (!data || data.length === 0) {
         alert("Nenhum dado pôde ser extraído do arquivo.");
         setIsParsing(false);
@@ -129,9 +259,19 @@ export default function DataImporterView() {
         return newRow;
       });
 
-      const headers = Object.keys(normalizedData[0] || {});
+      const nonEmptyData = normalizedData.filter((row) =>
+        Object.values(row).some((value) => String(value ?? "").trim() !== ""),
+      );
+      const headers = Object.keys(nonEmptyData[0] || {});
+      if (headers.length === 0) {
+        setIsParsing(false);
+        setErrorMessage("O arquivo foi aberto, mas não contém cabeçalhos ou linhas preenchidas.");
+        return;
+      }
       setRawHeaders(headers);
-      setRawData(normalizedData);
+      setRawData(nonEmptyData);
+      setParseWarnings(warnings);
+      setImportSummary({ read: nonEmptyData.length, valid: 0, ignored: 0 });
 
       // Auto-guess columns
       const guess = (possible: string[]) => {
@@ -187,7 +327,7 @@ export default function DataImporterView() {
           );
           return;
         }
-        } else if (importType === "UNIDADE_ITENS") {
+      } else if (isUnitItemsImport) {
         if (
           !columnMapping.itemNome ||
           !columnMapping.quantidade ||
@@ -216,10 +356,10 @@ export default function DataImporterView() {
           if (importType === "UNIDADE") {
             const uni = String(row[columnMapping.unidade] || "").trim();
             return uni && uni.toLowerCase() !== "total";
-  } else if (importType === "CATALOGO") {
+          } else if (importType === "CATALOGO") {
             const itemName = String(row[columnMapping.itemNome] || "").trim();
             return itemName && itemName.toLowerCase() !== "total";
-          } else if (importType === "UNIDADE_ITENS") {
+          } else if (isUnitItemsImport) {
             const itemName = String(row[columnMapping.itemNome] || "").trim();
             return itemName && itemName.toLowerCase() !== "total";
           } else {
@@ -237,13 +377,13 @@ export default function DataImporterView() {
               faturamentoAssinatura: parseCurrency(
                 row[columnMapping.fatAssinaturas],
               ),
-              assinantes: parseInt(String(row[columnMapping.assinantes])) || 0,
+              assinantes: parseWholeNumber(row[columnMapping.assinantes]),
               clientesNovos:
-                parseInt(String(row[columnMapping.clientesNovos])) || 0,
+                parseWholeNumber(row[columnMapping.clientesNovos]),
               clientesAtendidos:
-                parseInt(String(row[columnMapping.clientesAtendidos])) || 0,
+                parseWholeNumber(row[columnMapping.clientesAtendidos]),
               servicosRealizados:
-                parseInt(String(row[columnMapping.servicosRealizados])) || 0,
+                parseWholeNumber(row[columnMapping.servicosRealizados]),
             };
           } else if (importType === "CATALOGO") {
             return {
@@ -254,11 +394,11 @@ export default function DataImporterView() {
                 : "",
               valorTotal: parseCurrency(row[columnMapping.valorTotal]),
             };
-          } else if (importType === "UNIDADE_ITENS") {
+          } else if (isUnitItemsImport) {
             return {
               isUnit: true,
               itemNome: String(row[columnMapping.itemNome] || "").trim(),
-              quantidade: parseInt(String(row[columnMapping.quantidade])) || 0,
+              quantidade: parseWholeNumber(row[columnMapping.quantidade]),
               valorTotal: parseCurrency(row[columnMapping.valorTotal]),
             };
           } else {
@@ -273,7 +413,7 @@ export default function DataImporterView() {
               servico: columnMapping.servico
                 ? String(row[columnMapping.servico] || "").trim()
                 : "",
-              quantidade: parseInt(String(row[columnMapping.quantidade])) || 0,
+              quantidade: parseWholeNumber(row[columnMapping.quantidade]),
               valorTotal: parseCurrency(row[columnMapping.valorTotal]),
               valorComissao: columnMapping.valorComissao
                 ? parseCurrency(row[columnMapping.valorComissao])
@@ -288,18 +428,42 @@ export default function DataImporterView() {
       }
 
       setParsedData(mapped);
+      setImportSummary({
+        read: rawData.length,
+        valid: mapped.length,
+        ignored: Math.max(0, rawData.length - mapped.length),
+      });
       setIsMappingColumns(false);
     };
 
-    const processFile = () => {
+    const processFile = async () => {
       if (!file) return;
       setIsParsing(true);
+      setErrorMessage("");
+      setParseWarnings([]);
 
       const fileName = file.name.toLowerCase();
+      const isSpecializedReport = importType === "DPOTE_PDF" || importType === "CASHBARBER_PRODUTOS";
+      if (fileName.endsWith(".pdf") && !isSpecializedReport) {
+        setIsParsing(false);
+        setErrorMessage("PDF só pode ser usado nos tipos D'Pote ou Comissão de Produtos Cashbarber.");
+        return;
+      }
+      if (!/\.(xlsx?|csv|txt|pdf)$/i.test(fileName)) {
+        setIsParsing(false);
+        setErrorMessage("Formato não suportado. Utilize XLSX, XLS, CSV, TXT ou PDF.");
+        return;
+      }
       
 if (importType === "CASHBARBER_PRODUTOS") {
         const handleCashbarberReport = (rep: CashbarberProductReport) => {
+          if (!rep.barbers.length) {
+            setErrorMessage("Nenhum profissional ou produto foi identificado no relatório do Cashbarber.");
+            setIsParsing(false);
+            return;
+          }
           setCashbarberReport(rep);
+          setImportSummary({ read: rep.barbers.length, valid: rep.barbers.length, ignored: 0 });
           const newMap = { ...manualUserMapping };
           rep.barbers.forEach((b) => {
             const matchedUser = users.find(
@@ -320,14 +484,14 @@ if (importType === "CASHBARBER_PRODUTOS") {
           parseCashbarberProductsPDF(file)
             .then(handleCashbarberReport)
             .catch((err) => {
-              alert(err.message || "Erro ao ler PDF do Cashbarber");
+              setErrorMessage(err.message || "Erro ao ler o relatório do Cashbarber.");
               setIsParsing(false);
             });
         } else {
           parseCashbarberProductsSpreadsheet(file)
             .then(handleCashbarberReport)
             .catch((err) => {
-              alert(err.message || "Erro ao ler Planilha do Cashbarber");
+              setErrorMessage(err.message || "Erro ao ler a planilha do Cashbarber.");
               setIsParsing(false);
             });
         }
@@ -336,7 +500,13 @@ if (importType === "CASHBARBER_PRODUTOS") {
 
       if (importType === "DPOTE_PDF") {
         const handleDPoteReport = (rep: DPoteReport) => {
+          if (!rep.barbers.length) {
+            setErrorMessage("Nenhum profissional foi identificado no relatório D'Pote.");
+            setIsParsing(false);
+            return;
+          }
           setDpoteReport(rep);
+          setImportSummary({ read: rep.barbers.length, valid: rep.barbers.length, ignored: 0 });
           const newMap = { ...manualUserMapping };
           rep.barbers.forEach((b) => {
             const matchedUser = users.find(
@@ -360,7 +530,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
             .catch((err) => {
               console.error(err);
               setIsParsing(false);
-              alert("Erro ao ler PDF");
+              setErrorMessage("Erro ao ler o PDF D'Pote.");
             });
         } else {
           parseDPoteSpreadsheet(file)
@@ -368,48 +538,98 @@ if (importType === "CASHBARBER_PRODUTOS") {
             .catch((err) => {
               console.error(err);
               setIsParsing(false);
-              alert("Erro ao ler Planilha do D'Pote");
+              setErrorMessage("Erro ao ler a planilha D'Pote.");
             });
         }
         return;
       }
 
       if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          try {
-            const data = new Uint8Array(e.target?.result as ArrayBuffer);
-            const workbook = XLSX.read(data, { type: "array" });
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            const json = XLSX.utils.sheet_to_json(worksheet, {
-              defval: "",
-            }) as any[];
-            handleParsedRawData(json);
-          } catch (error) {
-            console.error("Erro ao ler Excel:", error);
-            setIsParsing(false);
-            alert(
-              "Erro ao ler o arquivo Excel. Verifique se o arquivo não está corrompido.",
-            );
-          }
-        };
-        reader.readAsArrayBuffer(file);
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const workbook = XLSX.read(bytes, { type: "array" });
+          const hydratedCells = hydrateXlsxSharedStrings(workbook, bytes);
+          const sheetName = selectedSheet || workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          if (!worksheet) throw new Error("A aba selecionada não existe no arquivo.");
+          const { rows, headerIndex } = getWorksheetRows(worksheet);
+          const warnings: string[] = [];
+          if (headerIndex > 0) warnings.push(`Cabeçalho identificado automaticamente na linha ${headerIndex + 1}.`);
+          if (hydratedCells > 0) warnings.push(`${hydratedCells} célula(s) de texto do Excel foram recuperadas.`);
+          handleParsedRawData(rows, warnings);
+        } catch (error) {
+          console.error("Erro ao ler Excel:", error);
+          setIsParsing(false);
+          setErrorMessage(error instanceof Error ? error.message : "Erro ao ler o arquivo Excel.");
+        }
       } else {
         // Treat everything else as CSV/text
         Papa.parse(file, {
           header: true,
           skipEmptyLines: true,
           complete: (results) => {
-            handleParsedRawData(results.data as any[]);
+            const warnings = results.errors.slice(0, 5).map(
+              (item) => `Linha ${(item.row ?? 0) + 2}: ${item.message}`,
+            );
+            handleParsedRawData(results.data as any[], warnings);
           },
           error: (error) => {
             console.error("Erro ao ler CSV:", error);
             setIsParsing(false);
-            alert("Erro ao ler o arquivo CSV. Verifique a formatação.");
+            setErrorMessage("Erro ao ler o arquivo CSV. Verifique a formatação.");
           },
         });
       }
+    };
+
+    const upsertImportedPayment = async (
+      userId: string,
+      values: {
+        commissionAvulso?: number;
+        commissionProductGeneral?: number;
+        commissionProductAvant?: number;
+        commissionSubscriptions?: number;
+        potPercentage?: number;
+        potData?: { id: string; name: string; quantity: number; tokens: number }[];
+      },
+    ) => {
+      const monthStr = `${selectedYear}-${selectedMonth}`;
+      const deterministicId = `pay_import_${monthStr}_${userId}`;
+      const existing = payments.find((payment) => payment.id === deterministicId)
+        || payments.find((payment) =>
+          payment.userId === userId && payment.date.startsWith(monthStr) && payment.status !== "PAGO",
+        );
+      const paymentId = existing?.id || deterministicId;
+      const lastDay = new Date(Number(selectedYear), Number(selectedMonth), 0).getDate();
+      const date = `${monthStr}-${String(lastDay).padStart(2, "0")}`;
+      const commissionAvulso = values.commissionAvulso ?? existing?.commissionAvulso ?? 0;
+      const commissionProductGeneral = values.commissionProductGeneral ?? existing?.commissionProductGeneral ?? 0;
+      const commissionProductAvant = values.commissionProductAvant ?? existing?.commissionProductAvant ?? 0;
+      const commissionSubscriptions = values.commissionSubscriptions ?? existing?.commissionSubscriptions ?? 0;
+      const discount = existing?.discount || 0;
+
+      await addPayment({
+        id: paymentId,
+        userId,
+        date,
+        commissionAvulso,
+        commissionProductGeneral,
+        commissionProductAvant,
+        commissionSubscriptions,
+        discount,
+        discountDescription: existing?.discountDescription || "",
+        discounts: existing?.discounts || [],
+        amountToBePaid: Math.max(
+          0,
+          commissionAvulso + commissionProductGeneral + commissionProductAvant + commissionSubscriptions - discount,
+        ),
+        status: existing?.status || "PENDENTE",
+        isPaid: existing?.isPaid || false,
+        ...((values.potPercentage ?? existing?.potPercentage) !== undefined
+          ? { potPercentage: values.potPercentage ?? existing?.potPercentage }
+          : {}),
+        potData: values.potData ?? existing?.potData ?? [],
+      });
     };
 
     // Grouping by barber or unit
@@ -420,7 +640,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
 
       if (!parsedData.length) return [];
 
-      if (importType === "UNIDADE_ITENS") {
+      if (isUnitItemsImport) {
         let fatTotal = 0;
         let servicos = 0;
         let produtos = 0;
@@ -430,7 +650,10 @@ if (importType === "CASHBARBER_PRODUTOS") {
           const catItem = catalog.find(
             (c) => c.name.toLowerCase() === item.itemNome.toLowerCase(),
           );
-          if (catItem && catItem.type === "PRODUTO") {
+          const category = catItem ? categories.find((item) => item.id === catItem.type) : undefined;
+          const isProduct = importType === "UNIDADE_PRODUTOS"
+            || (importType === "UNIDADE_ITENS" && category?.type === "PRODUCT");
+          if (isProduct) {
             produtos += item.quantidade;
           } else {
             servicos += item.quantidade;
@@ -519,26 +742,82 @@ if (importType === "CASHBARBER_PRODUTOS") {
       selectedMonth,
       selectedYear,
       manualUserMapping,
+      catalog,
+      categories,
+      systemUnits,
+      targetUnitId,
+      importType,
     ]);
 
     const handleSave = async () => {
-      if ((importType === "DPOTE_PDF" || importType === "UNIDADE_ITENS" || importType === "CASHBARBER_PRODUTOS") && !targetUnitId) {
+      if ((importType === "DPOTE_PDF" || isUnitItemsImport || importType === "CASHBARBER_PRODUTOS") && !targetUnitId) {
          alert("Por favor, selecione a Unidade Alvo antes de salvar.");
          return;
       }
+
+      const unmappedReportNames = importType === "DPOTE_PDF"
+        ? (dpoteReport?.barbers || []).filter((item) => !manualUserMapping[item.name]).map((item) => item.name)
+        : importType === "CASHBARBER_PRODUTOS"
+          ? (cashbarberReport?.barbers || []).filter((item) => !manualUserMapping[item.name]).map((item) => item.name)
+          : [];
+      const hasUnmappedRows = !["CATALOGO", "UNIDADE_ITENS", "UNIDADE_SERVICOS", "UNIDADE_PRODUTOS", "DPOTE_PDF", "CASHBARBER_PRODUTOS"].includes(importType)
+        && groupedData.some((group) => importType === "UNIDADE" ? !group.unitId : !group.userId);
+
+      if (unmappedReportNames.length > 0 || hasUnmappedRows) {
+        setErrorMessage(
+          unmappedReportNames.length > 0
+            ? `Vincule todos os profissionais antes de salvar: ${unmappedReportNames.slice(0, 3).join(", ")}${unmappedReportNames.length > 3 ? "..." : ""}.`
+            : "Existem linhas sem vínculo com usuário ou unidade. Corrija os campos destacados antes de salvar.",
+        );
+        return;
+      }
+
+      if (["SERVICOS", "DPOTE_PDF", "CASHBARBER_PRODUTOS"].includes(importType)) {
+        const reportUserIds = importType === "SERVICOS"
+          ? groupedData.map((group) => group.userId).filter(Boolean)
+          : Object.values(manualUserMapping).filter((userId) => userId && userId !== "__IGNORE__");
+        const paidRecord = reportUserIds.find((userId) =>
+          payments.some((payment) =>
+            payment.userId === userId
+            && payment.date.startsWith(`${selectedYear}-${selectedMonth}`)
+            && payment.status === "PAGO",
+          ),
+        );
+        if (paidRecord) {
+          setErrorMessage("A importação foi bloqueada porque uma das comissões deste período já está paga. Reabra o pagamento antes de substituir o relatório.");
+          return;
+        }
+      }
+
       setIsSaving(true);
       const monthStr = `${selectedYear}-${selectedMonth}`;
 
       try {
+        let importJobRef: ReturnType<typeof doc> | null = null;
+        if (file && fileFingerprint) {
+          const contextFingerprint = await sha256(
+            `${fileFingerprint}|${importType}|${monthStr}|${targetUnitId || "AUTO"}|${selectedSheet || "DEFAULT"}`,
+          );
+          importJobRef = doc(db, "dataImportJobs", contextFingerprint);
+          const previousImport = await getDoc(importJobRef);
+          if (previousImport.exists() && previousImport.data().status === "COMPLETED") {
+            setErrorMessage(
+              "Este mesmo arquivo já foi importado para este período, tipo e unidade. A gravação foi bloqueada para evitar valores duplicados.",
+            );
+            setIsSaving(false);
+            return;
+          }
+        }
+
         if (importType === "DPOTE_PDF" && dpoteReport) {
-          const unitIds = new Set<string>();
+          const unitIds = new Set<string>(targetUnitId ? [targetUnitId] : []);
 
           for (const barber of dpoteReport.barbers) {
             const userId = manualUserMapping[barber.name];
-            if (!userId) continue;
+            if (!userId || userId === "__IGNORE__") continue;
 
             const user = users.find((u) => u.id === userId);
-            if (user && user.unit) {
+            if (!targetUnitId && user && user.unit) {
               unitIds.add(user.unit);
             }
 
@@ -566,45 +845,29 @@ if (importType === "CASHBARBER_PRODUTOS") {
             const fatAssinatura =
               (barber.potPercentage / 100) * dpoteReport.totalAssinaturas;
 
-            const qtyServices = barber.totalServices || barber.services.reduce((acc, s) => acc + s.quantity, 0);
+            const currentAvulso = currentStat.faturamentoAvulso
+              ?? Math.max(0, (currentStat.faturamentoTotal || 0) - (currentStat.faturamentoAssinatura || 0));
+            const commissionServices = currentStat.comissaoServicos
+              ?? Math.max(0, (currentStat.comissao || 0) - (currentStat.comissaoProdutos || 0) - (currentStat.comissaoAssinatura || 0));
+            const commissionProducts = currentStat.comissaoProdutos || 0;
 
             await updateMonthlyBarberStats({
               ...currentStat,
-              faturamentoAssinatura:
-                (currentStat.faturamentoAssinatura || 0) + fatAssinatura,
-              comissao: (currentStat.comissao || 0) + barber.commission,
-              servicosRealizados: (currentStat.servicosRealizados || 0) + qtyServices,
+              faturamentoAvulso: currentAvulso,
+              faturamentoAssinatura: fatAssinatura,
+              faturamentoTotal: currentAvulso + fatAssinatura,
+              comissaoAssinatura: barber.commission,
+              comissao: commissionServices + commissionProducts + barber.commission,
+              servicosAssinatura: barber.totalServices,
+              fichasAssinatura: barber.totalTokens,
+              percentualAssinatura: barber.potPercentage,
             });
 
-            const lastDay = new Date(
-              parseInt(selectedYear),
-              parseInt(selectedMonth),
-              0,
-            );
-            const dateStr = `${selectedYear}-${selectedMonth}-${String(lastDay.getDate()).padStart(2, "0")}`;
-
-            await addPayment({
-              id:
-                "pay_" +
-                Date.now() +
-                Math.random().toString(36).substring(2, 9),
-              userId: userId,
-              date: dateStr,
-              commissionAvulso: 0,
-              commissionProductGeneral: 0,
-              commissionProductAvant: 0,
+            await upsertImportedPayment(userId, {
               commissionSubscriptions: barber.commission,
-              discount: 0,
-              discountDescription: "",
-              amountToBePaid: barber.commission,
-              status: "PENDENTE",
-              isPaid: false,
               potPercentage: barber.potPercentage,
               potData: barber.services.map((s) => ({
-                id:
-                  "pot_" +
-                  Date.now() +
-                  Math.random().toString(36).substring(2, 9),
+                id: `pot_${monthStr}_${userId}_${s.name}`,
                 name: s.name,
                 quantity: s.quantity,
                 tokens: s.tokens,
@@ -633,23 +896,24 @@ if (importType === "CASHBARBER_PRODUTOS") {
 
             await updateMonthlyUnitStats({
               ...currentUnitStat,
-              faturamentoAssinatura:
-                (currentUnitStat.faturamentoAssinatura || 0) +
-                dpoteReport.totalAssinaturas,
+              faturamentoAssinatura: dpoteReport.totalAssinaturas,
+              faturamentoTotal:
+                (currentUnitStat.faturamentoServicos
+                  ?? Math.max(0,
+                    (currentUnitStat.faturamentoTotal || 0)
+                    - (currentUnitStat.faturamentoAssinatura || 0)
+                    - (currentUnitStat.faturamentoProdutos || currentUnitStat.vendaProdutosValor || 0),
+                  ))
+                + (currentUnitStat.faturamentoProdutos || currentUnitStat.vendaProdutosValor || 0)
+                + dpoteReport.totalAssinaturas,
             });
           }
         } else if (importType === "CASHBARBER_PRODUTOS" && cashbarberReport) {
-          const unitIds = new Set<string>();
-
           for (const barber of cashbarberReport.barbers) {
             const userId = manualUserMapping[barber.name];
-            if (!userId) continue;
+            if (!userId || userId === "__IGNORE__") continue;
 
             const user = users.find((u) => u.id === userId);
-            if (user && user.unit) {
-              unitIds.add(user.unit);
-            }
-
             const userUnit = user?.unit || targetUnitId || "ALL";
             const statId = `${monthStr}_${userId}`;
             const currentStat = monthlyBarberStats.find(
@@ -671,75 +935,23 @@ if (importType === "CASHBARBER_PRODUTOS") {
               clientesSemPreferencia: 0,
             };
 
+            const commissionServices = currentStat.comissaoServicos
+              ?? Math.max(0, (currentStat.comissao || 0) - (currentStat.comissaoProdutos || 0) - (currentStat.comissaoAssinatura || 0));
+            const commissionSubscriptions = currentStat.comissaoAssinatura || 0;
             await updateMonthlyBarberStats({
               ...currentStat,
-              vendaProdutosValor: (currentStat.vendaProdutosValor || 0) + barber.totalSales,
-              vendasProdutosQtd: (currentStat.vendasProdutosQtd || 0) + barber.totalProducts,
-              comissao: (currentStat.comissao || 0) + barber.totalCommission,
+              vendaProdutosValor: barber.totalSales,
+              vendasProdutosQtd: barber.totalProducts,
+              comissaoProdutos: barber.totalCommission,
+              comissao: commissionServices + commissionSubscriptions + barber.totalCommission,
             });
             
-            const lastDay = new Date(
-              parseInt(selectedYear),
-              parseInt(selectedMonth),
-              0,
-            );
-            const dateStr = `${selectedYear}-${selectedMonth}-${String(lastDay.getDate()).padStart(2, "0")}`;
-
-            await addPayment({
-              id:
-                "pay_" +
-                Date.now() +
-                Math.random().toString(36).substring(2, 9),
-              userId: userId,
-              date: dateStr,
-              commissionAvulso: 0,
+            await upsertImportedPayment(userId, {
               commissionProductGeneral: barber.commissionProdGeral || 0,
               commissionProductAvant: barber.commissionProdAvant || 0,
-              commissionSubscriptions: 0,
-              discount: 0,
-              discountDescription: "",
-              amountToBePaid: (barber.commissionProdGeral || 0) + (barber.commissionProdAvant || 0),
-              status: "PENDENTE",
-              isPaid: false,
-              potData: [],
             });
           }
 
-          for (const uId of unitIds) {
-            const statId = `${monthStr}_${uId}`;
-            const currentUnitStat = monthlyUnitStats.find(
-              (s) => s.id === statId,
-            ) || {
-              id: statId,
-              unitId: uId,
-              month: monthStr,
-              faturamentoTotal: 0,
-              faturamentoAssinatura: 0,
-              assinantes: 0,
-              clientesNovos: 0,
-              clientesSemPreferencia: 0,
-              clientesAtendidos: 0,
-              servicosRealizados: 0,
-              vendaProdutosValor: 0,
-              vendasProdutosQtd: 0,
-            };
-
-            let totalVal = 0;
-            let totalQtd = 0;
-            for (const barber of cashbarberReport.barbers) {
-              const u = users.find((uu) => uu.id === manualUserMapping[barber.name]);
-              if (u && u.unit === uId) {
-                totalVal += barber.totalSales;
-                totalQtd += barber.totalProducts;
-              }
-            }
-
-            await updateMonthlyUnitStats({
-              ...currentUnitStat,
-              vendaProdutosValor: (currentUnitStat.vendaProdutosValor || 0) + totalVal,
-              vendasProdutosQtd: (currentUnitStat.vendasProdutosQtd || 0) + totalQtd,
-            });
-          }
         } else if (importType === "CATALOGO") {
           let currentCatalog = [...catalog];
           let currentCategories = [...categories];
@@ -800,7 +1012,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
             await updateCategories(currentCategories);
           }
           await updateCatalog(currentCatalog);
-        } else if (importType === "UNIDADE_ITENS") {
+        } else if (isUnitItemsImport) {
           for (const group of groupedData) {
             if (!group.unitId) continue;
 
@@ -841,13 +1053,19 @@ if (importType === "CASHBARBER_PRODUTOS") {
               );
               const key = catItem ? catItem.id : item.itemNome;
 
-              updated.extraCounts[key] =
-                (updated.extraCounts[key] || 0) + item.quantidade;
-              updated.extraValues[key] =
-                (updated.extraValues[key] || 0) + item.valorTotal;
+              if (importType === "UNIDADE_SERVICOS" || importType === "UNIDADE_PRODUTOS") {
+                updated.extraCounts[key] = item.quantidade;
+                updated.extraValues[key] = item.valorTotal;
+              } else {
+                updated.extraCounts[key] = (updated.extraCounts[key] || 0) + item.quantidade;
+                updated.extraValues[key] = (updated.extraValues[key] || 0) + item.valorTotal;
+              }
 
               totalAddedFaturamento += item.valorTotal;
-              if (catItem && catItem.type === "PRODUTO") {
+              const category = catItem ? categories.find((entry) => entry.id === catItem.type) : undefined;
+              const isProduct = importType === "UNIDADE_PRODUTOS"
+                || (importType === "UNIDADE_ITENS" && category?.type === "PRODUCT");
+              if (isProduct) {
                 addedProdutosValor += item.valorTotal;
                 addedProdutosQtd += item.quantidade;
               } else {
@@ -855,12 +1073,24 @@ if (importType === "CASHBARBER_PRODUTOS") {
               }
             }
 
-            updated.faturamentoTotal += totalAddedFaturamento;
-            updated.servicosRealizados += addedServicos;
-            updated.vendaProdutosValor =
-              (updated.vendaProdutosValor || 0) + addedProdutosValor;
-            updated.vendasProdutosQtd =
-              (updated.vendasProdutosQtd || 0) + addedProdutosQtd;
+            if (importType === "UNIDADE_SERVICOS") {
+              const productRevenue = current.faturamentoProdutos || current.vendaProdutosValor || 0;
+              updated.faturamentoServicos = totalAddedFaturamento;
+              updated.servicosRealizados = addedServicos;
+              updated.faturamentoTotal = totalAddedFaturamento + productRevenue + (current.faturamentoAssinatura || 0);
+            } else if (importType === "UNIDADE_PRODUTOS") {
+              const serviceRevenue = current.faturamentoServicos
+                ?? Math.max(0, (current.faturamentoTotal || 0) - (current.faturamentoAssinatura || 0) - (current.vendaProdutosValor || 0));
+              updated.faturamentoProdutos = totalAddedFaturamento;
+              updated.vendaProdutosValor = addedProdutosValor;
+              updated.vendasProdutosQtd = addedProdutosQtd;
+              updated.faturamentoTotal = serviceRevenue + totalAddedFaturamento + (current.faturamentoAssinatura || 0);
+            } else {
+              updated.faturamentoTotal += totalAddedFaturamento;
+              updated.servicosRealizados += addedServicos;
+              updated.vendaProdutosValor = (updated.vendaProdutosValor || 0) + addedProdutosValor;
+              updated.vendasProdutosQtd = (updated.vendasProdutosQtd || 0) + addedProdutosQtd;
+            }
 
             await updateMonthlyUnitStats(updated);
           }
@@ -939,16 +1169,21 @@ if (importType === "CASHBARBER_PRODUTOS") {
             };
 
             if (importType === "SERVICOS") {
-              updated.faturamentoTotal += group.valorTotal;
-              updated.servicosRealizados += group.quantidade;
-              updated.comissao += group.valorComissao;
+              updated.faturamentoAvulso = group.valorTotal;
+              updated.faturamentoTotal = group.valorTotal + (current.faturamentoAssinatura || 0);
+              updated.servicosRealizados = group.quantidade;
+              updated.comissaoServicos = group.valorComissao;
+              updated.comissao = group.valorComissao + (current.comissaoProdutos || 0) + (current.comissaoAssinatura || 0);
             } else {
-              updated.vendaProdutosValor += group.valorTotal;
-              updated.vendasProdutosQtd += group.quantidade;
-              updated.comissao += group.valorComissao;
+              updated.vendaProdutosValor = group.valorTotal;
+              updated.vendasProdutosQtd = group.quantidade;
+              updated.comissaoProdutos = group.valorComissao;
+              updated.comissao = (current.comissaoServicos || 0) + group.valorComissao + (current.comissaoAssinatura || 0);
             }
 
             // Detailed items mapping
+            const importedCounts: Record<string, number> = {};
+            const importedValues: Record<string, number> = {};
             for (const item of group.items) {
               if (!item.servico) continue;
               // Try to map to catalog
@@ -956,25 +1191,56 @@ if (importType === "CASHBARBER_PRODUTOS") {
                 (c) => c.name.toLowerCase() === item.servico.toLowerCase(),
               );
               const key = catItem ? catItem.id : item.servico;
-              updated.extraCounts[key] =
-                (updated.extraCounts[key] || 0) + item.quantidade;
-              updated.extraValues[key] =
-                (updated.extraValues[key] || 0) + item.valorTotal;
+              importedCounts[key] = (importedCounts[key] || 0) + item.quantidade;
+              importedValues[key] = (importedValues[key] || 0) + item.valorTotal;
             }
+            Object.assign(updated.extraCounts, importedCounts);
+            Object.assign(updated.extraValues, importedValues);
 
             await updateMonthlyBarberStats(updated);
+            if (importType === "SERVICOS") {
+              await upsertImportedPayment(group.userId, {
+                commissionAvulso: group.valorComissao,
+              });
+            }
           }
         }
 
-        setSuccessMessage("Dados importados com sucesso!");
+        if (importJobRef && file) {
+          await setDoc(importJobRef, {
+            status: "COMPLETED",
+            fileName: file.name,
+            fileSize: file.size,
+            fileFingerprint,
+            importType,
+            month: monthStr,
+            targetUnitId: targetUnitId || null,
+            sheetName: selectedSheet || null,
+            rowsRead: importSummary.read,
+            rowsImported: importSummary.valid || parsedData.length,
+            importedAt: new Date().toISOString(),
+          });
+        }
+
+        setSuccessMessage("Dados importados com sucesso e registrados no histórico!");
+        setErrorMessage("");
         setParsedData([]);
         setDpoteReport(null);
+        setCashbarberReport(null);
         setIsMappingColumns(false);
         setManualUserMapping({});
         setFile(null);
+        setAvailableSheets([]);
+        setSelectedSheet("");
+        setFileFingerprint("");
         if (fileInputRef.current) fileInputRef.current.value = "";
       } catch (e) {
         console.error(e);
+        setErrorMessage(
+          e instanceof Error
+            ? `Não foi possível concluir a importação: ${e.message}`
+            : "Não foi possível concluir a importação.",
+        );
       }
 
       setIsSaving(false);
@@ -992,27 +1258,34 @@ if (importType === "CASHBARBER_PRODUTOS") {
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
             <Upload className="w-6 h-6 text-[var(--theme-color)]" />
-            Importador de Planilhas (Excel/CSV)
+            Importador de Planilhas
           </h2>
           <p className="text-gray-500 dark:text-zinc-400 mt-1">
-            Alimente os dados dos barbeiros (serviços, produtos) ou os totais da
-            unidade importando planilhas. Mapeie colunas e vincule manualmente.
+            Importe Excel, CSV, TXT ou PDF com seleção de aba, identificação de
+            cabeçalho, validação prévia e proteção contra duplicidade.
           </p>
         </div>
 
         <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
             <div>
               <label className="block text-sm font-semibold text-gray-700 dark:text-zinc-300 mb-2">
                 Tipo de Importação
               </label>
               <select
                 value={importType}
-                onChange={(e) => setImportType(e.target.value as any)}
+                onChange={(e) => {
+                  setImportType(e.target.value as any);
+                  resetImportResult();
+                }}
                 className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-700 rounded-lg p-2.5 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-[var(--theme-color)] focus:border-transparent outline-none"
               >
-                <option value="SERVICOS">Serviços Realizados</option>
-                <option value="PRODUTOS">Produtos Vendidos</option>
+                <option value="SERVICOS">Barbeiros - Serviços e comissões (CSV)</option>
+                <option value="CASHBARBER_PRODUTOS">Barbeiros - Produtos e comissões (PDF/Planilha)</option>
+                <option value="DPOTE_PDF">Barbeiros - Assinaturas D'Pote (PDF/Planilha)</option>
+                <option value="UNIDADE_SERVICOS">Unidade - Serviços realizados (CSV)</option>
+                <option value="UNIDADE_PRODUTOS">Unidade - Produtos vendidos (CSV)</option>
+                <option value="PRODUTOS">Barbeiros - Produtos (CSV genérico)</option>
                 <option value="UNIDADE">Dados da Unidade (Consolidado)</option>
                 <option value="UNIDADE_ITENS">
                   Relatório de Itens da Unidade (Serviços/Produtos)
@@ -1020,8 +1293,6 @@ if (importType === "CASHBARBER_PRODUTOS") {
                 <option value="CATALOGO">
                   Cadastro de Catálogo (Produtos/Serviços)
                 </option>
-                <option value="DPOTE_PDF">Relatório D'Pote (PDF/Planilha)</option>
-                <option value="CASHBARBER_PRODUTOS">Comissão de Produtos Cashbarber (Planilha/PDF)</option>
               </select>
             </div>
 
@@ -1098,6 +1369,25 @@ if (importType === "CASHBARBER_PRODUTOS") {
                 className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-700 rounded-lg p-2 text-gray-900 dark:text-zinc-100"
               />
             </div>
+            {availableSheets.length > 0 && !["DPOTE_PDF", "CASHBARBER_PRODUTOS"].includes(importType) && (
+              <div className="w-full md:w-64">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-zinc-300 mb-2">
+                  Aba do Excel
+                </label>
+                <select
+                  value={selectedSheet}
+                  onChange={(e) => {
+                    setSelectedSheet(e.target.value);
+                    resetImportResult();
+                  }}
+                  className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-700 rounded-lg p-2.5 text-gray-900 dark:text-zinc-100"
+                >
+                  {availableSheets.map((sheet) => (
+                    <option key={sheet} value={sheet}>{sheet}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button
               onClick={processFile}
               disabled={!file || isParsing}
@@ -1112,6 +1402,29 @@ if (importType === "CASHBARBER_PRODUTOS") {
             </button>
           </div>
         </div>
+
+        {errorMessage && (
+          <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2 font-medium">
+              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+              <span>{errorMessage}</span>
+            </div>
+            <button onClick={() => setErrorMessage("")} aria-label="Fechar mensagem">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {parseWarnings.length > 0 && (
+          <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-lg px-4 py-3">
+            <div className="flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-300 mb-1">
+              <AlertCircle className="w-4 h-4" /> Diagnóstico da leitura
+            </div>
+            {parseWarnings.map((warning, index) => (
+              <p key={index} className="text-sm text-amber-700 dark:text-amber-400">{warning}</p>
+            ))}
+          </div>
+        )}
 
         {isMappingColumns && (
           <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
@@ -1139,7 +1452,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
                       "servicosRealizados",
                     ].includes(k);
                   }
-                  if (importType === "UNIDADE_ITENS") {
+                  if (isUnitItemsImport) {
                     return ["itemNome", "quantidade", "valorTotal"].includes(k);
                   }
                   if (importType === "CATALOGO") {
@@ -1207,6 +1520,26 @@ if (importType === "CASHBARBER_PRODUTOS") {
                 ))}
             </div>
 
+            <div className="mt-6 border border-gray-200 dark:border-zinc-800 rounded-lg overflow-hidden">
+              <div className="px-4 py-2 bg-gray-50 dark:bg-zinc-950 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-zinc-300">
+                <TableProperties className="w-4 h-4" /> Amostra das primeiras linhas lidas
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-gray-100 dark:bg-zinc-900 text-gray-600 dark:text-zinc-400">
+                    <tr>{rawHeaders.map((header) => <th key={header} className="px-3 py-2 text-left whitespace-nowrap">{header}</th>)}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+                    {rawData.slice(0, 5).map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {rawHeaders.map((header) => <td key={header} className="px-3 py-2 max-w-56 truncate">{String(row[header] ?? "")}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div className="mt-6 flex justify-end">
               <button
                 onClick={processMappedData}
@@ -1240,12 +1573,28 @@ if (importType === "CASHBARBER_PRODUTOS") {
                 <p className="text-sm text-gray-500 dark:text-zinc-400">
                   {importType === "CATALOGO"
                     ? "Revise os itens que serão importados para o seu Catálogo. Itens com o mesmo nome serão atualizados."
-                    : importType === "UNIDADE_ITENS"
-                      ? "Confirme a unidade destino para os itens extraídos. Os valores de faturamento e quantidade serão acumulados nos totais do mês."
+                    : isUnitItemsImport
+                      ? `Confirme a unidade destino. Este arquivo será tratado como ${importType === "UNIDADE_PRODUTOS" ? "venda de produtos" : importType === "UNIDADE_SERVICOS" ? "serviços realizados" : "itens mistos"}.`
                       : importType === "UNIDADE"
                         ? 'Se a unidade não foi encontrada automaticamente, você pode vinculá-la manualmente na coluna "Unidade do Sistema".'
                         : 'Se o barbeiro não foi encontrado automaticamente, você pode vinculá-lo manualmente na coluna "Barbeiro do Sistema".'}
                 </p>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                  <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                    {importSummary.read} linhas lidas
+                  </span>
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                    {importSummary.valid} válidas
+                  </span>
+                  {importSummary.ignored > 0 && (
+                    <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                      {importSummary.ignored} ignoradas
+                    </span>
+                  )}
+                  <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-zinc-800 dark:text-zinc-300 inline-flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" /> duplicidade protegida
+                  </span>
+                </div>
               </div>
               <button
                 onClick={handleSave}
@@ -1272,7 +1621,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
                         <th className="px-4 py-3 text-right">Preço / Valor</th>
                         <th className="px-4 py-3 text-center">Status</th>
                       </>
-                    ) : importType === "UNIDADE_ITENS" ? (
+                    ) : isUnitItemsImport ? (
                       <>
                         <th className="px-4 py-3">Unidade Destino</th>
                         <th className="px-4 py-3">Total Identificado</th>
@@ -1346,7 +1695,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
                       );
                     }
 
-                    if (importType === "UNIDADE_ITENS") {
+                    if (isUnitItemsImport) {
                       return (
                         <tr
                           key={i}
@@ -1575,6 +1924,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
                       className={`w-full bg-white dark:bg-zinc-950 border ${!manualUserMapping[b.name] ? "border-red-300 text-red-600 font-semibold" : "border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"} rounded-lg p-2 text-sm outline-none`}
                     >
                       <option value="">Selecione...</option>
+                      <option value="__IGNORE__">Ignorar este profissional</option>
                       {users
                         .filter(
                           (u) => u.role === "BARBER" || u.role === "MANICURE",
@@ -1605,6 +1955,71 @@ if (importType === "CASHBARBER_PRODUTOS") {
               </button>
             </div>
             
+          </div>
+        )}
+        {importType === "CASHBARBER_PRODUTOS" && cashbarberReport && (
+          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm mt-6">
+            <div className="p-4 border-b border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 flex flex-col md:flex-row md:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-gray-900 dark:text-zinc-100">Resumo de Produtos Cashbarber</h3>
+                <p className="text-sm text-gray-500 dark:text-zinc-400">
+                  Revise os valores e vincule todos os profissionais antes de salvar.
+                </p>
+              </div>
+              <span className="text-sm font-semibold text-[var(--theme-color)] inline-flex items-center gap-1">
+                <ShieldCheck className="w-4 h-4" /> {cashbarberReport.barbers.length} profissionais identificados
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-gray-100 dark:bg-zinc-950 text-xs uppercase text-gray-600 dark:text-zinc-400">
+                  <tr>
+                    <th className="px-4 py-3">Profissional</th>
+                    <th className="px-4 py-3">Usuário do sistema</th>
+                    <th className="px-4 py-3 text-right">Produtos</th>
+                    <th className="px-4 py-3 text-right">Vendas</th>
+                    <th className="px-4 py-3 text-right">Comissão</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-zinc-800">
+                  {cashbarberReport.barbers.map((barber) => (
+                    <tr key={barber.name} className={!manualUserMapping[barber.name] ? "bg-red-50/50 dark:bg-red-950/10" : ""}>
+                      <td className="px-4 py-3 font-semibold text-gray-900 dark:text-zinc-100">{barber.name}</td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={manualUserMapping[barber.name] || ""}
+                          onChange={(e) => handleUserMapChange(barber.name, e.target.value)}
+                          className={`w-full min-w-48 bg-white dark:bg-zinc-950 border ${!manualUserMapping[barber.name] ? "border-red-300 text-red-600" : "border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"} rounded-lg p-2`}
+                        >
+                          <option value="">Selecione...</option>
+                          <option value="__IGNORE__">Ignorar este profissional</option>
+                          {users.filter((user) => user.role !== "ADMIN").map((user) => (
+                            <option key={user.id} value={user.id}>{user.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono">{barber.totalProducts}</td>
+                      <td className="px-4 py-3 text-right font-mono text-emerald-600 dark:text-emerald-400">
+                        {barber.totalSales.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-blue-600 dark:text-blue-400">
+                        {barber.totalCommission.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="p-4 bg-gray-50 dark:bg-zinc-950 border-t border-gray-200 dark:border-zinc-800 flex justify-end">
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="w-full md:w-auto px-6 py-2.5 bg-[var(--theme-color)] text-white font-bold rounded-lg hover:bg-[#ff6b42] transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isSaving ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Confirmar e Salvar
+              </button>
+            </div>
           </div>
         )}
       </div>

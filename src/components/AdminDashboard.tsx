@@ -148,7 +148,8 @@ export default function AdminDashboard() {
         { id: "FINANCE_CAIXA", label: "Caixa & Contas" },
         { id: "FINANCE_CONCILIACAO_FINTECH", label: "Conciliação" },
         { id: "FINANCE_CONCILIACAO", label: "Conciliação OFX" },
-        { id: "FINANCE_RECEBIMENTOS", label: "Baixa de Recebimentos" }
+        { id: "FINANCE_RECEBIMENTOS", label: "Baixa de Recebimentos" },
+        { id: "FINANCE_DESPESAS", label: "Baixa de Despesas" }
       ]
     },
     { id: "BARBERS", label: "Barbeiros (Objetivos & Dados)", icon: TrendingUp },
@@ -186,7 +187,7 @@ export default function AdminDashboard() {
     },
     { id: "REPORTS", label: "Relatórios", icon: FileText },
     { id: "PAYMENTS", label: "Pagamentos", icon: DollarSign },
-    { id: "IMPORT", label: "Importar Planilhas (CSV)", icon: Upload },
+    { id: "IMPORT", label: "Importar Planilhas", icon: Upload },
     { id: "CONFIG", label: "Configurações", icon: Settings },
   ] as const;
 

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../store';
 import { FinancialTransaction } from '../types';
-import { CheckSquare, Square, DollarSign, CreditCard, Calendar, Filter, Download, Upload, FileSpreadsheet } from 'lucide-react';
+import { CheckSquare, Square, DollarSign, CreditCard, Calendar, Filter, Download, Upload, FileSpreadsheet, ChevronDown, Layers, List } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -9,6 +9,8 @@ export function ReceivablesReconciliation() {
   const { transactions, updateTransaction } = useStore();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filterMethod, setFilterMethod] = useState<string>('ALL');
+  const [viewMode, setViewMode] = useState<'BY_DATE' | 'DETAILED'>('BY_DATE');
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   
   // Modals and advanced state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -32,8 +34,60 @@ export function ReceivablesReconciliation() {
 
   const filteredReceivables = useMemo(() => {
     if (filterMethod === 'ALL') return receivables;
-    return receivables.filter(t => t.classification === filterMethod || t.category === filterMethod);
+    return receivables.filter(transaction => {
+      if (filterMethod === 'PIX') return transaction.paymentMethod === 'PIX';
+      if (filterMethod === 'CARTAO') return transaction.paymentMethod === 'CREDIT' || transaction.paymentMethod === 'DEBIT';
+      if (filterMethod === 'DINHEIRO') return transaction.paymentMethod === 'CASH';
+      if (filterMethod === 'ASSINATURA') {
+        return transaction.paymentMethod === 'SUBSCRIPTION' || transaction.sourceChannel === 'SUBSCRIPTION_GATEWAY';
+      }
+      return transaction.classification === filterMethod || transaction.category === filterMethod;
+    });
   }, [receivables, filterMethod]);
+
+  const receivablesByDate = useMemo(() => {
+    const groups = new Map<string, FinancialTransaction[]>();
+    filteredReceivables.forEach(transaction => {
+      const date = transaction.dueDate || transaction.date;
+      const group = groups.get(date) || [];
+      group.push(transaction);
+      groups.set(date, group);
+    });
+    return Array.from(groups.entries())
+      .map(([date, groupTransactions]) => ({
+        date,
+        transactions: groupTransactions,
+        total: groupTransactions.reduce((sum, transaction) => sum + transaction.amount, 0),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [filteredReceivables]);
+
+  const toggleDateExpansion = (date: string) => {
+    setExpandedDates(current => {
+      const next = new Set(current);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  };
+
+  const toggleDateSelection = (dateTransactions: FinancialTransaction[]) => {
+    setSelectedIds(current => {
+      const next = new Set(current);
+      const allSelected = dateTransactions.every(transaction => next.has(transaction.id));
+      dateTransactions.forEach(transaction => {
+        if (allSelected) next.delete(transaction.id);
+        else next.add(transaction.id);
+      });
+      return next;
+    });
+  };
+
+  const openDateBatchSettlement = (dateTransactions: FinancialTransaction[]) => {
+    setSelectedIds(new Set(dateTransactions.map(transaction => transaction.id)));
+    setSettlementDate(new Date().toISOString().split('T')[0]);
+    setIsModalOpen(true);
+  };
 
   const parseFile = async (file: File): Promise<any[]> => {
     const fileExt = file.name.split('.').pop()?.toLowerCase();
@@ -246,7 +300,8 @@ export function ReceivablesReconciliation() {
         status: 'RECEBIDO' as const,
         date: settlementDate,
         amount: finalAmount,
-        description: desc
+        description: desc,
+        reconciliationStatus: 'RECONCILED' as const,
       };
       
       // @ts-ignore
@@ -273,7 +328,23 @@ export function ReceivablesReconciliation() {
           </p>
         </div>
         
-        <div className="flex gap-3 items-center">
+        <div className="flex flex-wrap gap-3 items-center justify-end">
+          <div className="flex items-center rounded-xl border border-gray-200 bg-gray-50 p-1 dark:border-zinc-700 dark:bg-zinc-800">
+            <button
+              type="button"
+              onClick={() => setViewMode('BY_DATE')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black transition ${viewMode === 'BY_DATE' ? 'bg-white text-emerald-700 shadow-sm dark:bg-zinc-700 dark:text-emerald-300' : 'text-gray-500 dark:text-zinc-400'}`}
+            >
+              <Layers className="h-4 w-4" /> Por data
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('DETAILED')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black transition ${viewMode === 'DETAILED' ? 'bg-white text-emerald-700 shadow-sm dark:bg-zinc-700 dark:text-emerald-300' : 'text-gray-500 dark:text-zinc-400'}`}
+            >
+              <List className="h-4 w-4" /> Detalhada
+            </button>
+          </div>
           <button
             onClick={() => setIsImportModalOpen(true)}
             className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-xl px-4 py-2 text-sm font-bold hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
@@ -303,11 +374,129 @@ export function ReceivablesReconciliation() {
             className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 shadow-sm"
           >
             <CheckSquare className="w-4 h-4" />
-            Conciliar Lote ({selectedIds.size})
+            Dar baixa nos selecionados ({selectedIds.size})
           </button>
         </div>
       </div>
 
+      {viewMode === 'BY_DATE' && (
+        <div className="flex-1 overflow-auto rounded-xl border border-gray-200 dark:border-zinc-800">
+          <table className="w-full table-fixed text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700">
+                <th className="w-12 p-3 text-center"></th>
+                <th className="p-3 text-xs font-black text-gray-500 dark:text-zinc-400 uppercase">Data prevista</th>
+                <th className="w-32 p-3 text-center text-xs font-black text-gray-500 dark:text-zinc-400 uppercase">Pendentes</th>
+                <th className="w-48 p-3 text-right text-xs font-black text-gray-500 dark:text-zinc-400 uppercase">Total previsto</th>
+                <th className="w-44 p-3 text-center text-xs font-black text-gray-500 dark:text-zinc-400 uppercase">Situação</th>
+                <th className="w-44 p-3 text-right text-xs font-black text-gray-500 dark:text-zinc-400 uppercase">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+              {receivablesByDate.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-10 text-center text-gray-500 dark:text-zinc-400">
+                    Nenhuma conta a receber pendente neste filtro.
+                  </td>
+                </tr>
+              ) : receivablesByDate.map(group => {
+                const expanded = expandedDates.has(group.date);
+                const allSelected = group.transactions.every(transaction => selectedIds.has(transaction.id));
+                const isOverdue = group.date < new Date().toISOString().split('T')[0];
+                return (
+                  <React.Fragment key={group.date}>
+                    <tr className="hover:bg-gray-50/70 dark:hover:bg-zinc-800/40 transition-colors">
+                      <td className="p-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => toggleDateExpansion(group.date)}
+                          aria-label={expanded ? 'Ocultar detalhes do lote' : 'Mostrar detalhes do lote'}
+                          className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-200 dark:hover:bg-zinc-700"
+                        >
+                          <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                        </button>
+                      </td>
+                      <td className="p-3">
+                        <button type="button" onClick={() => toggleDateExpansion(group.date)} className="text-left">
+                          <span className="block font-black text-gray-900 dark:text-white">{group.date.split('-').reverse().join('/')}</span>
+                          <span className="text-[11px] text-gray-500 dark:text-zinc-400">Clique para ver os lançamentos</span>
+                        </button>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                          {group.transactions.length} {group.transactions.length === 1 ? 'item' : 'itens'}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right text-base font-black text-gray-900 dark:text-white">
+                        {group.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${isOverdue ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'}`}>
+                          {isOverdue ? 'Baixa atrasada' : 'Aguardando baixa'}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleDateSelection(group.transactions)}
+                            className={`rounded-lg border px-2.5 py-1.5 text-xs font-black ${allSelected ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-gray-200 text-gray-600 dark:border-zinc-700 dark:text-zinc-300'}`}
+                          >
+                            {allSelected ? 'Selecionado' : 'Selecionar'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openDateBatchSettlement(group.transactions)}
+                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-black text-white hover:bg-emerald-700"
+                          >
+                            Dar baixa
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expanded && (
+                      <tr>
+                        <td colSpan={6} className="bg-gray-50/70 p-0 dark:bg-zinc-950/30">
+                          <div className="border-l-4 border-emerald-400 px-5 py-3">
+                            <div className="divide-y divide-gray-200 dark:divide-zinc-800">
+                              {group.transactions.map(transaction => {
+                                const selected = selectedIds.has(transaction.id);
+                                const match = matchedImportData[transaction.id];
+                                return (
+                                  <button
+                                    key={transaction.id}
+                                    type="button"
+                                    onClick={() => toggleSelect(transaction.id)}
+                                    className="grid w-full grid-cols-[32px_minmax(0,1fr)_140px_140px] items-center gap-3 py-2.5 text-left hover:bg-white/70 dark:hover:bg-zinc-800/50"
+                                  >
+                                    {selected ? <CheckSquare className="h-4 w-4 text-emerald-500" /> : <Square className="h-4 w-4 text-gray-400" />}
+                                    <span className="min-w-0">
+                                      <span className="block truncate text-sm font-bold text-gray-900 dark:text-white">{transaction.description}</span>
+                                      <span className="block truncate text-[11px] text-gray-500 dark:text-zinc-400">Ref: {match?.codigo || transaction.sourceReference || 'não informada'}</span>
+                                    </span>
+                                    <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400">
+                                      {transaction.paymentMethod || transaction.category}
+                                    </span>
+                                    <span className="text-right text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                      {(match?.valorLiquido ?? transaction.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {viewMode === 'DETAILED' && (
       <div className="flex-1 overflow-auto rounded-xl border border-gray-200 dark:border-zinc-800">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -364,7 +553,11 @@ export function ReceivablesReconciliation() {
                       <div className="text-[10px] text-gray-500 uppercase mt-0.5">{tx.category || tx.classification || 'Geral'}</div>
                     </td>
                     <td className="p-3 text-sm font-medium text-gray-600 dark:text-zinc-400">
-                      {match ? <span className="font-bold text-gray-900 dark:text-white">{match.codigo}</span> : "-"}
+                      {match ? (
+                        <span className="font-bold text-gray-900 dark:text-white">{match.codigo}</span>
+                      ) : tx.sourceReference ? (
+                        <span className="font-mono text-xs font-bold text-gray-900 dark:text-white">{tx.sourceReference}</span>
+                      ) : "-"}
                     </td>
                     <td className="p-3 text-sm font-medium text-gray-600 dark:text-zinc-400">
                       {match ? <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded text-xs">{match.bandeira || 'N/A'}</span> : "-"}
@@ -403,6 +596,7 @@ export function ReceivablesReconciliation() {
           )}
         </table>
       </div>
+      )}
 
       {isImportModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">

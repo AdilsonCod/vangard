@@ -114,6 +114,8 @@ export interface MonthlyUnitStats {
   unitId: string;
   month: string; // YYYY-MM
   faturamentoTotal: number;
+  faturamentoServicos?: number;
+  faturamentoProdutos?: number;
   faturamentoAssinatura: number;
   assinantes: number;
   assinantesNovos?: number;
@@ -141,8 +143,14 @@ export interface MonthlyBarberStats {
   faturamentoAvulso?: number; // Faturamento de atendimentos e serviços avulsos
   faturamentoAssinatura: number; // Faturamento de assinaturas / pote
   comissao: number;
+  comissaoServicos?: number;
+  comissaoProdutos?: number;
+  comissaoAssinatura?: number;
   clientesAtendidos: number;
   servicosRealizados: number;
+  servicosAssinatura?: number;
+  fichasAssinatura?: number;
+  percentualAssinatura?: number;
   vendaProdutosValor: number;
   vendasProdutosQtd: number;
   taxaRetorno: number; // %

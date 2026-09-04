@@ -719,11 +719,11 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const addPayment = async (payment: PaymentRecord) => {
-    await setDoc(doc(db, 'payments', payment.id), payment);
+    await setDoc(doc(db, 'payments', payment.id), cleanUndefined(payment));
   };
 
   const updatePayment = async (payment: PaymentRecord) => {
-    await setDoc(doc(db, 'payments', payment.id), payment);
+    await setDoc(doc(db, 'payments', payment.id), cleanUndefined(payment));
   };
 
   const deletePayment = async (id: string) => {

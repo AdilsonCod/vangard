@@ -311,8 +311,14 @@ export function BarbersAnalysisDashboard() {
       faturamentoAvulso: existingAvulso,
       faturamentoAssinatura: existingAssinatura,
       comissao: existing?.comissao || 0,
+      comissaoServicos: existing?.comissaoServicos || 0,
+      comissaoProdutos: existing?.comissaoProdutos || 0,
+      comissaoAssinatura: existing?.comissaoAssinatura || 0,
       clientesAtendidos: existing?.clientesAtendidos || 0,
       servicosRealizados: existing?.servicosRealizados || 0,
+      servicosAssinatura: existing?.servicosAssinatura || 0,
+      fichasAssinatura: existing?.fichasAssinatura || 0,
+      percentualAssinatura: existing?.percentualAssinatura || 0,
       vendaProdutosValor: existing?.vendaProdutosValor || 0,
       vendasProdutosQtd: existing?.vendasProdutosQtd || 0,
       taxaRetorno: existing?.taxaRetorno || 0,
@@ -337,6 +343,11 @@ export function BarbersAnalysisDashboard() {
     } else if (field === 'faturamentoTotal') {
       updatePayload.faturamentoTotal = val;
       updatePayload.faturamentoAvulso = Math.max(0, val - (updatePayload.faturamentoAssinatura || 0));
+    } else if (['comissaoServicos', 'comissaoProdutos', 'comissaoAssinatura'].includes(field)) {
+      updatePayload[field] = val;
+      updatePayload.comissao = (updatePayload.comissaoServicos || 0)
+        + (updatePayload.comissaoProdutos || 0)
+        + (updatePayload.comissaoAssinatura || 0);
     } else {
       updatePayload[field] = val;
     }
@@ -666,8 +677,10 @@ export function BarbersAnalysisDashboard() {
                        {unitBarbers.map(barber => {
                           const statsId = `${monthStr}_${barber.id}`;
                           const bStats = monthlyBarberStats?.find(s => s.id === statsId) || {
-                            faturamentoTotal: 0, faturamentoAvulso: 0, faturamentoAssinatura: 0, comissao: 0, clientesAtendidos: 0,
-                            servicosRealizados: 0, vendaProdutosValor: 0, vendasProdutosQtd: 0, taxaRetorno: 0,
+                            faturamentoTotal: 0, faturamentoAvulso: 0, faturamentoAssinatura: 0, comissao: 0,
+                            comissaoServicos: 0, comissaoProdutos: 0, comissaoAssinatura: 0, clientesAtendidos: 0,
+                            servicosRealizados: 0, servicosAssinatura: 0, fichasAssinatura: 0, percentualAssinatura: 0,
+                            vendaProdutosValor: 0, vendasProdutosQtd: 0, taxaRetorno: 0,
                             clientesNovos: 0, clientesSemPreferencia: 0, extraCounts: {}, extraValues: {}
                           };
                           
@@ -713,8 +726,14 @@ export function BarbersAnalysisDashboard() {
                                       <CardInput label="Fat. Total (Avulso+Assin)" value={fatTotal} onChange={v => handleUpdate(barber.id, monthStr, 'faturamentoTotal', v)} prefix="R$" />
                                       <CardInput label="Fat. Avulso" value={fatAvulso} onChange={v => handleUpdate(barber.id, monthStr, 'faturamentoAvulso', v)} prefix="R$" />
                                       <CardInput label="Fat. Assinaturas" value={fatAssinatura} onChange={v => handleUpdate(barber.id, monthStr, 'faturamentoAssinatura', v)} prefix="R$" />
+                                      <CardInput label="% Fat. Assinaturas" value={bStats.percentualAssinatura || 0} onChange={v => handleUpdate(barber.id, monthStr, 'percentualAssinatura', v)} suffix="%" />
+                                      <CardInput label="Serviços Assinatura" value={bStats.servicosAssinatura || 0} onChange={v => handleUpdate(barber.id, monthStr, 'servicosAssinatura', v)} suffix="un" />
+                                      <CardInput label="Fichas Assinatura" value={bStats.fichasAssinatura || 0} onChange={v => handleUpdate(barber.id, monthStr, 'fichasAssinatura', v)} suffix="un" />
                                       <CardInput label="Ticket Médio" value={ticketMedio} prefix="R$" isReadOnly />
                                       <CardInput label="Comissão" value={bStats.comissao} onChange={v => handleUpdate(barber.id, monthStr, 'comissao', v)} prefix="R$" />
+                                      <CardInput label="Comissão Serviços" value={bStats.comissaoServicos || 0} onChange={v => handleUpdate(barber.id, monthStr, 'comissaoServicos', v)} prefix="R$" />
+                                      <CardInput label="Comissão Produtos" value={bStats.comissaoProdutos || 0} onChange={v => handleUpdate(barber.id, monthStr, 'comissaoProdutos', v)} prefix="R$" />
+                                      <CardInput label="Comissão Assinaturas" value={bStats.comissaoAssinatura || 0} onChange={v => handleUpdate(barber.id, monthStr, 'comissaoAssinatura', v)} prefix="R$" />
                                       <CardInput label="Clientes Atendidos" value={bStats.clientesAtendidos} onChange={v => handleUpdate(barber.id, monthStr, 'clientesAtendidos', v)} suffix="un" />
                                       <CardInput label="Serviços Realizados" value={bStats.servicosRealizados} onChange={v => handleUpdate(barber.id, monthStr, 'servicosRealizados', v)} suffix="un" />
                                       <CardInput label="Vendas Produtos Qtd" value={bStats.vendasProdutosQtd} onChange={v => handleUpdate(barber.id, monthStr, 'vendasProdutosQtd', v)} suffix="un" />

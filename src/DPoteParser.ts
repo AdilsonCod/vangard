@@ -3,7 +3,9 @@ import Papa from "papaparse";
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+if (typeof pdfjsWorker === 'string') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+}
 
 export interface DPoteBarberData {
   name: string;
@@ -22,198 +24,100 @@ export interface DPoteReport {
 export async function parseDPotePDF(file: File): Promise<DPoteReport> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  
-  let allLines: { y: number; text: string; x: number }[] = [];
+  type PdfRow = { page: number; y: number; items: { x: number; text: string }[]; text: string };
+  const rows: PdfRow[] = [];
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const textContent = await page.getTextContent();
-    
-    // Group by Y coordinate
-    const items = textContent.items as any[];
-    
-    // Round Y to nearest integer
-    items.forEach(item => {
-      if (item.str.trim() !== '') {
-        allLines.push({
-          y: Math.round(item.transform[5]),
-          x: Math.round(item.transform[4]),
-          text: item.str.trim()
-        });
+    const pageRows: { y: number; items: { x: number; text: string }[] }[] = [];
+
+    for (const item of textContent.items as any[]) {
+      const text = String(item.str || '').trim();
+      if (!text) continue;
+      const y = Math.round(item.transform[5]);
+      const x = Math.round(item.transform[4]);
+      let row = pageRows.find(candidate => Math.abs(candidate.y - y) <= 3);
+      if (!row) {
+        row = { y, items: [] };
+        pageRows.push(row);
       }
-    });
-  }
-
-  allLines.sort((a, b) => b.y - a.y || a.x - b.x);
-
-  const groupedLines: { y: number; items: {x: number, text: string}[] }[] = [];
-  let currentY = -1000;
-  
-  for (const item of allLines) {
-    if (Math.abs(item.y - currentY) > 3) {
-      currentY = item.y;
-      groupedLines.push({ y: currentY, items: [] });
+      row.items.push({ x, text });
     }
-    groupedLines[groupedLines.length - 1].items.push(item);
+
+    pageRows
+      .sort((a, b) => b.y - a.y)
+      .forEach(row => {
+        row.items.sort((a, b) => a.x - b.x);
+        rows.push({
+          page: pageNum,
+          y: row.y,
+          items: row.items,
+          text: row.items.map(item => item.text).join(' '),
+        });
+      });
   }
 
-  groupedLines.forEach(line => {
-    line.items.sort((a, b) => a.x - b.x);
-  });
+  const parseCurrency = (value: string) =>
+    Number.parseFloat(value.replace(/R\$\s*/gi, '').replace(/\./g, '').replace(',', '.')) || 0;
+  const parsePercentage = (value: string) =>
+    Number.parseFloat(value.replace('%', '').replace(',', '.')) || 0;
 
-  const lines = groupedLines.map(line => line.items.map(i => i.text).join('   '));
-  
   let totalAssinaturas = 0;
   const barbers: DPoteBarberData[] = [];
   let currentBarber: DPoteBarberData | null = null;
-  
-  const parseCurrency = (str: string) => {
-    return parseFloat(str.replace(/R\$\s*/g, '').replace(/\./g, '').replace(',', '.'));
-  };
 
-  const parsePercentage = (str: string) => {
-    const match = str.match(/([\d,]+)%/);
-    if (match) {
-      return parseFloat(match[1].replace(',', '.'));
+  rows.forEach((row, index) => {
+    const normalized = row.text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+    if (normalized.includes('valor total das assinaturas')) {
+      const currency = row.text.match(/R\$\s*[\d.,]+/i);
+      if (currency) totalAssinaturas = parseCurrency(currency[0]);
+      return;
     }
-    return 0;
-  };
 
-  // Keep track of the raw text order too, just in case
-  const rawTextOrder = allLines.sort((a, b) => a.y === b.y ? a.x - b.x : b.y - a.y).map(i => i.text);
-
-  // Let's iterate raw lines grouped by Y for better heuristics
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    
-    if (line.toLowerCase().includes('valor total das assinaturas')) {
-      const match = line.match(/R\$\s*[\d\.,]+/);
-      if (match) {
-        totalAssinaturas = parseCurrency(match[0]);
-      } else {
-        // The value might be on the same Y but grouped incorrectly, or on the next line
-        if (i + 1 < lines.length && lines[i+1].includes('R$')) {
-           const nextMatch = lines[i+1].match(/R\$\s*[\d\.,]+/);
-           if (nextMatch) totalAssinaturas = parseCurrency(nextMatch[0]);
-        }
+    if (normalized.includes('comissao total')) {
+      const previousRow = rows[index - 1];
+      const name = previousRow?.items.find(item => item.x < 250)?.text.trim() || '';
+      const currency = row.text.match(/R\$\s*[\d.,]+/i);
+      const percentage = row.text.match(/\(([\d.,]+)%\)/);
+      if (name && currency && percentage) {
+        currentBarber = {
+          name,
+          commission: parseCurrency(currency[0]),
+          potPercentage: parsePercentage(percentage[1]),
+          totalServices: 0,
+          totalTokens: 0,
+          services: [],
+        };
+        barbers.push(currentBarber);
       }
+      return;
     }
-    
-    if (line.toLowerCase().includes('comissão total')) {
-      // Find name. Usually it's the line immediately preceding "Comissão total"
-      // Wait, in the OCR it shows: "Denis Lima Santiago" then "Comissão total"
-      let name = i > 0 ? lines[i-1].trim() : 'Desconhecido';
-      // clean name if it has other stuff
-      
-      const valMatch = line.match(/R\$\s*[\d\.,]+/);
-      const percMatch = line.match(/\(([\d,]+)%\)/);
-      
-      if (valMatch && percMatch) {
-         currentBarber = {
-           name: name,
-           commission: parseCurrency(valMatch[0]),
-           potPercentage: parsePercentage(percMatch[1]),
-           totalServices: 0,
-           totalTokens: 0,
-           services: []
-         };
-         barbers.push(currentBarber);
-      } else if (i + 1 < lines.length) {
-         // Sometimes the value is on the next line
-         const nextLine = lines[i+1];
-         const nValMatch = nextLine.match(/R\$\s*[\d\.,]+/);
-         const nPercMatch = nextLine.match(/\(([\d,]+)%\)/);
-         if (nValMatch && nPercMatch) {
-           currentBarber = {
-             name: name,
-             commission: parseCurrency(nValMatch[0]),
-             potPercentage: parsePercentage(nPercMatch[1]),
-             totalServices: 0,
-             totalTokens: 0,
-             services: []
-           };
-           barbers.push(currentBarber);
-         }
+
+    if (currentBarber && row.items[0]?.text.startsWith('- ')) {
+      const numericValues = row.items
+        .filter(item => item.x > 450 && /^\d+$/.test(item.text))
+        .map(item => Number.parseInt(item.text, 10));
+      if (numericValues.length >= 2) {
+        currentBarber.services.push({
+          name: row.items[0].text.replace(/^-\s*/, '').trim(),
+          quantity: numericValues[0],
+          tokens: numericValues[1],
+        });
       }
-    }
-    
-    if (currentBarber && line.startsWith('- ')) {
-       const parts = line.split('   ').map(p => p.trim()).filter(p => p);
-       if (parts.length >= 3) {
-         currentBarber.services.push({
-           name: parts[0].substring(2).trim(),
-           quantity: parseInt(parts[1]) || 0,
-           tokens: parseInt(parts[2]) || 0
-         });
-       } else {
-         const match = line.match(/- (.+?)\s+(\d+)\s+(\d+)$/);
-         if (match) {
-           currentBarber.services.push({
-             name: match[1].trim(),
-             quantity: parseInt(match[2]) || 0,
-             tokens: parseInt(match[3]) || 0
-           });
-         }
-       }
-    }
-  }
-
-  // Fallback for parsing totalAssinaturas if Y grouping failed
-  if (totalAssinaturas === 0) {
-     for (let i = 0; i < rawTextOrder.length; i++) {
-        if (rawTextOrder[i].toLowerCase() === 'valor total das assinaturas') {
-           // Look ahead for currency
-           for(let j = i+1; j < Math.min(i+5, rawTextOrder.length); j++) {
-              if (rawTextOrder[j].startsWith('R$')) {
-                 totalAssinaturas = parseCurrency(rawTextOrder[j]);
-                 break;
-              }
-           }
-        }
-     }
-  }
-
-  // Fallback for barbers if Y grouping failed
-  if (barbers.length === 0) {
-     for (let i = 0; i < rawTextOrder.length; i++) {
-        if (rawTextOrder[i].toLowerCase() === 'comissão total') {
-           let name = rawTextOrder[i-1] || 'Desconhecido';
-           let commission = 0;
-           let perc = 0;
-           for(let j = i+1; j < Math.min(i+5, rawTextOrder.length); j++) {
-              if (rawTextOrder[j].startsWith('R$')) {
-                 commission = parseCurrency(rawTextOrder[j]);
-                 const pMatch = rawTextOrder[j].match(/\(([\d,]+)%\)/);
-                 if (pMatch) perc = parsePercentage(pMatch[1]);
-                 break;
-              }
-           }
-           if (commission > 0) {
-              currentBarber = { name, commission, potPercentage: perc, totalServices: 0, totalTokens: 0, services: [] };
-              barbers.push(currentBarber);
-           }
-        } else if (rawTextOrder[i].startsWith('- ') && currentBarber) {
-           // services in raw text order might be: "- Corte", "28", "1120"
-           let sName = rawTextOrder[i].substring(2).trim();
-           let qty = parseInt(rawTextOrder[i+1]) || 0;
-           let tokens = parseInt(rawTextOrder[i+2]) || 0;
-           if (qty > 0 || tokens > 0) {
-              currentBarber.services.push({ name: sName, quantity: qty, tokens });
-           }
-        }
-     }
-  }
-
-  barbers.forEach(b => {
-    if (b.totalServices === 0) {
-      b.totalServices = b.services.reduce((acc, s) => acc + s.quantity, 0);
-    }
-    if (b.totalTokens === 0) {
-      b.totalTokens = b.services.reduce((acc, s) => acc + s.tokens, 0);
     }
   });
-  const validBarbers = barbers.filter(b => b.commission > 0 && b.potPercentage > 0);
-  return { totalAssinaturas, barbers: validBarbers };
+
+  barbers.forEach(barber => {
+    barber.totalServices = barber.services.reduce((sum, service) => sum + service.quantity, 0);
+    barber.totalTokens = barber.services.reduce((sum, service) => sum + service.tokens, 0);
+  });
+
+  return {
+    totalAssinaturas,
+    barbers: barbers.filter(barber => barber.commission > 0 && barber.potPercentage > 0),
+  };
 }
 
 export function extractDPoteFrom2DArray(rows: any[][]): DPoteReport {

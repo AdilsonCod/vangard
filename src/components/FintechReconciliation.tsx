@@ -97,6 +97,7 @@ function resolveConciliationNsu(
 export function FintechReconciliation({ onSettlementComplete }: FintechReconciliationProps) {
   const {
     addTransaction,
+    transactions,
     currentUser,
     systemUnits,
     finClassifications,
@@ -582,15 +583,30 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   };
 
   const handleSettleAll = async () => {
-    const conciliatedItems = items.filter(item =>
-      isSettlementEligible(item) && !settledItems.has(item.id)
-    );
-    if (conciliatedItems.length === 0) {
-      showToast('Nenhum recebimento confirmado novo para efetivar. Para guardar o relatório, use “Salvar Conciliação”.');
-      return;
+    try {
+      const conciliatedItems = items.filter(item =>
+        isSettlementEligible(item) && !settledItems.has(item.id)
+      );
+
+      if (conciliatedItems.length > 0) {
+        await processSettlement(conciliatedItems);
+      }
+
+      const pendingReceivablesCount = await syncPendingReceivables();
+      if (pendingReceivablesCount > 0) {
+        showToast(
+          `${conciliatedItems.length} recebimento(s) efetivado(s) no Caixa e ${pendingReceivablesCount} pendência(s) enviada(s) para Baixa de Recebimentos.`
+        );
+        return;
+      }
+
+      if (conciliatedItems.length === 0) {
+        showToast('Nenhum recebimento confirmado ou pendente novo para efetivar. Para guardar o relatório, use “Salvar Conciliação”.');
+      }
+    } catch (error) {
+      console.error('Erro ao efetivar a conciliação:', error);
+      showToast('Não foi possível encaminhar todos os recebimentos. Tente efetivar novamente.');
     }
-    
-    await processSettlement(conciliatedItems);
   };
 
   const handleSettleDailyBatch = async (date: string) => {
@@ -656,6 +672,61 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       console.error('Erro ao efetivar conciliação no Caixa:', error);
       showToast('Erro ao efetivar os recebimentos no Caixa. Nenhum item foi marcado como salvo.');
     }
+  };
+
+  const syncPendingReceivables = async () => {
+    const unitId = selectedUnidade || currentUser?.unit || 'ALL';
+    const pendingItems = items.filter(item => {
+      if (!item.dataLiquidacaoPrevista || item.dataLiquidacaoEfetiva || item.valorLiquido <= 0) return false;
+      if (item.status === 'PENDENTE_LIQUIDACAO') return true;
+      return item.regra === 'REGRA_1_CLUBE_PREVISAO' &&
+        (item.status === 'CONCILIADO' || item.status === 'DIVERGENCIA_TAXA');
+    });
+
+    if (pendingItems.length === 0) return 0;
+
+    const accountingByPaymentType = new Map<string, Awaited<ReturnType<typeof ensureRevenueAccounting>>>();
+    let syncedCount = 0;
+
+    for (const item of pendingItems) {
+      const transactionId = buildSettlementTransactionId(unitId, item.id);
+      const existingTransaction = transactions.find(transaction => transaction.id === transactionId);
+
+      // Uma conciliação salva novamente nunca deve reabrir um recebimento já baixado.
+      if (existingTransaction?.status === 'RECEBIDO') continue;
+
+      const paymentType = item.regra === 'REGRA_1_CLUBE_PREVISAO'
+        ? 'Assinatura'
+        : getPaymentTypeName(item.modalidadeOuPlano);
+      if (!accountingByPaymentType.has(paymentType)) {
+        accountingByPaymentType.set(paymentType, await ensureRevenueAccounting(paymentType));
+      }
+      const accounting = accountingByPaymentType.get(paymentType)!;
+      const paymentMetadata = item.regra === 'REGRA_1_CLUBE_PREVISAO'
+        ? { paymentMethod: 'SUBSCRIPTION' as const, sourceChannel: 'SUBSCRIPTION_GATEWAY' as const }
+        : getPaymentMetadata(item.modalidadeOuPlano);
+
+      await addTransaction({
+        id: transactionId,
+        unitId,
+        type: 'INCOME',
+        category: 'Recebíveis pendentes',
+        description: `[A receber] ${item.clienteOuDesc} - ${item.modalidadeOuPlano}`,
+        amount: item.valorLiquido,
+        date: item.dataVenda,
+        dueDate: item.dataLiquidacaoPrevista,
+        status: 'PENDENTE',
+        classification: accounting.classificationId,
+        subclassification: accounting.subclassificationId,
+        ...paymentMetadata,
+        movementNature: 'REVENUE',
+        reconciliationStatus: 'AWAITING_SETTLEMENT',
+        sourceReference: item.identificador,
+      });
+      syncedCount += 1;
+    }
+
+    return syncedCount;
   };
 
   const handleSaveSession = async () => {
@@ -1133,6 +1204,17 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
             Divergência
           </span>
         );
+      case 'NAO_ENCONTRADO_ADQUIRENTE':
+      case 'NAO_ENCONTRADO_PDV':
+        return (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300 border border-red-300/40"
+            title={status === 'NAO_ENCONTRADO_ADQUIRENTE' ? 'Venda do PDV não encontrada na adquirente' : 'Transação da adquirente não encontrada no PDV'}
+          >
+            <AlertTriangle className="w-3 h-3 shrink-0" />
+            {status === 'NAO_ENCONTRADO_ADQUIRENTE' ? 'Falta na Rede' : 'Falta no PDV'}
+          </span>
+        );
       case 'PIX_CONTA_BANCARIA':
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-300/40">
@@ -1300,7 +1382,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
             className="px-4 py-2.5 bg-emerald-600 text-white font-bold text-sm rounded-xl hover:bg-emerald-700 shadow-sm flex items-center gap-2 transition disabled:opacity-50"
           >
             <CheckCircle className="w-4 h-4" />
-            Efetivar no Caixa
+            Efetivar Conciliação
           </button>
           <div className="relative">
             <button
@@ -2882,33 +2964,45 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                 </div>
               )}
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
+              <div className="overflow-hidden">
+                <table className="w-full table-fixed text-left border-collapse text-[10px] xl:text-xs">
+                  <colgroup>
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '10%' }} />
+                    <col style={{ width: '10%' }} />
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '10%' }} />
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '11%' }} />
+                    <col style={{ width: '16%' }} />
+                    <col style={{ width: '7%' }} />
+                  </colgroup>
                   <thead>
-                    <tr className="border-b border-gray-200 dark:border-zinc-800 text-[11px] font-black uppercase text-gray-500 dark:text-zinc-400 tracking-wider bg-gray-50 dark:bg-zinc-800/50">
-                      <th className="py-3 px-4">Data da Venda</th>
-                      <th className="py-3 px-4">Forma / Modalidade</th>
-                      <th className="py-3 px-4 text-right">Total PDV (Faturado)</th>
-                      <th className="py-3 px-4 text-right">Total Rede (Bruto)</th>
-                      <th className="py-3 px-4 text-right">Desconto MDR</th>
-                      <th className="py-3 px-4 text-right font-black text-emerald-600 dark:text-emerald-400">Lote Líquido (Rede)</th>
-                      <th className="py-3 px-4 text-right">Diferença Bruta</th>
-                      <th className="py-3 px-4 text-center">Status</th>
-                      <th className="py-3 px-4">Diagnóstico</th>
-                      <th className="py-3 px-4 text-center">Ações</th>
+                    <tr className="border-b border-gray-200 dark:border-zinc-800 text-[9px] xl:text-[10px] font-black uppercase text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-800/50 leading-tight">
+                      <th className="py-2.5 px-2">Data</th>
+                      <th className="py-2.5 px-2">Modalidade</th>
+                      <th className="py-2.5 px-2 text-right">PDV faturado</th>
+                      <th className="py-2.5 px-2 text-right">Rede bruto</th>
+                      <th className="py-2.5 px-2 text-right">MDR</th>
+                      <th className="py-2.5 px-2 text-right font-black text-emerald-600 dark:text-emerald-400">Rede líquido</th>
+                      <th className="py-2.5 px-2 text-right">Diferença</th>
+                      <th className="py-2.5 px-2 text-center">Status</th>
+                      <th className="py-2.5 px-2">Diagnóstico</th>
+                      <th className="py-2.5 px-1 text-center">Ação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
                     {filteredBatches.map((batch) => (
                       <tr key={batch.id} className="hover:bg-gray-50/70 dark:hover:bg-zinc-800/40 transition">
-                        <td className="py-3 px-4 font-extrabold text-gray-900 dark:text-white whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                        <td className="py-2.5 px-2 font-extrabold text-gray-900 dark:text-white whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="hidden w-3 h-3 text-gray-400 xl:block" />
                             {batch.dataVenda}
                           </div>
                         </td>
-                        <td className="py-3 px-4 font-bold text-gray-800 dark:text-zinc-200">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-black tracking-wide ${
+                        <td className="py-2.5 px-2 font-bold text-gray-800 dark:text-zinc-200">
+                          <span className={`inline-flex max-w-full items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-black ${
                             batch.modalidade.toUpperCase().includes('CRED')
                               ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200/80 dark:border-blue-900/60'
                               : batch.modalidade.toUpperCase().includes('DEB')
@@ -2933,7 +3027,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                             {batch.modalidade}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-right">
+                        <td className="py-2.5 px-2 text-right">
                           <span className="font-extrabold text-gray-900 dark:text-white block">
                             {batch.totalPdv.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                           </span>
@@ -2941,7 +3035,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                             {batch.qtdPdv} {batch.qtdPdv === 1 ? 'venda' : 'vendas'}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-right">
+                        <td className="py-2.5 px-2 text-right">
                           <span className="font-extrabold text-gray-900 dark:text-white block">
                             {batch.totalRedeBruto > 0 ? (
                               batch.totalRedeBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -2955,7 +3049,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-right">
+                        <td className="py-2.5 px-2 text-right">
                           {batch.totalTaxaMdr > 0 ? (
                             <>
                               <span className="text-amber-600 dark:text-amber-400 font-bold block">
@@ -2969,7 +3063,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                             <span className="text-gray-400 text-[11px]">R$ 0,00</span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-right font-black text-emerald-600 dark:text-emerald-400 text-sm whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-right font-black text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                           {batch.totalRedeLiquido > 0 ? (
                             batch.totalRedeLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                           ) : (
@@ -2978,7 +3072,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-right whitespace-nowrap">
                           {batch.modalidade === 'Crédito' || batch.modalidade === 'Débito' || (batch.modalidade === 'PIX' && batch.totalRedeBruto > 0) ? (
                             <span className={`inline-block px-2 py-0.5 rounded font-bold text-xs ${
                               batch.status === 'CONCILIADO'
@@ -2991,24 +3085,24 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                             <span className="text-gray-400 text-xs">-</span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-2.5 px-1 text-center">
                           {renderStatusBadge(batch.status)}
                         </td>
-                        <td className="py-3 px-4 text-xs text-gray-600 dark:text-zinc-300 min-w-[200px]">
+                        <td className="py-2.5 px-2 text-[10px] leading-snug text-gray-600 dark:text-zinc-300 break-words">
                           {batch.diagnostico || (batch.status === 'CONCILIADO' ? 'Lote 100% conciliado' : 'Divergência detectada')}
                         </td>
-                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                        <td className="py-2.5 px-1 text-center">
                           {settledItems.has(batch.id) ? (
                             <span className="text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1 font-bold text-[11px]">
-                              <CheckCircle className="w-3.5 h-3.5" /> Lote Salvo
+                              <CheckCircle className="w-3.5 h-3.5" /> <span className="hidden xl:inline">Salvo</span>
                             </span>
                           ) : batch.status === 'CONCILIADO' && batch.totalRedeLiquido > 0 ? (
                             <button
                               onClick={() => handleSettleBatch(batch.id)}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition text-xs shadow-sm flex items-center gap-1 mx-auto"
+                              className="p-1.5 xl:px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition text-[10px] shadow-sm flex items-center gap-1 mx-auto"
                               title="Salvar Lote no Caixa Oficial"
                             >
-                              <Save className="w-3 h-3" /> Salvar Lote
+                              <Save className="w-3 h-3" /> <span className="hidden xl:inline">Salvar</span>
                             </button>
                           ) : (
                             <span className="text-gray-400 font-medium text-[11px]">

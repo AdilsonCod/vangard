@@ -31,6 +31,7 @@ import { CashClosing, FinancialTransaction } from '../types';
 import { BankReconciliation } from './BankReconciliation';
 import { ReceivablesReconciliation } from './ReceivablesReconciliation';
 import { FintechReconciliation } from './FintechReconciliation';
+import { ExpenseSettlement } from './ExpenseSettlement';
 import { getLatestFinancialPeriod } from '../utils/financialPeriods';
 import { isValidFinancialAmountInput, parseFinancialAmount } from '../utils/financialAmount';
 
@@ -116,7 +117,7 @@ function formatTransactionDate(value?: string): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('pt-BR');
 }
 
-export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'CONCILIACAO_FINTECH' }) {
+export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'DESPESAS' | 'CONCILIACAO_FINTECH' }) {
   const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, cashClosings, currentUser, addTransaction, updateTransaction, deleteTransaction, saveCashClosing } = useStore();
   
   const activeTab = currentTab;
@@ -1489,6 +1490,10 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
 
       {activeTab === 'RECEBIMENTOS' && (
         <ReceivablesReconciliation />
+      )}
+
+      {activeTab === 'DESPESAS' && (
+        <ExpenseSettlement />
       )}
 
       {activeTab === 'CAIXA' && (

@@ -2,7 +2,9 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+if (typeof pdfjsWorker === 'string') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+}
 
 export interface CashbarberProductReport {
   barbers: {
@@ -41,7 +43,7 @@ export async function parseCashbarberProductsPDF(file: File): Promise<Cashbarber
   let xProf = -1, xCat = -1, xQtd = -1, xVendido = -1, xComissao = -1;
   for (const item of allItems) {
     const t = item.text.toLowerCase();
-    if (t === "profissional") xProf = item.x;
+    if (t === "profissional" && item.x > 120) xProf = item.x;
     if (t === "categoria") xCat = item.x;
     if (t === "quantidade" || t === "qtd") xQtd = item.x;
     if (t === "vendido" || t === "total vendido") xVendido = item.x;
@@ -95,10 +97,20 @@ export async function parseCashbarberProductsPDF(file: File): Promise<Cashbarber
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const pageItems = allItems.filter(i => i.page === pageNum);
     
-    const pros = extractColumn(pageItems, xProf, 40).filter(p => {
+    const rawPros = extractColumn(pageItems, xProf, 40).filter(p => {
       const t = p.text.toLowerCase();
       return t !== "profissional" && t !== "total geral" && p.text.length > 2;
     });
+    const pros: { text: string; y: number }[] = [];
+    for (const candidate of rawPros) {
+      const previous = pros[pros.length - 1];
+      if (previous && Math.abs(previous.y - candidate.y) < 25) {
+        previous.text = `${previous.text} ${candidate.text}`.trim();
+        previous.y = (previous.y + candidate.y) / 2;
+      } else {
+        pros.push({ ...candidate });
+      }
+    }
     const cats = extractColumn(pageItems, xCat, 50).filter(c => {
       const t = c.text.toLowerCase();
       return t !== "categoria" && c.text.length > 2;
