@@ -20,6 +20,7 @@ import { db } from "../firebase";
 import { hydrateXlsxSharedStrings } from "../utils/xlsxSharedStrings";
 import { parseDPotePDF, DPoteReport, parseDPoteSpreadsheet } from "../DPoteParser";
 import { parseCashbarberProductsSpreadsheet, parseCashbarberProductsPDF, CashbarberProductReport } from "../CashbarberParser";
+import { AppCard, AppPageHeader, appControlClass } from "./ui/AppPrimitives";
 
 export default function DataImporterView() {
   const {
@@ -1255,18 +1256,14 @@ if (importType === "CASHBARBER_PRODUTOS") {
 
     return (
       <div className="space-y-6 max-w-6xl mx-auto">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
-            <Upload className="w-6 h-6 text-[var(--theme-color)]" />
-            Importador de Planilhas
-          </h2>
-          <p className="text-gray-500 dark:text-zinc-400 mt-1">
-            Importe Excel, CSV, TXT ou PDF com seleção de aba, identificação de
-            cabeçalho, validação prévia e proteção contra duplicidade.
-          </p>
-        </div>
+        <AppPageHeader
+          eyebrow="Dados"
+          title="Importador de relatórios"
+          description="Importe Excel, CSV, TXT ou PDF com identificação automática, validação prévia e proteção contra duplicidade."
+          icon={<Upload className="h-5 w-5" />}
+        />
 
-        <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6">
+        <AppCard className="p-5 sm:p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
             <div>
               <label className="block text-sm font-semibold text-gray-700 dark:text-zinc-300 mb-2">
@@ -1278,7 +1275,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
                   setImportType(e.target.value as any);
                   resetImportResult();
                 }}
-                className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-700 rounded-lg p-2.5 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-[var(--theme-color)] focus:border-transparent outline-none"
+                className={`${appControlClass} w-full bg-gray-50 dark:bg-zinc-950`}
               >
                 <option value="SERVICOS">Barbeiros - Serviços e comissões (CSV)</option>
                 <option value="CASHBARBER_PRODUTOS">Barbeiros - Produtos e comissões (PDF/Planilha)</option>
@@ -1303,7 +1300,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
               <select
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-700 rounded-lg p-2.5 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-[var(--theme-color)] focus:border-transparent outline-none"
+                className={`${appControlClass} w-full bg-gray-50 dark:bg-zinc-950`}
               >
                 <option value="01">Janeiro</option>
                 <option value="02">Fevereiro</option>
@@ -1327,7 +1324,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
               <select
                 value={targetUnitId}
                 onChange={(e) => setTargetUnitId(e.target.value)}
-                className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-700 rounded-lg p-2.5 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-[var(--theme-color)] focus:border-transparent outline-none"
+                className={`${appControlClass} w-full bg-gray-50 dark:bg-zinc-950`}
               >
                 <option value="">Selecione a Unidade</option>
                 {systemUnits.map((u) => (
@@ -1345,7 +1342,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
               <select
                 value={selectedYear}
                 onChange={(e) => setSelectedYear(e.target.value)}
-                className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-700 rounded-lg p-2.5 text-gray-900 dark:text-zinc-100 focus:ring-2 focus:ring-[var(--theme-color)] focus:border-transparent outline-none"
+                className={`${appControlClass} w-full bg-gray-50 dark:bg-zinc-950`}
               >
                 {[2023, 2024, 2025, 2026, 2027].map((y) => (
                   <option key={y} value={y}>
@@ -1366,7 +1363,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
                 accept=".csv, .xlsx, .xls, .txt, .pdf"
                 ref={fileInputRef}
                 onChange={handleFileUpload}
-                className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-700 rounded-lg p-2 text-gray-900 dark:text-zinc-100"
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2 text-sm text-gray-900 outline-none transition file:mr-3 file:rounded-lg file:border-0 file:bg-gray-900 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-white focus:border-[var(--theme-color)] dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:file:bg-white dark:file:text-zinc-900"
               />
             </div>
             {availableSheets.length > 0 && !["DPOTE_PDF", "CASHBARBER_PRODUTOS"].includes(importType) && (
@@ -1380,7 +1377,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
                     setSelectedSheet(e.target.value);
                     resetImportResult();
                   }}
-                  className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-700 rounded-lg p-2.5 text-gray-900 dark:text-zinc-100"
+                  className={`${appControlClass} w-full bg-gray-50 dark:bg-zinc-950`}
                 >
                   {availableSheets.map((sheet) => (
                     <option key={sheet} value={sheet}>{sheet}</option>
@@ -1391,7 +1388,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
             <button
               onClick={processFile}
               disabled={!file || isParsing}
-              className="w-full md:w-auto px-6 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-gray-800 disabled:opacity-50 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 md:w-auto"
             >
               {isParsing ? (
                 <RefreshCcw className="w-4 h-4 animate-spin" />
@@ -1401,7 +1398,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
               Ler Arquivo
             </button>
           </div>
-        </div>
+        </AppCard>
 
         {errorMessage && (
           <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg flex items-start justify-between gap-3">

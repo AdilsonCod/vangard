@@ -3,6 +3,7 @@ import { Bot, AlertTriangle, CheckCircle, Info, ArrowRight, Loader2, DollarSign,
 import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { SocialMediaBoard } from './SocialMediaBoard';
+import { AppPageHeader } from './ui/AppPrimitives';
 
 interface AlertaGargalo {
   tipo: 'TRAFEGO' | 'CONTEUDO' | 'OPERACIONAL';
@@ -140,6 +141,12 @@ export function MarketingDashboard() {
 
   return (
     <div className="space-y-6">
+      <AppPageHeader
+        eyebrow="Análises"
+        title="Marketing e crescimento"
+        description="Acompanhe tráfego, retorno dos investimentos e planejamento das redes sociais."
+        icon={<Bot className="h-5 w-5" />}
+      />
       <div className="flex gap-4 border-b border-gray-200 dark:border-zinc-800 font-sans overflow-x-auto">
         <button
           onClick={() => setActiveTab('ANALYSIS')}

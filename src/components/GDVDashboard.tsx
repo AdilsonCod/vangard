@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import { ChevronLeft, ChevronRight, TrendingUp, Calendar, AlertCircle, Edit2, X, Save, Settings } from 'lucide-react';
 import { GDVEntry, GDVUnitData, GDVSettings } from '../types';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, BarChart, Bar } from 'recharts';
+import { AppPageHeader } from './ui/AppPrimitives';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -220,7 +221,14 @@ export function GDVDashboard() {
   };
 
   return (
-    <div className="bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 rounded-2xl shadow-sm border dark:border-zinc-800 p-6 animate-in fade-in duration-300 overflow-x-auto relative">
+    <div className="space-y-6">
+      <AppPageHeader
+        eyebrow="Operação"
+        title="Indicadores SVA"
+        description="Acompanhe a evolução diária, recorrências e objetivos de cada unidade."
+        icon={<TrendingUp className="h-5 w-5" />}
+      />
+    <div className="relative overflow-x-auto rounded-2xl border border-gray-200 bg-white p-5 text-gray-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 sm:p-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 pb-4 border-b border-gray-200 dark:border-zinc-800 gap-4">
         <div>
            <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
@@ -1020,6 +1028,6 @@ export function GDVDashboard() {
       )}
 
     </div>
+    </div>
   );
 }
-

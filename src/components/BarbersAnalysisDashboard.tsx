@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import { ChevronLeft, ChevronRight, Users, TrendingUp, ChevronDown, ChevronUp, Calendar, User as UserIcon, Sparkles, Trash2 } from 'lucide-react';
 import { MonthlyBarberStats, User } from '../types';
 import { ResponsiveContainer, BarChart, Bar, Tooltip, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from 'recharts';
+import { AppPageHeader, appControlClass } from './ui/AppPrimitives';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -412,7 +413,14 @@ export function BarbersAnalysisDashboard() {
   }, [selectedYear, selectedHistoricalBarber, monthlyBarberStats]);
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col p-6 overflow-hidden mt-6">
+    <div className="space-y-6">
+      <AppPageHeader
+        eyebrow="Análises"
+        title="Desempenho dos profissionais"
+        description="Acompanhe produção, faturamento, assinaturas e comissões de cada integrante da equipe."
+        icon={<Users className="h-5 w-5" />}
+      />
+    <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
       {clearConfirmMsg && (
         <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-xl flex items-center justify-between gap-4 animate-in slide-in-from-top duration-300">
           <div>
@@ -450,7 +458,7 @@ export function BarbersAnalysisDashboard() {
            <select
              value={selectedUnitId}
              onChange={(e) => setSelectedUnitId(e.target.value)}
-             className="bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 px-4 py-2 rounded-lg text-sm font-semibold outline-none text-gray-755 dark:text-zinc-200 cursor-pointer"
+             className={`${appControlClass} cursor-pointer`}
            >
              <option value="ALL">Todas as Unidades</option>
              {availableUnits.map(su => (
@@ -461,7 +469,7 @@ export function BarbersAnalysisDashboard() {
            <select
              value={selectedMonthIdx}
              onChange={(e) => setSelectedMonthIdx(Number(e.target.value))}
-             className="bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 px-4 py-2 rounded-lg text-sm font-semibold outline-none text-gray-755 dark:text-zinc-200 cursor-pointer"
+             className={`${appControlClass} cursor-pointer`}
            >
              {MONTH_NAMES.map((m, idx) => (
                <option key={idx} value={idx}>{m}</option>
@@ -781,6 +789,7 @@ export function BarbersAnalysisDashboard() {
           );
         })}
       </div>
+    </div>
     </div>
   );
 }

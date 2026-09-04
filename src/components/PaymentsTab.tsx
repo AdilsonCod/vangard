@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../store';
 import { PaymentRecord, PotServiceData } from '../types';
 import { FileText, Plus, Save, Trash2, Check, X, DollarSign, User as UserIcon, Edit2, ChevronDown, ChevronRight } from 'lucide-react';
+import { AppEmptyState, AppPageHeader } from './ui/AppPrimitives';
 
 export function PaymentsTab() {
   const { users, payments, addPayment, updatePayment, deletePayment, addTransaction, deleteTransaction, catalog, systemUnits, addNotification } = useStore();
@@ -278,7 +279,20 @@ export function PaymentsTab() {
   const totalLiquidoCalculado = totalPagamentoBruto - totalDiscount;
 
   return (
-    <div className="flex flex-col md:flex-row gap-8">
+    <div className="space-y-6">
+      <AppPageHeader
+        eyebrow="Financeiro"
+        title="Pagamentos da equipe"
+        description="Organize comissões, descontos, assinaturas e histórico de pagamentos por profissional."
+        icon={<DollarSign className="h-5 w-5" />}
+        actions={(
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <span className="rounded-full bg-gray-100 px-3 py-1.5 text-gray-600 dark:bg-zinc-800 dark:text-zinc-300">{barbers.length} profissionais</span>
+            <span className="rounded-full bg-amber-100 px-3 py-1.5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{payments.filter(payment => payment.status !== 'PAGO').length} pendentes</span>
+          </div>
+        )}
+      />
+      <div className="flex flex-col gap-6 md:flex-row">
        {/* BARBER SELECTOR */}
        <aside className="w-full md:w-80 flex-shrink-0 space-y-4">
           <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-gray-200 dark:border-zinc-800 p-4">
@@ -594,11 +608,15 @@ export function PaymentsTab() {
               )}
             </>
           ) : (
-            <div className="bg-white dark:bg-zinc-900 p-8 dark:border-zinc-800 rounded-2xl shadow-sm border border-gray-200 text-center flex items-center justify-center h-full min-h-[300px]">
-               <p className="text-gray-500 font-medium">Selecione um barbeiro na lista lateral para prosseguir.</p>
-            </div>
+            <AppEmptyState
+              icon={<UserIcon className="h-6 w-6" />}
+              title="Selecione um profissional"
+              description="Escolha um profissional na lista para visualizar ou registrar pagamentos."
+              className="h-full min-h-[300px] bg-white dark:bg-zinc-900"
+            />
           )}
        </div>
+      </div>
     </div>
   );
 }

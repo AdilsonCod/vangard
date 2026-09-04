@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { lazy, Suspense, useState, useMemo, useEffect } from "react";
 import { useStore } from "../store";
 import { ProgressCard } from "./ProgressCard";
 import { DailyEntry, Target } from "../types";
@@ -32,14 +32,7 @@ import {
   PanelLeftOpen,
   DollarSign
 } from "lucide-react";
-import { BarberPaymentsView } from "./BarberPaymentsView";
-import { BarberSettingsView } from "./BarberSettingsView";
-import { OverviewBarberDashboard } from "./OverviewBarberDashboard";
-import { BarberReportsView } from "./BarberReportsView";
-import { BarberRankingsView } from "./BarberRankingsView";
-import { BarberAnnouncementsView } from "./BarberAnnouncementsView";
-import { BarberNotesView } from "./BarberNotesView";
-import { BarberSelfManagementView } from "./BarberSelfManagementView";
+import { AppIconButton, AppLoadingState, cn } from "./ui/AppPrimitives";
 // Logo imported via direct asset path
 
 import {
@@ -49,6 +42,15 @@ import {
   getDaysForPeriod,
   getPeriodDaysInfo,
 } from "../utils";
+
+const BarberPaymentsView = lazy(() => import("./BarberPaymentsView").then(module => ({ default: module.BarberPaymentsView })));
+const BarberSettingsView = lazy(() => import("./BarberSettingsView").then(module => ({ default: module.BarberSettingsView })));
+const OverviewBarberDashboard = lazy(() => import("./OverviewBarberDashboard").then(module => ({ default: module.OverviewBarberDashboard })));
+const BarberReportsView = lazy(() => import("./BarberReportsView").then(module => ({ default: module.BarberReportsView })));
+const BarberRankingsView = lazy(() => import("./BarberRankingsView").then(module => ({ default: module.BarberRankingsView })));
+const BarberAnnouncementsView = lazy(() => import("./BarberAnnouncementsView").then(module => ({ default: module.BarberAnnouncementsView })));
+const BarberNotesView = lazy(() => import("./BarberNotesView").then(module => ({ default: module.BarberNotesView })));
+const BarberSelfManagementView = lazy(() => import("./BarberSelfManagementView").then(module => ({ default: module.BarberSelfManagementView })));
 
 const Row = ({
   label,
@@ -414,21 +416,32 @@ export default function BarberDashboard() {
     { id: "ANOTACOES", label: "Anotações / Bloco", icon: Edit3 },
     { id: "CONFIGURACOES", label: "Configurações", icon: Settings },
   ] as const;
+  const activePage = navItems.find(item => item.id === activeTab);
+  const currentUnitName = systemUnits?.find(unit => unit.id === currentUser!.unit)?.name || currentUser!.unit || "Sem unidade";
+  const userInitials = currentUser!.name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(part => part[0])
+    .join("")
+    .toUpperCase();
 
   return (
     <div className={`h-[100dvh] overflow-hidden w-full ${themeLightBg || "bg-gray-50"} ${themeDarkBg || "dark:bg-zinc-950"} text-gray-600 dark:text-zinc-300 flex transition-colors`}>
       
       {/* Desktop Sidebar */}
-      <aside className={`hidden md:flex flex-col bg-white dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 transition-all duration-300 ${isSidebarCollapsed ? "w-20" : "w-64"} flex-shrink-0 h-full overflow-y-auto custom-scrollbar`}>
+      <aside className={cn(
+        "hidden h-full shrink-0 flex-col overflow-y-auto border-r border-gray-200/80 bg-white transition-[width] duration-300 dark:border-zinc-800 dark:bg-[#061b1b] md:flex app-scrollbar",
+        isSidebarCollapsed ? "w-[76px]" : "w-[248px]",
+      )}>
         {/* Sidebar Header */}
-        <div className="p-4 flex items-center justify-between sticky top-0 bg-white dark:bg-zinc-900 z-10 border-b border-gray-100 dark:border-zinc-800/50 h-[72px]">
+        <div className="sticky top-0 z-10 flex h-[72px] items-center justify-between border-b border-gray-100 bg-white px-4 dark:border-white/5 dark:bg-[#061b1b]">
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-2 overflow-hidden w-full">
               <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
               <img src="/logo-clara.png" alt="Van's Logo" className="hidden dark:block w-8 h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
-              <div className="flex flex-col min-w-0 flex-1">
-                 <span className="font-bold text-gray-900 dark:text-zinc-100 truncate text-sm">Olá, {currentUser!.name}</span>
-                 <span className="text-[10px] text-gray-500 truncate">{systemUnits?.find(su => su.id === currentUser!.unit)?.name || currentUser!.unit}</span>
+               <div className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-black text-gray-950 dark:text-white">Van's Management</span>
+                  <span className="block truncate text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--theme-color)]">Área profissional</span>
               </div>
             </div>
           )}
@@ -441,7 +454,8 @@ export default function BarberDashboard() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 space-y-1 px-3 py-4">
+          {!isSidebarCollapsed && <p className="mb-1.5 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-gray-400 dark:text-zinc-600">Minha área</p>}
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -449,14 +463,14 @@ export default function BarberDashboard() {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as any)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all font-medium text-sm ${
+                className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${
                   isActive 
-                    ? "bg-[var(--theme-color)]/10 text-[var(--theme-color)]" 
-                    : "text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-zinc-100"
+                    ? "bg-[var(--theme-color)]/10 text-[var(--theme-color)] shadow-sm"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white"
                 }`}
                 title={isSidebarCollapsed ? item.label : undefined}
               >
-                <Icon className={`w-5 h-5 shrink-0 ${isActive ? "text-[var(--theme-color)]" : "text-gray-400 dark:text-zinc-500"}`} />
+                <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? "text-[var(--theme-color)]" : "text-gray-400 transition group-hover:text-gray-700 dark:text-zinc-500 dark:group-hover:text-zinc-200"}`} />
                 {!isSidebarCollapsed && (
                   <span className="truncate">{item.label}</span>
                 )}
@@ -466,10 +480,10 @@ export default function BarberDashboard() {
         </nav>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-gray-200 dark:border-zinc-800 flex flex-col gap-1">
+        <div className="flex flex-col gap-1 border-t border-gray-200 p-3 dark:border-white/5">
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all font-medium text-sm text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-zinc-100 ${isSidebarCollapsed ? 'justify-center' : ''}`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-semibold text-sm text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-100 ${isSidebarCollapsed ? 'justify-center' : ''}`}
             title={isDarkMode ? "Modo Claro" : "Modo Escuro"}
           >
             {isDarkMode ? <Sun className="w-5 h-5 shrink-0" /> : <Moon className="w-5 h-5 shrink-0" />}
@@ -478,7 +492,7 @@ export default function BarberDashboard() {
           
           <button
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all font-medium text-sm text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-zinc-100 ${isSidebarCollapsed ? 'justify-center' : ''}`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-semibold text-sm text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-100 ${isSidebarCollapsed ? 'justify-center' : ''}`}
             title={isSidebarCollapsed ? "Expandir Menu" : "Recolher Menu"}
           >
             {isSidebarCollapsed ? <PanelLeftOpen className="w-5 h-5 shrink-0" /> : <PanelLeftClose className="w-5 h-5 shrink-0" />}
@@ -498,21 +512,99 @@ export default function BarberDashboard() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
+
+        <header className="sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-4 border-b border-gray-200/80 bg-white/95 px-5 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 md:flex xl:px-7">
+          <div className="min-w-0">
+            <p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-gray-400 dark:text-zinc-500">Minha área</p>
+            <h1 className="truncate text-base font-black text-gray-950 dark:text-white">{activePage?.label || "Visão Geral"}</h1>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="hidden rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:block">
+              <p className="text-[9px] font-black uppercase tracking-[0.14em] text-gray-400 dark:text-zinc-500">Unidade</p>
+              <p className="max-w-48 truncate text-xs font-bold text-gray-900 dark:text-zinc-100">{currentUnitName}</p>
+            </div>
+            <div className="relative">
+              <AppIconButton label="Notificações" onClick={() => setIsNotificationsOpen(open => !open)}>
+                <Bell className="h-[18px] w-[18px]" />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-black text-white ring-2 ring-white dark:ring-[#041616]">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </AppIconButton>
+              {isNotificationsOpen && (
+                <div className="absolute right-0 top-12 w-[360px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+                  <div className="border-b border-gray-100 px-4 py-3 dark:border-zinc-800">
+                    <p className="text-sm font-black text-gray-950 dark:text-white">Notificações</p>
+                    <p className="text-xs text-gray-400 dark:text-zinc-500">{unreadCount} não lidas</p>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto app-scrollbar">
+                    {userNotifications.length === 0 ? (
+                      <p className="px-4 py-8 text-center text-sm text-gray-500 dark:text-zinc-400">Você não possui notificações.</p>
+                    ) : userNotifications.slice(0, 12).map(notification => (
+                      <div
+                        key={notification.id}
+                        onClick={() => !notification.read && markNotificationAsRead(notification.id)}
+                        className={cn(
+                          "group cursor-pointer border-b border-gray-100 px-4 py-3 transition last:border-0 hover:bg-gray-50 dark:border-zinc-800 dark:hover:bg-zinc-800",
+                          !notification.read && "bg-[var(--theme-color)]/[0.045]",
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", notification.read ? "bg-gray-300 dark:bg-zinc-700" : "bg-[var(--theme-color)]")} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-gray-900 dark:text-zinc-100">{notification.title}</p>
+                            <p className="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{notification.message}</p>
+                          </div>
+                          <button
+                            onClick={event => {
+                              event.stopPropagation();
+                              deleteNotification(notification.id);
+                            }}
+                            className="invisible rounded-md px-1.5 py-0.5 text-[10px] font-bold text-red-500 group-hover:visible focus:visible"
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <AppIconButton label={isDarkMode ? "Ativar modo claro" : "Ativar modo escuro"} onClick={() => setIsDarkMode(!isDarkMode)}>
+              {isDarkMode ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+            </AppIconButton>
+            <div className="flex items-center gap-2.5 rounded-xl p-1.5 pr-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--theme-color)]/15 text-xs font-black text-[var(--theme-color)] ring-1 ring-[var(--theme-color)]/20">
+                {userInitials}
+              </span>
+              <div className="hidden max-w-40 lg:block">
+                <p className="truncate text-xs font-black text-gray-950 dark:text-white">{currentUser!.name}</p>
+                <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">Profissional</p>
+              </div>
+            </div>
+          </div>
+        </header>
         
         {/* Mobile Header */}
-        <header className="md:hidden bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 border-b border-gray-200 dark:border-zinc-800 sticky top-0 z-20">
-          <div className="px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 md:hidden">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2.5">
               <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain" referrerPolicy="no-referrer" />
               <img src="/logo-clara.png" alt="Van's Logo" className="hidden dark:block w-8 h-8 object-contain" referrerPolicy="no-referrer" />
-              <h1 className="text-lg font-bold">Olá, {currentUser!.name}</h1>
+              <div className="min-w-0">
+                <p className="truncate text-[9px] font-black uppercase tracking-[0.16em] text-[var(--theme-color)]">{currentUnitName}</p>
+                <h1 className="truncate text-sm font-black">{activePage?.label || "Visão Geral"}</h1>
+              </div>
             </div>
             
             <div className="flex items-center gap-2">
               <div className="relative">
                 <button
                   onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                  className="p-2 text-gray-500 dark:text-zinc-400 hover:text-[var(--theme-color)] transition-colors rounded-full relative"
+                  aria-label="Notificações"
+                  className="relative rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-[var(--theme-color)] dark:text-zinc-400 dark:hover:bg-white/5"
                 >
                   <Bell className="w-5 h-5" />
                   {unreadCount > 0 && (
@@ -559,21 +651,23 @@ export default function BarberDashboard() {
 
               <button
                 onClick={() => setIsDarkMode(!isDarkMode)}
-                className="p-2 text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-100 rounded-lg"
+                aria-label={isDarkMode ? "Ativar modo claro" : "Ativar modo escuro"}
+                className="rounded-xl p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100"
               >
                 {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
               
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="p-2 text-gray-600 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-lg"
+                aria-label={isMobileMenuOpen ? "Fechar menu" : "Abrir menu"}
+                className="rounded-xl p-2 text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5"
               >
                 {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
             </div>
           </div>
           {isMobileMenuOpen && (
-            <div className="border-t border-gray-200 dark:border-zinc-800 shadow-xl absolute w-full z-50 bg-white dark:bg-zinc-900">
+            <div className="absolute z-50 max-h-[calc(100dvh-64px)] w-full overflow-y-auto border-t border-gray-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-[#061b1b] app-scrollbar">
               <div className="px-2 py-2 flex flex-col space-y-1">
                 {navItems.map((item) => {
                   const Icon = item.icon;
@@ -613,8 +707,8 @@ export default function BarberDashboard() {
           )}
         </header>
 
-        <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 pb-20">
-
+        <main className="mx-auto w-full max-w-[1600px] space-y-8 px-4 py-5 pb-20 sm:px-5 sm:py-6 lg:px-7 lg:py-7">
+        <Suspense fallback={<AppLoadingState />}>
         {activeTab === "OVERVIEW" ? (
           <OverviewBarberDashboard />
         ) : activeTab === "AVISOS" ? (
@@ -1340,6 +1434,7 @@ export default function BarberDashboard() {
         ) : (
           <BarberSettingsView />
         )}
+        </Suspense>
       </main>
       </div>
     </div>

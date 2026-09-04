@@ -26,6 +26,7 @@ import {
   PieChart,
   Pie,
 } from "recharts";
+import { AppPageHeader } from "./ui/AppPrimitives";
 
 export function OverviewDashboard() {
   const {
@@ -542,36 +543,31 @@ export function OverviewDashboard() {
   return (
     <div className="space-y-6">
       {/* HEADER & PERIOD SELECTOR */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm animate-in fade-in">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
-            <BarChart3 className="w-6 h-6 text-indigo-500" />
-            Visão Geral (Dashboard)
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1">
-            Desempenho da barbearia comparado aos objetivos, além de rankings de
-            barbeiros e serviços.
-          </p>
-        </div>
-
-        <div className="flex items-center bg-gray-50 dark:bg-zinc-800 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700">
+      <AppPageHeader
+        eyebrow="Visão geral"
+        title="Desempenho da operação"
+        description="Acompanhe objetivos, faturamento, unidades e desempenho da equipe em uma única visão."
+        icon={<BarChart3 className="h-5 w-5" />}
+        actions={<div className="flex items-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-zinc-700 dark:bg-zinc-800">
           <button
             onClick={handlePrevMonth}
-            className="px-3 py-2 hover:bg-gray-200 dark:hover:bg-zinc-700 transition"
+            aria-label="Mês anterior"
+            className="px-3 py-2.5 transition hover:bg-gray-200 dark:hover:bg-zinc-700"
           >
             <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-zinc-300" />
           </button>
-          <div className="px-4 py-2 font-bold text-gray-800 dark:text-zinc-100 min-w-[140px] text-center select-none">
+          <div className="min-w-[150px] select-none px-4 py-2 text-center text-sm font-black text-gray-800 dark:text-zinc-100">
             {MONTH_NAMES[parseInt(selectedMonth) - 1]} / {selectedYear}
           </div>
           <button
             onClick={handleNextMonth}
-            className="px-3 py-2 hover:bg-gray-200 dark:hover:bg-zinc-700 transition"
+            aria-label="Próximo mês"
+            className="px-3 py-2.5 transition hover:bg-gray-200 dark:hover:bg-zinc-700"
           >
             <ChevronRight className="w-5 h-5 text-gray-600 dark:text-zinc-300" />
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* METAS VS FATURAMENTO - COMPARATIVE REPORT */}
       <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">

@@ -1,19 +1,8 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { lazy, Suspense, useState, useEffect, useMemo } from "react";
 import { useStore } from "../store";
 import { ProgressCard } from "./ProgressCard";
-import { ConfigEditor } from "./ConfigEditor";
-import { UsersDashboard } from "./UsersDashboard";
-import { PaymentsTab } from "./PaymentsTab";
 import { AdminEntryModal } from "./AdminEntryModal";
-import { GDVDashboard } from "./GDVDashboard";
-import { UnitsAnalysisDashboard } from "./UnitsAnalysisDashboard";
-import { BarbersAnalysisDashboard } from "./BarbersAnalysisDashboard";
-import { OverviewDashboard } from "./OverviewDashboard";
-import { FinancialDashboard } from "./FinancialDashboard";
-import { MarketingDashboard } from "./MarketingDashboard";
-import { ReportsTab } from "./ReportsTab";
-import { SocialMediaBoard } from "./SocialMediaBoard";
-import DataImporterView from "./DataImporterView";
+import { AppIconButton, AppLoadingState, appControlClass, cn } from "./ui/AppPrimitives";
 import {
   getAvailablePeriods,
   formatEntryDate,
@@ -50,10 +39,36 @@ import {
   Moon,
   Sun,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Bell,
+  Search,
+  Building2,
+  Command,
+  UserCircle2,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { User, CatalogItem, Target, Category, Subcategory, Role } from "../types";
 // Logo imported via direct asset path
+
+type AdminNavItem = {
+  id: string;
+  label: string;
+  section: string;
+  icon: LucideIcon;
+  subItems?: ReadonlyArray<{ id: string; label: string }>;
+};
+
+const ConfigEditor = lazy(() => import("./ConfigEditor").then(module => ({ default: module.ConfigEditor })));
+const UsersDashboard = lazy(() => import("./UsersDashboard").then(module => ({ default: module.UsersDashboard })));
+const PaymentsTab = lazy(() => import("./PaymentsTab").then(module => ({ default: module.PaymentsTab })));
+const GDVDashboard = lazy(() => import("./GDVDashboard").then(module => ({ default: module.GDVDashboard })));
+const UnitsAnalysisDashboard = lazy(() => import("./UnitsAnalysisDashboard").then(module => ({ default: module.UnitsAnalysisDashboard })));
+const BarbersAnalysisDashboard = lazy(() => import("./BarbersAnalysisDashboard").then(module => ({ default: module.BarbersAnalysisDashboard })));
+const OverviewDashboard = lazy(() => import("./ExecutiveOverviewDashboard").then(module => ({ default: module.ExecutiveOverviewDashboard })));
+const FinancialDashboard = lazy(() => import("./FinancialDashboard").then(module => ({ default: module.FinancialDashboard })));
+const MarketingDashboard = lazy(() => import("./MarketingDashboard").then(module => ({ default: module.MarketingDashboard })));
+const ReportsTab = lazy(() => import("./ReportsTab").then(module => ({ default: module.ReportsTab })));
+const DataImporterView = lazy(() => import("./DataImporterView"));
 
 export default function AdminDashboard() {
   const { currentUser, logout, themeLightBg, themeDarkBg, 
@@ -64,17 +79,24 @@ export default function AdminDashboard() {
     updateCatalog,
     systemUnits,
     monthlyUnitStats,
+    notifications,
+    markNotificationAsRead,
+    deleteNotification,
     isDarkMode,
     setIsDarkMode,
   } = useStore();
   const [activeTab, setActiveTab] = useState<string>(
     currentUser?.role === 'MARKETING' ? "MARKETING" : currentUser?.role === 'FINANCIAL' ? "FINANCE_RESUMO" : "OVERVIEW"
   );
-  const [selectedUnit, setSelectedUnit] = useState<string>("ALL");
+  const [selectedUnit, setSelectedUnit] = useState<string>(() => localStorage.getItem("vans_global_unit") || "ALL");
   const [selectedBarber, setSelectedBarber] = useState<User | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const availableUnits = useMemo(() => {
     const list = [...(systemUnits || [])];
@@ -92,6 +114,28 @@ export default function AdminDashboard() {
     });
     return list;
   }, [systemUnits, monthlyUnitStats, users]);
+
+  useEffect(() => {
+    localStorage.setItem("vans_global_unit", selectedUnit);
+  }, [selectedUnit]);
+
+  useEffect(() => {
+    if (selectedUnit !== "ALL" && availableUnits.length > 0 && !availableUnits.some(unit => unit.id === selectedUnit)) {
+      setSelectedUnit("ALL");
+    }
+  }, [availableUnits, selectedUnit]);
+
+  useEffect(() => {
+    const handleQuickSearch = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setIsSearchOpen(true);
+        document.getElementById("global-app-search")?.focus();
+      }
+    };
+    document.addEventListener("keydown", handleQuickSearch);
+    return () => document.removeEventListener("keydown", handleQuickSearch);
+  }, []);
 
   const barbers = users.filter(
     (u) =>
@@ -137,11 +181,12 @@ export default function AdminDashboard() {
     };
   };
 
-  const allNavItems = [
-    { id: "OVERVIEW", label: "Visão Geral (Dashboard)", icon: LayoutDashboard },
+  const allNavItems: AdminNavItem[] = [
+    { id: "OVERVIEW", label: "Visão Geral", section: "Principal", icon: LayoutDashboard },
     { 
       id: "FINANCE", 
-      label: "Gestão Financeira", 
+      label: "Financeiro",
+      section: "Financeiro",
       icon: PieChart,
       subItems: [
         { id: "FINANCE_RESUMO", label: "Resumo" },
@@ -152,10 +197,12 @@ export default function AdminDashboard() {
         { id: "FINANCE_DESPESAS", label: "Baixa de Despesas" }
       ]
     },
-    { id: "BARBERS", label: "Barbeiros (Objetivos & Dados)", icon: TrendingUp },
+    { id: "PAYMENTS", label: "Pagamentos", section: "Financeiro", icon: DollarSign },
+    { id: "BARBERS", label: "Barbeiros e Metas", section: "Operação", icon: TrendingUp },
     { 
       id: "MANAGEMENT", 
-      label: "Gestão", 
+      label: "Análises",
+      section: "Operação",
       icon: Briefcase,
       subItems: [
         { id: "MANAGEMENT_SVA", label: "SVA" },
@@ -163,10 +210,11 @@ export default function AdminDashboard() {
         { id: "MANAGEMENT_BARBERS", label: "Análise de Barbeiros" }
       ]
     },
-    { id: "AVISOS", label: "Mural de Avisos", icon: Megaphone },
+    { id: "AVISOS", label: "Mural de Avisos", section: "Operação", icon: Megaphone },
     { 
       id: "CATALOG", 
       label: "Catálogo", 
+      section: "Cadastros",
       icon: BookOpen,
       subItems: [
         { id: "CATALOG_PRODUCTS", label: "Produtos" },
@@ -174,10 +222,11 @@ export default function AdminDashboard() {
         { id: "CATALOG_CATEGORIES", label: "Categorias" }
       ]
     },
-    { id: "MARKETING", label: "Marketing Analytics", icon: BarChart3 },
+    { id: "MARKETING", label: "Marketing", section: "Análises", icon: BarChart3 },
     { 
       id: "USERS", 
-      label: "Usuários & Unidades", 
+      label: "Equipe e Unidades",
+      section: "Cadastros",
       icon: Users,
       subItems: [
         { id: "USERS_STAFF", label: "Colaboradores" },
@@ -185,11 +234,10 @@ export default function AdminDashboard() {
         { id: "USERS_UNITS", label: "Unidades" }
       ]
     },
-    { id: "REPORTS", label: "Relatórios", icon: FileText },
-    { id: "PAYMENTS", label: "Pagamentos", icon: DollarSign },
-    { id: "IMPORT", label: "Importar Planilhas", icon: Upload },
-    { id: "CONFIG", label: "Configurações", icon: Settings },
-  ] as const;
+    { id: "REPORTS", label: "Relatórios", section: "Dados", icon: FileText },
+    { id: "IMPORT", label: "Importações", section: "Dados", icon: Upload },
+    { id: "CONFIG", label: "Configurações", section: "Sistema", icon: Settings },
+  ];
 
   const navItems = currentUser?.role === 'FINANCIAL' 
     ? allNavItems.filter(item => item.id === "FINANCE" || item.id === "REPORTS" || item.id === "PAYMENTS" || item.id === "IMPORT" || item.id === "USERS")
@@ -197,18 +245,69 @@ export default function AdminDashboard() {
     ? allNavItems.filter(item => item.id === "MARKETING")
     : allNavItems;
 
+  const navSections = useMemo(
+    () => Array.from(new Set(navItems.map(item => item.section))),
+    [navItems],
+  );
+
+  const searchableNavigation = useMemo(
+    () => navItems.flatMap(item => [
+      ...(item.subItems || []).map(subItem => ({ id: subItem.id, label: subItem.label, group: item.label })),
+      ...(!item.subItems ? [{ id: item.id, label: item.label, group: item.section }] : []),
+    ]),
+    [navItems],
+  );
+
+  const searchResults = useMemo(() => {
+    const term = globalSearch.trim().toLocaleLowerCase("pt-BR");
+    if (!term) return searchableNavigation.slice(0, 6);
+    return searchableNavigation
+      .filter(item => `${item.label} ${item.group}`.toLocaleLowerCase("pt-BR").includes(term))
+      .slice(0, 8);
+  }, [globalSearch, searchableNavigation]);
+
+  const activeNavigation = searchableNavigation.find(item => item.id === activeTab);
+  const activeTitle = activeNavigation?.label || "Van's Management";
+  const activeGroup = activeNavigation?.group || "Área de trabalho";
+  const userNotifications = useMemo(
+    () => (notifications || [])
+      .filter(notification => notification.userId === currentUser?.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [notifications, currentUser?.id],
+  );
+  const unreadCount = userNotifications.filter(notification => !notification.read).length;
+  const userInitials = (currentUser?.name || "Usuário")
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(part => part[0])
+    .join("")
+    .toUpperCase();
+
+  const navigateTo = (tabId: string) => {
+    setActiveTab(tabId);
+    setGlobalSearch("");
+    setIsSearchOpen(false);
+    setIsMobileMenuOpen(false);
+  };
+
   return (
     <div className={`h-[100dvh] overflow-hidden w-full ${themeLightBg || "bg-gray-50"} ${themeDarkBg || "dark:bg-zinc-950"} text-gray-600 dark:text-zinc-300 flex transition-colors`}>
       
       {/* Desktop Sidebar */}
-      <aside className={`hidden md:flex flex-col bg-white dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 transition-all duration-300 ${isSidebarCollapsed ? "w-20" : "w-64"} flex-shrink-0 h-full overflow-y-auto custom-scrollbar`}>
+      <aside className={cn(
+        "hidden h-full shrink-0 flex-col overflow-y-auto border-r border-gray-200/80 bg-white transition-[width] duration-300 dark:border-zinc-800 dark:bg-[#061b1b] md:flex app-scrollbar",
+        isSidebarCollapsed ? "w-[76px]" : "w-[248px]",
+      )}>
         {/* Sidebar Header */}
-        <div className="p-4 flex items-center justify-between sticky top-0 bg-white dark:bg-zinc-900 z-10 border-b border-gray-100 dark:border-zinc-800/50 h-[72px]">
+        <div className="sticky top-0 z-10 flex h-[72px] items-center justify-between border-b border-gray-100 bg-white px-4 dark:border-white/5 dark:bg-[#061b1b]">
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-2 overflow-hidden w-full">
               <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
               <img src="/logo-clara.png" alt="Van's Logo" className="hidden dark:block w-8 h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
-              <span className="font-bold text-gray-900 dark:text-zinc-100 truncate flex-1">Van's Management</span>
+              <div className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-black text-gray-950 dark:text-white">Van's Management</span>
+                <span className="block truncate text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--theme-color)]">Gestão integrada</span>
+              </div>
             </div>
           )}
           {isSidebarCollapsed && (
@@ -220,8 +319,16 @@ export default function AdminDashboard() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map((item) => {
+        <nav className="flex-1 px-3 py-4">
+          {navSections.map(section => (
+            <div key={section} className="mb-5 last:mb-0">
+              {!isSidebarCollapsed && (
+                <p className="mb-1.5 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-gray-400 dark:text-zinc-600">
+                  {section}
+                </p>
+              )}
+              <div className="space-y-1">
+          {navItems.filter(item => item.section === section).map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id || (item.subItems && item.subItems.some((sub: any) => sub.id === activeTab));
             return (
@@ -244,17 +351,17 @@ export default function AdminDashboard() {
                       setActiveTab(item.id);
                     }
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all font-medium text-sm ${
+                  className={`group relative flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${
                     isActive && !item.subItems
-                      ? "bg-[var(--theme-color)]/10 text-[var(--theme-color)]" 
-                      : isActive && item.subItems
-                      ? "text-gray-900 dark:text-zinc-100 font-bold"
-                      : "text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-zinc-100"
+                      ? "bg-[var(--theme-color)]/10 text-[var(--theme-color)] shadow-sm"
+                    : isActive && item.subItems
+                      ? "text-gray-950 dark:text-white font-extrabold"
+                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white"
                   }`}
                   title={isSidebarCollapsed ? item.label : undefined}
                 >
                   <div className="flex items-center gap-3 overflow-hidden">
-                    <Icon className={`w-5 h-5 shrink-0 ${isActive ? "text-[var(--theme-color)]" : "text-gray-400 dark:text-zinc-500"}`} />
+                    <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? "text-[var(--theme-color)]" : "text-gray-400 transition group-hover:text-gray-700 dark:text-zinc-500 dark:group-hover:text-zinc-200"}`} />
                     {!isSidebarCollapsed && (
                       <span className="truncate">{item.label}</span>
                     )}
@@ -264,15 +371,15 @@ export default function AdminDashboard() {
                   )}
                 </button>
                 {item.subItems && (expandedMenus[item.id] !== undefined ? expandedMenus[item.id] : isActive) && !isSidebarCollapsed && (
-                  <div className="mt-1 ml-4 pl-4 border-l-2 border-gray-100 dark:border-zinc-800 space-y-1">
+                  <div className="ml-[21px] mt-1 space-y-0.5 border-l border-gray-200 pl-3 dark:border-white/10">
                     {item.subItems.map(subItem => (
                       <button
                         key={subItem.id}
-                        onClick={() => setActiveTab(subItem.id)}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                        onClick={() => navigateTo(subItem.id)}
+                        className={`w-full rounded-lg px-3 py-2 text-left text-[13px] transition-all ${
                           activeTab === subItem.id 
-                            ? "bg-[var(--theme-color)]/10 text-[var(--theme-color)] font-bold" 
-                            : "text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-100 hover:bg-gray-100 dark:hover:bg-zinc-800"
+                            ? "bg-[var(--theme-color)]/10 font-extrabold text-[var(--theme-color)]"
+                            : "text-gray-500 hover:bg-gray-100 hover:text-gray-950 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-white"
                         }`}
                       >
                         {subItem.label}
@@ -283,13 +390,16 @@ export default function AdminDashboard() {
               </div>
             );
           })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-gray-200 dark:border-zinc-800 flex flex-col gap-1">
+        <div className="flex flex-col gap-1 border-t border-gray-200 p-3 dark:border-white/5">
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all font-medium text-sm text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-zinc-100 ${isSidebarCollapsed ? 'justify-center' : ''}`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-semibold text-sm text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-100 ${isSidebarCollapsed ? 'justify-center' : ''}`}
             title={isDarkMode ? "Modo Claro" : "Modo Escuro"}
           >
             {isDarkMode ? <Sun className="w-5 h-5 shrink-0" /> : <Moon className="w-5 h-5 shrink-0" />}
@@ -298,54 +408,263 @@ export default function AdminDashboard() {
           
           <button
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all font-medium text-sm text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-zinc-100 ${isSidebarCollapsed ? 'justify-center' : ''}`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-semibold text-sm text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-100 ${isSidebarCollapsed ? 'justify-center' : ''}`}
             title={isSidebarCollapsed ? "Expandir Menu" : "Recolher Menu"}
           >
             {isSidebarCollapsed ? <PanelLeftOpen className="w-5 h-5 shrink-0" /> : <PanelLeftClose className="w-5 h-5 shrink-0" />}
             {!isSidebarCollapsed && <span>{isSidebarCollapsed ? 'Expandir' : 'Recolher'}</span>}
           </button>
 
-          <button
-            onClick={logout}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all font-medium text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 ${isSidebarCollapsed ? 'justify-center' : ''}`}
-            title="Sair"
-          >
-            <LogOut className="w-5 h-5 shrink-0" />
-            {!isSidebarCollapsed && <span>Sair do Sistema</span>}
-          </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
+      <div className="app-workspace flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
+
+        {/* Desktop Global Header */}
+        <header className="sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-3 border-b border-gray-200/80 bg-white/95 px-4 backdrop-blur-xl dark:border-white/[0.07] dark:bg-[#031818]/95 md:flex xl:px-6">
+          <AppIconButton
+            label={isSidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+            onClick={() => setIsSidebarCollapsed(value => !value)}
+          >
+            <Menu className="h-[18px] w-[18px]" />
+          </AppIconButton>
+
+          <div className="relative min-w-[168px]">
+            <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-zinc-500" />
+            <select
+              value={selectedUnit}
+              onChange={event => setSelectedUnit(event.target.value)}
+              aria-label="Unidade ativa"
+              className={cn(appControlClass, "w-full appearance-none pl-9 pr-8")}
+            >
+              <option value="ALL">Todas as unidades</option>
+              {availableUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+            </select>
+          </div>
+
+          <div className="relative ml-auto hidden w-full max-w-xl lg:block">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-zinc-500" />
+            <input
+              id="global-app-search"
+              value={globalSearch}
+              onFocus={() => setIsSearchOpen(true)}
+              onChange={event => {
+                setGlobalSearch(event.target.value);
+                setIsSearchOpen(true);
+              }}
+              onKeyDown={event => {
+                if (event.key === "Escape") setIsSearchOpen(false);
+                if (event.key === "Enter" && searchResults[0]) navigateTo(searchResults[0].id);
+              }}
+              aria-label="Buscar páginas do sistema"
+              placeholder="Buscar páginas e módulos..."
+              className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50/80 pl-10 pr-16 text-sm font-medium text-gray-900 outline-none transition placeholder:text-gray-400 hover:border-gray-300 focus:border-[var(--theme-color)] focus:bg-white focus:ring-2 focus:ring-[var(--theme-color)]/10 dark:border-zinc-800 dark:bg-white/[0.035] dark:text-white dark:placeholder:text-zinc-600 dark:hover:border-zinc-700 dark:focus:bg-zinc-900"
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-[10px] font-bold text-gray-400 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500 xl:flex">
+              <Command className="h-3 w-3" /> K
+            </span>
+            {isSearchOpen && (
+              <div className="absolute left-0 right-0 top-12 overflow-hidden rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+                <p className="px-3 pb-2 pt-1 text-[10px] font-black uppercase tracking-[0.16em] text-gray-400 dark:text-zinc-500">
+                  Navegação rápida
+                </p>
+                {searchResults.length > 0 ? searchResults.map(result => (
+                  <button
+                    key={result.id}
+                    onClick={() => navigateTo(result.id)}
+                    className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition hover:bg-gray-100 dark:hover:bg-zinc-800"
+                  >
+                    <span className="text-sm font-bold text-gray-800 dark:text-zinc-100">{result.label}</span>
+                    <span className="text-xs text-gray-400 dark:text-zinc-500">{result.group}</span>
+                  </button>
+                )) : (
+                  <p className="px-3 py-5 text-center text-sm text-gray-500 dark:text-zinc-400">Nenhuma página encontrada.</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <AppIconButton
+              label="Notificações"
+              onClick={() => {
+                setIsNotificationsOpen(open => !open);
+                setIsProfileOpen(false);
+              }}
+            >
+              <Bell className="h-[18px] w-[18px]" />
+              {unreadCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-black text-white ring-2 ring-white dark:ring-[#041616]">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </AppIconButton>
+            {isNotificationsOpen && (
+              <div className="absolute right-0 top-12 w-[360px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-zinc-800">
+                  <div>
+                    <p className="text-sm font-black text-gray-950 dark:text-white">Notificações</p>
+                    <p className="text-xs text-gray-400 dark:text-zinc-500">{unreadCount} não lidas</p>
+                  </div>
+                  <Bell className="h-5 w-5 text-[var(--theme-color)]" />
+                </div>
+                <div className="max-h-80 overflow-y-auto app-scrollbar">
+                  {userNotifications.length === 0 ? (
+                    <p className="px-4 py-8 text-center text-sm text-gray-500 dark:text-zinc-400">Você não possui notificações.</p>
+                  ) : userNotifications.slice(0, 12).map(notification => (
+                    <button
+                      key={notification.id}
+                      onClick={() => !notification.read && markNotificationAsRead(notification.id)}
+                      className={cn(
+                        "group w-full border-b border-gray-100 px-4 py-3 text-left transition last:border-0 hover:bg-gray-50 dark:border-zinc-800 dark:hover:bg-zinc-800",
+                        !notification.read && "bg-[var(--theme-color)]/[0.045]",
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", notification.read ? "bg-gray-300 dark:bg-zinc-700" : "bg-[var(--theme-color)]")} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-bold text-gray-900 dark:text-zinc-100">{notification.title}</span>
+                          <span className="mt-0.5 block text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{notification.message}</span>
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={event => {
+                            event.stopPropagation();
+                            deleteNotification(notification.id);
+                          }}
+                          onKeyDown={event => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.stopPropagation();
+                              deleteNotification(notification.id);
+                            }
+                          }}
+                          className="invisible rounded-md px-1.5 py-0.5 text-[10px] font-bold text-red-500 group-hover:visible focus:visible"
+                        >
+                          Excluir
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <AppIconButton label={isDarkMode ? "Ativar modo claro" : "Ativar modo escuro"} onClick={() => setIsDarkMode(!isDarkMode)}>
+            {isDarkMode ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+          </AppIconButton>
+
+          <div className="relative">
+            <button
+              onClick={() => {
+                setIsProfileOpen(open => !open);
+                setIsNotificationsOpen(false);
+              }}
+              className="flex items-center gap-2.5 rounded-xl p-1.5 pr-2 text-left transition hover:bg-gray-100 dark:hover:bg-white/5"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--theme-color)]/15 text-xs font-black text-[var(--theme-color)] ring-1 ring-[var(--theme-color)]/20">
+                {userInitials}
+              </span>
+              <span className="hidden max-w-36 lg:block">
+                <span className="block truncate text-xs font-black text-gray-950 dark:text-white">{currentUser?.name}</span>
+                <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">{currentUser?.role}</span>
+              </span>
+              <ChevronDown className="hidden h-4 w-4 text-gray-400 lg:block" />
+            </button>
+            {isProfileOpen && (
+              <div className="absolute right-0 top-12 w-64 rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+                <div className="flex items-center gap-3 px-3 py-3">
+                  <UserCircle2 className="h-8 w-8 text-gray-400 dark:text-zinc-500" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-gray-950 dark:text-white">{currentUser?.name}</p>
+                    <p className="truncate text-xs text-gray-400 dark:text-zinc-500">{currentUser?.email || "Acesso interno"}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={logout}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sair do sistema
+                </button>
+              </div>
+            )}
+          </div>
+        </header>
         
         {/* Mobile Header */}
-        <header className="md:hidden bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 border-b border-gray-200 dark:border-zinc-800 sticky top-0 z-20">
-          <div className="px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 md:hidden">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2.5">
               <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain" referrerPolicy="no-referrer" />
               <img src="/logo-clara.png" alt="Van's Logo" className="hidden dark:block w-8 h-8 object-contain" referrerPolicy="no-referrer" />
-              <h1 className="text-lg font-bold">Van's Management</h1>
+              <div className="min-w-0">
+                <p className="truncate text-[9px] font-black uppercase tracking-[0.16em] text-[var(--theme-color)]">{activeGroup}</p>
+                <h1 className="truncate text-sm font-black">{activeTitle}</h1>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setIsDarkMode(!isDarkMode)}
-                className="p-2 text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-100 rounded-lg"
+                aria-label={isDarkMode ? "Ativar modo claro" : "Ativar modo escuro"}
+                className="rounded-xl p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100"
               >
                 {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="p-2 text-gray-600 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-lg"
+                aria-label={isMobileMenuOpen ? "Fechar menu" : "Abrir menu"}
+                className="rounded-xl p-2 text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5"
               >
                 {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
             </div>
           </div>
+          <div className="flex gap-2 px-4 pb-3">
+            <div className="relative min-w-0 flex-1">
+              <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-zinc-500" />
+              <select
+                value={selectedUnit}
+                onChange={event => setSelectedUnit(event.target.value)}
+                aria-label="Unidade ativa"
+                className={cn(appControlClass, "w-full appearance-none pl-9 pr-8")}
+              >
+                <option value="ALL">Todas as unidades</option>
+                {availableUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+              </select>
+            </div>
+            <AppIconButton
+              label="Buscar no sistema"
+              onClick={() => {
+                setIsMobileMenuOpen(true);
+                requestAnimationFrame(() => document.getElementById("mobile-navigation-search")?.focus());
+              }}
+            >
+              <Search className="h-[18px] w-[18px]" />
+            </AppIconButton>
+          </div>
           {isMobileMenuOpen && (
-            <div className="border-t border-gray-200 dark:border-zinc-800 shadow-xl absolute w-full z-50 bg-white dark:bg-zinc-900">
-              <div className="px-2 py-2 flex flex-col space-y-1">
-                {navItems.map((item) => {
+            <div className="absolute z-50 max-h-[calc(100dvh-120px)] w-full overflow-y-auto border-t border-gray-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-[#061b1b] app-scrollbar">
+              <div className="flex flex-col space-y-1 px-2 py-2">
+                <div className="relative mb-2 px-2 pt-1">
+                  <Search className="pointer-events-none absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-zinc-500" />
+                  <input
+                    id="mobile-navigation-search"
+                    value={globalSearch}
+                    onChange={event => setGlobalSearch(event.target.value)}
+                    placeholder="Buscar páginas..."
+                    className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 text-sm font-medium outline-none focus:border-[var(--theme-color)] focus:ring-2 focus:ring-[var(--theme-color)]/10 dark:border-zinc-800 dark:bg-white/[0.04]"
+                  />
+                </div>
+                {navItems.filter(item => {
+                  const term = globalSearch.trim().toLocaleLowerCase("pt-BR");
+                  if (!term) return true;
+                  return `${item.label} ${(item.subItems || []).map(subItem => subItem.label).join(" ")}`
+                    .toLocaleLowerCase("pt-BR")
+                    .includes(term);
+                }).map((item) => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id || (item.subItems && item.subItems.some((sub: any) => sub.id === activeTab));
                   return (
@@ -365,8 +684,7 @@ export default function AdminDashboard() {
                               return { ...prev, [item.id]: nextExpanded };
                             });
                           } else {
-                            setActiveTab(item.id);
-                            setIsMobileMenuOpen(false);
+                            navigateTo(item.id);
                           }
                         }}
                         className={`flex w-full justify-between items-center px-4 py-3 text-sm font-semibold rounded-lg transition-all ${
@@ -391,8 +709,7 @@ export default function AdminDashboard() {
                             <button
                               key={subItem.id}
                               onClick={() => {
-                                setActiveTab(subItem.id);
-                                setIsMobileMenuOpen(false);
+                                navigateTo(subItem.id);
                               }}
                               className={`w-full text-left px-4 py-3 rounded-lg text-sm transition-all ${
                                 activeTab === subItem.id 
@@ -422,9 +739,10 @@ export default function AdminDashboard() {
           )}
         </header>
 
-        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-5 sm:px-5 sm:py-6 lg:px-7 lg:py-7">
+        <Suspense fallback={<AppLoadingState />}>
         {activeTab === "OVERVIEW" ? (
-          <OverviewDashboard />
+          <OverviewDashboard selectedUnit={selectedUnit} onNavigate={navigateTo} />
         ) : activeTab.startsWith("FINANCE") ? (
           <FinancialDashboard currentTab={activeTab.replace("FINANCE_", "") as any} />
         ) : activeTab === "MANAGEMENT_SVA" ? (
@@ -541,6 +859,7 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+        </Suspense>
       </main>
       </div>
     </div>

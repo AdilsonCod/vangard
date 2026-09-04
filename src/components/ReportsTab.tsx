@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, setDoc, onSnapshot, collection, query, where } from 'firebase/firestore';
+import { AppPageHeader, appControlClass } from './ui/AppPrimitives';
 
 export interface WeekInterval {
   id: string;
@@ -733,18 +734,12 @@ export function ReportsTab() {
     <div className="space-y-8 animate-in fade-in duration-300">
       
       {/* FILTER & PERIOD SELECTOR ACTION BAR */}
-      <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col xl:flex-row items-start xl:items-center justify-between gap-5 relative">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
-            <FileText className="w-6 h-6 text-orange-500" />
-            Relatórios Financeiros e Faturamento
-          </h2>
-          <p className="text-xs text-gray-500 dark:text-zinc-400 mt-1">
-            Análise detalhada de faturamento por categorias de serviços, vendas de produtos e tipos de assinaturas (com divisão e lançamentos por semana).
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+      <AppPageHeader
+        eyebrow="Dados e análise"
+        title="Relatórios financeiros"
+        description="Faturamento por serviços, produtos e assinaturas, com visualização consolidada ou semanal."
+        icon={<FileText className="h-5 w-5" />}
+        actions={<div className="flex w-full flex-wrap items-center gap-2 xl:w-auto">
           {/* Monthly navigation */}
           <div className="flex items-center justify-between bg-gray-50 dark:bg-zinc-800 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700 h-[42px] min-w-[210px] sm:min-w-0">
             <button onClick={handlePrevMonth} className="px-3 h-full hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
@@ -766,7 +761,7 @@ export function ReportsTab() {
                 setSelectedUnit(e.target.value);
                 setIsEditing(false); // turn off to load correctly
               }}
-              className="w-full h-[42px] bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl px-3 text-xs font-bold text-gray-700 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+              className={`${appControlClass} w-full text-xs`}
             >
               <option value="ALL">Todas as Unidades</option>
               {systemUnits?.map(u => (
@@ -849,8 +844,8 @@ export function ReportsTab() {
               </>
             )}
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Floating Save success Toast notification */}
       {saveSuccess && (

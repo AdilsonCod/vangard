@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { lazy, useState, useMemo, useEffect, useRef } from 'react';
 import { useStore } from '../store';
 import { 
   DollarSign, 
@@ -28,12 +28,14 @@ import {
   ComposedChart, Line
 } from 'recharts';
 import { CashClosing, FinancialTransaction } from '../types';
-import { BankReconciliation } from './BankReconciliation';
-import { ReceivablesReconciliation } from './ReceivablesReconciliation';
-import { FintechReconciliation } from './FintechReconciliation';
-import { ExpenseSettlement } from './ExpenseSettlement';
 import { getLatestFinancialPeriod } from '../utils/financialPeriods';
 import { isValidFinancialAmountInput, parseFinancialAmount } from '../utils/financialAmount';
+import { AppBadge, AppEmptyState, AppPageHeader, appControlClass } from './ui/AppPrimitives';
+
+const BankReconciliation = lazy(() => import('./BankReconciliation').then(module => ({ default: module.BankReconciliation })));
+const ReceivablesReconciliation = lazy(() => import('./ReceivablesReconciliation').then(module => ({ default: module.ReceivablesReconciliation })));
+const FintechReconciliation = lazy(() => import('./FintechReconciliation').then(module => ({ default: module.FintechReconciliation })));
+const ExpenseSettlement = lazy(() => import('./ExpenseSettlement').then(module => ({ default: module.ExpenseSettlement })));
 
 type FinancialTransactionForm = Omit<Partial<FinancialTransaction>, 'amount'> & {
   amount?: number | string;
@@ -189,6 +191,20 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     Boolean(filterSearch.trim()) ||
     Boolean(filterDateFrom) ||
     Boolean(filterDateTo);
+  const activeCashFilterCount = [
+    filterType !== 'ALL',
+    filterStatus !== 'ALL',
+    filterAccount !== 'ALL',
+    filterUnit !== 'ALL',
+    filterSupplier !== 'ALL',
+    filterClass !== 'ALL',
+    filterSubclass !== 'ALL',
+    filterSourceChannel !== 'ALL',
+    filterReconciliationStatus !== 'ALL',
+    Boolean(filterSearch.trim()),
+    Boolean(filterDateFrom),
+    Boolean(filterDateTo),
+  ].filter(Boolean).length;
 
   const clearCashFilters = () => {
     setFilterType('ALL');
@@ -955,22 +971,17 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
   return (
     <div className="space-y-6">
       {/* HEADER */}
-      <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-black text-gray-900 dark:text-zinc-100 flex items-center gap-2">
-            <DollarSign className="w-6 h-6 text-emerald-500" />
-            Gestão Financeira
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1">
-            Resumo geral de caixa, faturamento e contas a pagar/receber.
-          </p>
-        </div>
-
-        <div className="flex gap-2 items-center overflow-x-auto pb-2 custom-scrollbar">
+      <AppPageHeader
+        eyebrow="Financeiro"
+        title="Gestão financeira"
+        description="Caixa, faturamento, contas, recebimentos e conciliações organizados por período."
+        icon={<DollarSign className="h-5 w-5" />}
+        actions={<div className="flex items-center gap-2 overflow-x-auto app-scrollbar">
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="shrink-0 border border-gray-200 dark:border-zinc-800 p-2.5 rounded-xl font-semibold bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 shadow-sm"
+            aria-label="Mês financeiro"
+            className={`${appControlClass} shrink-0`}
           >
             {Array.from({ length: 12 }, (_, i) => {
               const m = String(i + 1).padStart(2, "0");
@@ -984,7 +995,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
-            className="shrink-0 border border-gray-200 dark:border-zinc-800 p-2.5 rounded-xl font-semibold bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 shadow-sm"
+            aria-label="Ano financeiro"
+            className={`${appControlClass} shrink-0`}
           >
             {[2024, 2025, 2026, 2027].map((y) => (
               <option key={y} value={y.toString()}>
@@ -992,8 +1004,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
               </option>
             ))}
           </select>
-        </div>
-      </div>
+        </div>}
+      />
 
       {transactionFeedback && (
         <div
@@ -1497,8 +1509,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
       )}
 
       {activeTab === 'CAIXA' && (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col h-[700px]">
-          <div className="p-6 border-b border-gray-200 dark:border-zinc-800 flex items-center justify-between">
+        <div className="flex min-h-[640px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex flex-col gap-4 border-b border-gray-200 p-5 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
              <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
                <DollarSign className="w-5 h-5 text-gray-400" />
                Lançamentos e Contas
@@ -1510,6 +1522,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
              >
                <Filter className="w-4 h-4" />
                Filtros
+               {activeCashFilterCount > 0 && <AppBadge tone="info" className="ml-1 px-2 py-0.5">{activeCashFilterCount}</AppBadge>}
              </button>
              <button
                onClick={() => {
@@ -1671,7 +1684,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
               </div>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+           <div className="flex-1 space-y-2 overflow-y-auto p-3 sm:p-4 app-scrollbar">
              {(caixaTransactions || []).map(t => (
                <div
                  key={t.id}
@@ -1685,7 +1698,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                      setSelectedTransaction(t);
                    }
                  }}
-                 className="flex cursor-pointer flex-col sm:flex-row justify-between items-start sm:items-center px-3 py-2.5 rounded-xl border border-gray-100 dark:border-zinc-800/80 bg-gray-50/50 dark:bg-zinc-800/30 hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:border-blue-800 dark:hover:bg-blue-950/20 gap-3 transition-colors"
+                  className="flex cursor-pointer flex-col items-start justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-3 transition-all hover:-translate-y-px hover:border-[var(--theme-color)]/35 hover:bg-[var(--theme-color)]/[0.035] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--theme-color)] dark:border-zinc-800/80 dark:bg-white/[0.025] dark:hover:border-[var(--theme-color)]/40 dark:hover:bg-[var(--theme-color)]/[0.055] sm:flex-row sm:items-center"
                >
                   <div className="flex gap-3 items-center w-full sm:w-auto min-w-0">
                     <div className={`p-2.5 rounded-lg ${t.type === 'INCOME' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'}`}>
@@ -1756,11 +1769,16 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
              ))}
              
   
-  {caixaTransactions.length === 0 && (
-               <div className="text-center py-12 text-gray-500 dark:text-zinc-400">
-                 Nenhum lançamento encontrado para este mês.
-               </div>
-             )}
+              {caixaTransactions.length === 0 && (
+                <AppEmptyState
+                  icon={<Search className="h-6 w-6" />}
+                  title="Nenhum lançamento encontrado"
+                  description={hasActiveCashFilters ? "Revise ou limpe os filtros para ampliar a busca." : "Ainda não existem lançamentos registrados neste período."}
+                  action={hasActiveCashFilters ? (
+                    <button onClick={clearCashFilters} className="rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold text-white dark:bg-white dark:text-zinc-900">Limpar filtros</button>
+                  ) : undefined}
+                />
+              )}
           </div>
         </div>
       )}

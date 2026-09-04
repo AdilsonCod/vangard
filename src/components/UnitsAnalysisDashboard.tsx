@@ -8,11 +8,14 @@ import {
   ChevronDown,
   ChevronUp,
   Calendar,
+  Maximize2,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { MonthlyUnitStats } from "../types";
-import { ResponsiveContainer, BarChart, Bar, Tooltip } from "recharts";
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
+import { AppPageHeader, appControlClass } from "./ui/AppPrimitives";
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -164,59 +167,136 @@ function MiniChart({
   isCurrency?: boolean;
   isPercentage?: boolean;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsExpanded(false);
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isExpanded]);
+
+  const formatValue = (value: number) => {
+    if (isCurrency) {
+      return value.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      });
+    }
+    if (isPercentage) {
+      return `${value.toLocaleString("pt-BR", { minimumFractionDigits: 1 })}%`;
+    }
+    return value.toLocaleString("pt-BR");
+  };
+
+  const chart = (expanded = false) => (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data} margin={expanded ? { top: 18, right: 24, bottom: 12, left: 20 } : undefined}>
+        {expanded && <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" opacity={0.1} />}
+        {expanded && (
+          <XAxis
+            dataKey="name"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 12, fill: "#789090" }}
+          />
+        )}
+        {expanded && (
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            width={78}
+            tick={{ fontSize: 11, fill: "#789090" }}
+            tickFormatter={(value) => isCurrency ? `R$ ${Number(value).toLocaleString("pt-BR", { notation: "compact", maximumFractionDigits: 1 })}` : isPercentage ? `${value}%` : Number(value).toLocaleString("pt-BR", { notation: "compact" })}
+          />
+        )}
+        <Tooltip
+          cursor={{ fill: "rgba(16,185,129,0.06)" }}
+          content={({ active, payload, label }) => {
+            if (active && payload && payload.length) {
+              const value = Number(payload[0].value || 0);
+              return (
+                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+                  {expanded && <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">{label}</span>}
+                  <span className="font-bold text-gray-900 dark:text-zinc-100">{formatValue(value)}</span>
+                </div>
+              );
+            }
+            return null;
+          }}
+        />
+        <Bar dataKey={dataKey} fill={color} radius={expanded ? [7, 7, 0, 0] : [2, 2, 0, 0]} maxBarSize={expanded ? 54 : undefined} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+
   return (
-    <div className="bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border border-gray-100 dark:border-zinc-700 flex flex-col items-center">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 mb-2 w-full text-left">
-        {name}
-      </h3>
+    <>
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Ampliar gráfico ${name}`}
+      onClick={() => setIsExpanded(true)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          setIsExpanded(true);
+        }
+      }}
+      className="group cursor-zoom-in bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border border-gray-100 dark:border-zinc-700 flex flex-col items-center transition hover:-translate-y-0.5 hover:border-[var(--theme-color)]/40 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[var(--theme-color)]/30"
+    >
+      <div className="mb-2 flex w-full items-center justify-between gap-2">
+        <h3 className="truncate text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">
+          {name}
+        </h3>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-gray-400 transition group-hover:bg-[var(--theme-color)]/10 group-hover:text-[var(--theme-color)] dark:text-zinc-500" title="Ampliar gráfico">
+          <Maximize2 className="h-3.5 w-3.5" />
+        </span>
+      </div>
       <div className="w-full h-24">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data}>
-            <Tooltip
-              formatter={(val: number) => {
-                if (isCurrency)
-                  return val.toLocaleString("pt-BR", {
-                    style: "currency",
-                    currency: "BRL",
-                  });
-                if (isPercentage)
-                  return `${val.toLocaleString("pt-BR", { minimumFractionDigits: 1 })}%`;
-                return val;
-              }}
-              labelStyle={{ color: "black" }}
-              contentStyle={{
-                borderRadius: "8px",
-                border: "none",
-                boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-              }}
-              cursor={{ fill: "rgba(0,0,0,0.05)" }}
-              content={({ active, payload }) => {
-                if (active && payload && payload.length) {
-                  const v = payload[0].value as number;
-                  let displayV = v.toString();
-                  if (isCurrency)
-                    displayV = v.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    });
-                  else if (isPercentage)
-                    displayV = `${v.toLocaleString("pt-BR", { minimumFractionDigits: 1 })}%`;
-                  return (
-                    <div className="bg-white dark:bg-zinc-800 p-2 border border-gray-200 dark:border-zinc-700 rounded-lg shadow-sm text-sm">
-                      <span className="font-semibold text-gray-900 dark:text-zinc-100">
-                        {displayV}
-                      </span>
-                    </div>
-                  );
-                }
-                return null;
-              }}
-            />
-            <Bar dataKey={dataKey} fill={color} radius={[2, 2, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {chart()}
       </div>
     </div>
+
+    {isExpanded && (
+      <div
+        className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Gráfico ampliado: ${name}`}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setIsExpanded(false);
+        }}
+      >
+        <div className="flex h-[min(82vh,760px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-[#041b1b]">
+          <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-white/10 sm:px-6">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--theme-color)]">Análise anual da unidade</p>
+              <h2 className="mt-1 text-lg font-black text-gray-950 dark:text-white sm:text-xl">{name}</h2>
+              <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">Comparativo mensal de janeiro a dezembro.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsExpanded(false)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-500 transition hover:bg-gray-100 hover:text-gray-950 dark:border-white/10 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white"
+              aria-label="Fechar gráfico ampliado"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 p-3 sm:p-6">
+            {chart(true)}
+          </div>
+          <div className="flex items-center justify-between border-t border-gray-200 px-5 py-3 text-[10px] text-gray-400 dark:border-white/10 dark:text-zinc-500 sm:px-6">
+            <span>Passe o cursor sobre as colunas para ver os valores.</span>
+            <span>Esc para fechar</span>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -711,7 +791,14 @@ export function UnitsAnalysisDashboard() {
   );
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm animate-in fade-in duration-300 flex flex-col p-6 overflow-hidden mt-6">
+    <div className="space-y-6">
+      <AppPageHeader
+        eyebrow="Análises"
+        title="Desempenho das unidades"
+        description="Compare faturamento, atendimento, produtos e assinaturas por unidade e período."
+        icon={<BarChart2 className="h-5 w-5" />}
+      />
+    <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
       {clearConfirmMsg && (
         <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-xl flex items-center justify-between gap-4 animate-in slide-in-from-top duration-300">
           <div>
@@ -766,7 +853,7 @@ export function UnitsAnalysisDashboard() {
           <select
             value={selectedUnitId}
             onChange={(e) => setSelectedUnitId(e.target.value)}
-            className="bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 px-4 py-2 rounded-lg text-sm font-semibold outline-none text-gray-750 dark:text-zinc-200 cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-700 transition"
+            className={`${appControlClass} cursor-pointer`}
           >
             <option value="ALL">Todas as Unidades</option>
             {availableUnits.map((su) => (
@@ -779,7 +866,7 @@ export function UnitsAnalysisDashboard() {
           <select
             value={selectedMonthIdx}
             onChange={(e) => setSelectedMonthIdx(Number(e.target.value))}
-            className="bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 px-4 py-2 rounded-lg text-sm font-semibold outline-none text-gray-750 dark:text-zinc-200 cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-700 transition"
+            className={`${appControlClass} cursor-pointer`}
           >
             {MONTH_NAMES.map((m, idx) => (
               <option key={idx} value={idx}>
@@ -1473,6 +1560,7 @@ export function UnitsAnalysisDashboard() {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }

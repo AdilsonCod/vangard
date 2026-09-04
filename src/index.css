@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  color-scheme: light;
+  --app-sidebar-width: 248px;
+  --app-sidebar-collapsed-width: 76px;
+  --app-header-height: 72px;
+  --app-content-width: 1600px;
+  --app-radius: 16px;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
 @theme {
   --color-zinc-50: #eef3f3;
   --color-zinc-100: #dce7e7;
@@ -64,8 +77,140 @@
 }
 
 @layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-width: 320px;
+    background: #fcfaf8;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    text-rendering: optimizeLegibility;
+  }
+
+  html.dark {
+    background: #001414;
+  }
+
   body {
     @apply border-gray-200;
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--theme-color) 28%, transparent);
+  }
+}
+
+@layer components {
+  .app-workspace {
+    background:
+      radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--theme-color) 5%, transparent), transparent 30rem),
+      #fcfaf8;
+  }
+
+  .dark .app-workspace {
+    background:
+      radial-gradient(circle at 35% 6%, color-mix(in srgb, var(--theme-color) 8%, transparent), transparent 34rem),
+      linear-gradient(145deg, #001717 0%, #001414 62%, #001b1b 100%);
+  }
+
+  .app-surface {
+    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+    border-radius: var(--app-radius);
+    background: color-mix(in srgb, Canvas 97%, transparent);
+  }
+
+  .app-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, currentColor 20%, transparent) transparent;
+  }
+
+  .app-scrollbar::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+
+  .app-scrollbar::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 18%, transparent);
+  }
+
+  .app-segmented {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid color-mix(in srgb, currentColor 11%, transparent);
+    border-radius: 0.875rem;
+    background: color-mix(in srgb, Canvas 88%, currentColor 2%);
+  }
+}
+
+main {
+  scrollbar-gutter: stable;
+}
+
+main :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+main :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus-visible {
+  border-color: var(--theme-color);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-color) 14%, transparent);
+}
+
+main :where(button, a):focus-visible {
+  outline: 2px solid var(--theme-color);
+  outline-offset: 2px;
+}
+
+main table {
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+main thead th {
+  letter-spacing: 0.045em;
+}
+
+main tbody tr {
+  transition: background-color 140ms ease;
+}
+
+main .overflow-x-auto {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, currentColor 18%, transparent) transparent;
+}
+
+main :where(section, article, div).rounded-2xl.border {
+  box-shadow: 0 1px 2px rgb(49 27 18 / 0.035), 0 8px 28px rgb(49 27 18 / 0.025);
+}
+
+.dark main :where(section, article, div).rounded-2xl.border {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), 0 12px 36px rgb(0 0 0 / 0.09);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 
@@ -292,4 +437,3 @@ html.dark body.theme-dark-pure {
   --color-zinc-900: #18181b;
   --color-zinc-950: #000000;
 }
-

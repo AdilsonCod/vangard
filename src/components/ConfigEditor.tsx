@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { 
   Palette, 
 } from "lucide-react";
+import { AppPageHeader } from "./ui/AppPrimitives";
 
 export function ConfigEditor() {
   const { 
@@ -34,6 +35,12 @@ export function ConfigEditor() {
 
   return (
     <div className="space-y-8 relative">
+      <AppPageHeader
+        eyebrow="Sistema"
+        title="Configurações"
+        description="Personalize a aparência e os padrões visuais utilizados em todas as áreas do aplicativo."
+        icon={<Palette className="h-5 w-5" />}
+      />
       <section className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-xs border border-gray-150 dark:border-zinc-800/80 transition-colors">
           <div className="flex items-center gap-2 border-b dark:border-zinc-800/80 pb-4 mb-6">
              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">

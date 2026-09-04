@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   RotateCcw
 } from "lucide-react";
+import { AppPageHeader } from "./ui/AppPrimitives";
 
 export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" | "UNITS" }) {
   const { 
@@ -231,9 +232,21 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
     if (subTab === 'MANAGERS') return u.role === 'ADMIN' || u.role === 'FINANCIAL' || u.role === 'MARKETING';
     return false;
   });
+  const pageTitle = subTab === 'UNITS' ? 'Cadastro de unidades' : subTab === 'MANAGERS' ? 'Gerência e acessos' : 'Colaboradores';
+  const pageDescription = subTab === 'UNITS'
+    ? 'Gerencie as unidades disponíveis em todos os módulos do sistema.'
+    : subTab === 'MANAGERS'
+      ? 'Gerencie administradores e responsáveis pelas áreas financeira e de marketing.'
+      : 'Cadastre profissionais, organize vínculos por unidade e mantenha os acessos atualizados.';
 
   return (
     <div className="space-y-6 relative">
+      <AppPageHeader
+        eyebrow="Equipe e estrutura"
+        title={pageTitle}
+        description={pageDescription}
+        icon={subTab === 'UNITS' ? <Building className="h-5 w-5" /> : <UserPlus className="h-5 w-5" />}
+      />
       {/* Dynamic Animated Toast */}
       {toast && (
         <div className="fixed top-24 right-6 z-50 flex items-center gap-3 bg-white dark:bg-zinc-800 border border-gray-150 dark:border-zinc-700/80 p-4 rounded-xl shadow-xl max-w-sm transition-all duration-300 transform translate-x-0 animate-bounce">
