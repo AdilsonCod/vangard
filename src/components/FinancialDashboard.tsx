@@ -11,7 +11,7 @@ import {
   Clock,
   Plus,
   Trash2,
-  Edit2, Filter, Activity, RotateCcw, ShieldCheck, AlertTriangle
+  Edit2, Filter, Activity, RotateCcw, ShieldCheck, AlertTriangle, Search
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -159,6 +159,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
   const [filterReconciliationStatus, setFilterReconciliationStatus] = useState<string>('ALL');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
+  const [filterSearch, setFilterSearch] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isSavingTransaction, setIsSavingTransaction] = useState(false);
   const [transactionFeedback, setTransactionFeedback] = useState<{
@@ -184,6 +185,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     filterSubclass !== 'ALL' ||
     filterSourceChannel !== 'ALL' ||
     filterReconciliationStatus !== 'ALL' ||
+    Boolean(filterSearch.trim()) ||
     Boolean(filterDateFrom) ||
     Boolean(filterDateTo);
 
@@ -197,8 +199,21 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     setFilterSubclass('ALL');
     setFilterSourceChannel('ALL');
     setFilterReconciliationStatus('ALL');
+    setFilterSearch('');
     setFilterDateFrom('');
     setFilterDateTo('');
+  };
+
+  const applyCashQuickFilter = (
+    type: string = 'ALL',
+    status: string = 'ALL',
+    sourceChannel: string = 'ALL',
+    reconciliationStatus: string = 'ALL'
+  ) => {
+    setFilterType(type);
+    setFilterStatus(status);
+    setFilterSourceChannel(sourceChannel);
+    setFilterReconciliationStatus(reconciliationStatus);
   };
 
   useEffect(() => {
@@ -572,9 +587,14 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     if (filterReconciliationStatus !== 'ALL') {
       filtered = filtered.filter(t => (t.reconciliationStatus || 'NOT_APPLICABLE') === filterReconciliationStatus);
     }
+    if (filterSearch.trim()) {
+      const search = filterSearch.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      filtered = filtered.filter(transaction => `${transaction.description} ${transaction.category} ${transaction.supplier || ''}`
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(search));
+    }
 
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, filterType, filterStatus, filterAccount, filterUnit, filterSupplier, filterClass, filterSubclass, filterSourceChannel, filterReconciliationStatus, filterDateFrom, filterDateTo, monthStr]);
+  }, [transactions, filterType, filterStatus, filterAccount, filterUnit, filterSupplier, filterClass, filterSubclass, filterSourceChannel, filterReconciliationStatus, filterSearch, filterDateFrom, filterDateTo, monthStr]);
 
   const operationsCenter = useMemo(() => {
     const anchor = /^\d{4}-\d{2}-\d{2}$/.test(operationsDate)
@@ -712,6 +732,31 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
   const selectedCashClosing = useMemo(() => cashClosings.find(closing =>
     operationsUnit !== 'ALL' && closing.unitId === operationsUnit && closing.date === operationsDate
   ), [cashClosings, operationsDate, operationsUnit]);
+
+  const dailyUnitOverview = useMemo(() => systemUnits
+    .filter(unit => unit.isActive !== false)
+    .map(unit => {
+      const movements = transactions.filter(transaction =>
+        transaction.unitId === unit.id && transaction.date === operationsDate
+      );
+      const pending = movements.filter(transaction =>
+        transaction.reconciliationStatus === 'PENDING' ||
+        transaction.reconciliationStatus === 'AWAITING_SETTLEMENT'
+      ).length;
+      const divergent = movements.filter(transaction => transaction.reconciliationStatus === 'DIVERGENT').length;
+      const closing = cashClosings.find(item => item.unitId === unit.id && item.date === operationsDate);
+      const responsible = closing?.closedBy
+        ? users.find(user => user.id === closing.closedBy)?.name || 'Usuário não identificado'
+        : '—';
+      const reconciliation = divergent > 0
+        ? 'Divergente'
+        : pending > 0
+          ? 'Parcial'
+          : movements.length > 0
+            ? 'Concluída'
+            : 'Sem movimentos';
+      return { unit, movements: movements.length, pending, divergent, closing, responsible, reconciliation };
+    }), [cashClosings, operationsDate, systemUnits, transactions, users]);
 
   // Process data for the selected month
   const { 
@@ -964,8 +1009,99 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
 
       {activeTab === 'RESUMO' && (
         <>
+          <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex flex-col gap-4 border-b border-gray-200 p-5 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-emerald-600">Operação diária</p>
+                <h3 className="mt-1 text-lg font-black text-gray-900 dark:text-white">Fechamento por unidade</h3>
+                <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">Veja rapidamente quais unidades ainda exigem conferência ou fechamento.</p>
+              </div>
+              <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
+                <Calendar className="h-4 w-4 text-gray-400" />
+                <span className="sr-only">Data operacional</span>
+                <input
+                  type="date"
+                  value={operationsDate}
+                  onChange={event => setOperationsDate(event.target.value)}
+                  className="bg-transparent text-sm font-bold outline-none"
+                />
+              </label>
+            </div>
+
+            {dailyUnitOverview.some(item => item.divergent > 0 || !item.closing) && (
+              <div className="flex flex-col gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/20 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span className="font-bold">
+                    {dailyUnitOverview.filter(item => !item.closing).length} unidade(s) sem fechamento e{' '}
+                    {dailyUnitOverview.reduce((sum, item) => sum + item.divergent, 0)} divergência(s) nesta data.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => document.getElementById('operations-center')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  className="shrink-0 font-black text-amber-800 underline decoration-2 underline-offset-4 dark:text-amber-300"
+                >
+                  Ir para a conferência
+                </button>
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="bg-gray-50 text-[10px] font-black uppercase tracking-wider text-gray-500 dark:bg-zinc-800/60 dark:text-zinc-400">
+                  <tr>
+                    <th className="px-5 py-3">Unidade</th>
+                    <th className="px-4 py-3">Caixa físico</th>
+                    <th className="px-4 py-3">Conciliação</th>
+                    <th className="px-4 py-3 text-center">Divergências</th>
+                    <th className="px-4 py-3">Responsável</th>
+                    <th className="px-5 py-3 text-right">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+                  {dailyUnitOverview.map(item => (
+                    <tr key={item.unit.id} className="transition hover:bg-gray-50 dark:hover:bg-zinc-800/40">
+                      <td className="px-5 py-3 font-black text-gray-900 dark:text-white">{item.unit.name}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${
+                          item.closing?.status === 'CLOSED'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+                            : item.closing?.status === 'DIVERGENT'
+                              ? 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300'
+                              : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                        }`}>
+                          {item.closing?.status === 'CLOSED' ? 'Fechado' : item.closing?.status === 'DIVERGENT' ? 'Com diferença' : 'Pendente'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-gray-600 dark:text-zinc-300">{item.reconciliation}</td>
+                      <td className={`px-4 py-3 text-center font-black ${item.divergent > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{item.divergent}</td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-zinc-400">{item.responsible}</td>
+                      <td className="px-5 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOperationsUnit(item.unit.id);
+                            setOperationsPeriod('DAY');
+                            requestAnimationFrame(() => document.getElementById('operations-center')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+                          }}
+                          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-black text-gray-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-blue-950/20"
+                        >
+                          Abrir operação
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {dailyUnitOverview.length === 0 && (
+                    <tr><td colSpan={6} className="px-5 py-10 text-center text-gray-500">Cadastre uma unidade para iniciar o controle diário.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
           {/* KPIS */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
               <div className="flex items-center gap-3 text-emerald-600 dark:text-emerald-500 mb-2">
                 <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
@@ -1015,7 +1151,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
             </div>
           </div>
 
-          <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <section id="operations-center" className="scroll-mt-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <div className="flex flex-col gap-4 border-b border-gray-200 p-5 dark:border-zinc-800 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h3 className="flex items-center gap-2 font-black text-gray-900 dark:text-white">
@@ -1401,6 +1537,42 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
              </button>
              </div>
           </div>
+
+          <div className="flex flex-col gap-3 border-b border-gray-100 px-6 py-3 dark:border-zinc-800 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+              {[
+                { label: 'Todos', type: 'ALL', status: 'ALL', source: 'ALL', reconciliation: 'ALL' },
+                { label: 'Receitas', type: 'INCOME', status: 'ALL', source: 'ALL', reconciliation: 'ALL' },
+                { label: 'Despesas', type: 'EXPENSE', status: 'ALL', source: 'ALL', reconciliation: 'ALL' },
+                { label: 'Pendentes', type: 'ALL', status: 'PENDENTE', source: 'ALL', reconciliation: 'ALL' },
+                { label: 'Conciliados', type: 'ALL', status: 'ALL', source: 'ALL', reconciliation: 'RECONCILED' },
+                { label: 'Caixa físico', type: 'ALL', status: 'ALL', source: 'CASH', reconciliation: 'ALL' },
+              ].map(item => {
+                const active = filterType === item.type && filterStatus === item.status && filterSourceChannel === item.source && filterReconciliationStatus === item.reconciliation;
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => applyCashQuickFilter(item.type, item.status, item.source, item.reconciliation)}
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black transition ${active ? 'bg-gray-900 text-white dark:bg-white dark:text-zinc-900' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'}`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+            <label className="flex min-w-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 focus-within:border-blue-400 dark:border-zinc-700 dark:bg-zinc-950 lg:w-72">
+              <Search className="h-4 w-4 shrink-0 text-gray-400" />
+              <span className="sr-only">Pesquisar lançamentos</span>
+              <input
+                type="search"
+                value={filterSearch}
+                onChange={event => setFilterSearch(event.target.value)}
+                placeholder="Pesquisar lançamento..."
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
+              />
+            </label>
+          </div>
           
           {isFilterOpen && (
             <div className="px-6 py-4 bg-gray-50 dark:bg-zinc-800/50 border-b border-gray-100 dark:border-zinc-800 grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1494,7 +1666,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
               </div>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
              {(caixaTransactions || []).map(t => (
                <div
                  key={t.id}
@@ -1508,15 +1680,15 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                      setSelectedTransaction(t);
                    }
                  }}
-                 className="flex cursor-pointer flex-col sm:flex-row justify-between items-start sm:items-center p-4 rounded-xl border border-gray-100 dark:border-zinc-800/80 bg-gray-50/50 dark:bg-zinc-800/30 hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:border-blue-800 dark:hover:bg-blue-950/20 gap-4 transition-colors"
+                 className="flex cursor-pointer flex-col sm:flex-row justify-between items-start sm:items-center px-3 py-2.5 rounded-xl border border-gray-100 dark:border-zinc-800/80 bg-gray-50/50 dark:bg-zinc-800/30 hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:border-blue-800 dark:hover:bg-blue-950/20 gap-3 transition-colors"
                >
-                  <div className="flex gap-4 items-center w-full sm:w-auto">
-                    <div className={`p-3 rounded-xl ${t.type === 'INCOME' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'}`}>
-                      {t.type === 'INCOME' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+                  <div className="flex gap-3 items-center w-full sm:w-auto min-w-0">
+                    <div className={`p-2.5 rounded-lg ${t.type === 'INCOME' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'}`}>
+                      {t.type === 'INCOME' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                     </div>
-                    <div>
-                      <h4 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        {t.description}
+                    <div className="min-w-0">
+                      <h4 className="font-bold text-sm text-gray-900 dark:text-white flex flex-wrap items-center gap-1.5">
+                        <span className="truncate max-w-md">{t.description}</span>
                         <span className="text-[10px] px-2 py-0.5 rounded bg-gray-200 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 uppercase tracking-wider font-bold">
                           {t.category}
                         </span>
@@ -1532,7 +1704,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                           </span>
                         )}
                       </h4>
-                      <div className="text-xs text-gray-500 dark:text-zinc-400 mt-1 flex gap-3">
+                      <div className="text-[11px] text-gray-500 dark:text-zinc-400 mt-1 flex flex-wrap gap-x-3 gap-y-1">
                         <span className="flex items-center gap-1">
                            <Calendar className="w-3 h-3" />
                            Lan: {formatTransactionDate(t.date)} {t.dueDate ? `| Venc: ${formatTransactionDate(t.dueDate)}` : ''} {t.recurrence !== 'NONE' && t.installmentIndex ? `| (${t.installmentIndex}/${t.installments})` : ''}
@@ -1545,7 +1717,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                   </div>
                   <div className="flex items-center justify-between w-full sm:w-auto gap-4">
                      <div className="text-left sm:text-right">
-                       <p className={`font-black text-lg ${t.type === 'INCOME' ? 'text-emerald-600 dark:text-emerald-500' : 'text-red-500'}`}>
+                       <p className={`font-black text-base ${t.type === 'INCOME' ? 'text-emerald-600 dark:text-emerald-500' : 'text-red-500'}`}>
                          {t.type === 'INCOME' ? '+' : '-'}{t.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                        </p>
                        <p className={`text-xs font-bold uppercase tracking-wider ${t.status === 'PENDENTE' ? 'text-amber-500' : t.status === 'AGENDADO' ? 'text-blue-500' : 'text-emerald-500'}`}>

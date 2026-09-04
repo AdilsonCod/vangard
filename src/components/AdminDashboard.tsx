@@ -146,7 +146,7 @@ export default function AdminDashboard() {
       subItems: [
         { id: "FINANCE_RESUMO", label: "Resumo" },
         { id: "FINANCE_CAIXA", label: "Caixa & Contas" },
-        { id: "FINANCE_CONCILIACAO_FINTECH", label: "Conciliação FinTech (4 Fontes)" },
+        { id: "FINANCE_CONCILIACAO_FINTECH", label: "Conciliação" },
         { id: "FINANCE_CONCILIACAO", label: "Conciliação OFX" },
         { id: "FINANCE_RECEBIMENTOS", label: "Baixa de Recebimentos" }
       ]

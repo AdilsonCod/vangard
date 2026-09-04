@@ -152,6 +152,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const [settledItems, setSettledItems] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showMoreActions, setShowMoreActions] = useState(false);
 
   // Estados de Conciliação Manual
   const [isManualReconModalOpen, setIsManualReconModalOpen] = useState(false);
@@ -186,6 +187,21 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     () => reconciliationUnits.find(unit => unit.id === selectedUnidade)?.name || selectedUnidade,
     [reconciliationUnits, selectedUnidade]
   );
+
+  const loadedSourcesCount = [
+    pdvData.length > 0,
+    clubeData.length > 0,
+    redePagamentos.length > 0 || redeRecebidos.length > 0 || Boolean(redeResumoInfo),
+    previsaoData.length > 0,
+  ].filter(Boolean).length;
+
+  const reconciliationSteps = [
+    { label: 'Unidade', detail: selectedUnitName || 'Selecione', complete: Boolean(selectedUnidade) },
+    { label: 'Arquivos', detail: `${loadedSourcesCount} de 4 fontes`, complete: loadedSourcesCount === 4 },
+    { label: 'Conferência', detail: items.length > 0 ? `${items.length} registros` : 'Aguardando execução', complete: items.length > 0 },
+    { label: 'Salvamento', detail: currentSessionId ? 'Conciliação salva' : 'Ainda não salva', complete: Boolean(currentSessionId) },
+    { label: 'Caixa', detail: settledItems.size > 0 ? `${settledItems.size} efetivados` : 'Não efetivado', complete: settledItems.size > 0 },
+  ];
 
   useEffect(() => {
     if (reconciliationUnits.length === 0) return;
@@ -506,7 +522,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
         unitId,
         type: 'INCOME',
         category: 'Atendimentos Cartão (Lote)',
-        description: `[Conciliação FinTech - Lote] ${batch.modalidade} - ${batch.dataVenda}`,
+        description: `[Conciliação - Lote] ${batch.modalidade} - ${batch.dataVenda}`,
         amount: batch.totalRedeLiquido,
         date: batch.dataVenda,
         status: 'RECEBIDO',
@@ -603,7 +619,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
           unitId,
           type: isExpense ? 'EXPENSE' : 'INCOME',
           category: isExpense ? 'Taxas e Estornos (MDR)' : 'Atendimentos Cartão',
-          description: `[Conciliação FinTech] ${item.clienteOuDesc} - ${item.modalidadeOuPlano} (${item.identificador})`,
+          description: `[Conciliação] ${item.clienteOuDesc} - ${item.modalidadeOuPlano} (${item.identificador})`,
           amount: Math.abs(item.valorLiquido),
           date: item.dataLiquidacaoEfetiva || item.dataVenda,
           status: isExpense ? 'PAGO' : 'RECEBIDO',
@@ -1220,9 +1236,6 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <span className="px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider bg-blue-600 text-white">
-              FinTech Engine
-            </span>
             <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400 font-semibold bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded-lg">
               <MapPin className="w-3.5 h-3.5" />
               <select 
@@ -1251,62 +1264,85 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={handleLoadDemo}
-            className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-sm rounded-xl hover:from-blue-700 hover:to-indigo-700 shadow-sm flex items-center gap-2 transition"
-          >
-            <Sparkles className="w-4 h-4" />
-            Dados de Exemplo (Simulação Vangard)
-          </button>
-
-          <button
             onClick={handleRunReconciliation}
             disabled={isProcessing}
-            className="px-4 py-2.5 bg-blue-600 text-white font-bold text-sm rounded-xl hover:bg-blue-700 shadow-sm flex items-center gap-2 transition disabled:opacity-50"
+            className="px-4 py-2.5 bg-[var(--theme-color)] text-white font-bold text-sm rounded-xl hover:brightness-95 shadow-sm flex items-center gap-2 transition disabled:opacity-50"
           >
             <Play className="w-4 h-4" />
-            Executar
+            {isProcessing ? 'Processando...' : 'Executar conciliação'}
           </button>
           <button
             onClick={handleSaveSession}
             disabled={isSaving || items.length === 0}
-            className="px-4 py-2.5 bg-emerald-600 text-white font-bold text-sm rounded-xl hover:bg-emerald-700 shadow-sm flex items-center gap-2 transition disabled:opacity-50"
+            className="px-4 py-2.5 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 font-bold text-sm rounded-xl hover:bg-gray-50 dark:hover:bg-zinc-700/50 flex items-center gap-2 transition disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
             {isSaving ? 'Salvando...' : 'Salvar Conciliação'}
           </button>
           <button
-            onClick={handleFetchSessions}
-            className="px-4 py-2.5 bg-zinc-800 text-white font-bold text-sm rounded-xl hover:bg-zinc-700 shadow-sm flex items-center gap-2 transition"
-          >
-            <Database className="w-4 h-4 text-blue-400" />
-            Carregar Salvos
-          </button>
-
-          <button
             onClick={handleSettleAll}
-            className="px-4 py-2.5 bg-emerald-600 text-white font-bold text-sm rounded-xl hover:bg-emerald-700 shadow-sm flex items-center gap-2 transition"
+            disabled={items.length === 0}
+            className="px-4 py-2.5 bg-emerald-600 text-white font-bold text-sm rounded-xl hover:bg-emerald-700 shadow-sm flex items-center gap-2 transition disabled:opacity-50"
           >
             <CheckCircle className="w-4 h-4" />
             Efetivar no Caixa
           </button>
-
-          <button
-            onClick={handleExportExcel}
-            className="px-4 py-2.5 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 font-bold text-sm rounded-xl hover:bg-gray-50 dark:hover:bg-zinc-700/50 flex items-center gap-2 transition"
-          >
-            <Download className="w-4 h-4 text-emerald-600" />
-            Exportar Excel
-          </button>
-
-          <button
-            onClick={handleClear}
-            className="p-2.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/20 transition"
-            title="Limpar Arquivos"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowMoreActions(value => !value)}
+              aria-expanded={showMoreActions}
+              className="px-3 py-2.5 border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-300 font-bold text-sm rounded-xl hover:bg-gray-50 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
+            >
+              Mais ações <ChevronDown className={`h-4 w-4 transition ${showMoreActions ? 'rotate-180' : ''}`} />
+            </button>
+            {showMoreActions && (
+              <div className="absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+                <button type="button" onClick={() => { handleLoadDemo(); setShowMoreActions(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-gray-100 dark:hover:bg-zinc-800">
+                  <Sparkles className="h-4 w-4 text-blue-500" /> Dados de exemplo
+                </button>
+                <button type="button" onClick={() => { handleFetchSessions(); setShowMoreActions(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-gray-100 dark:hover:bg-zinc-800">
+                  <Database className="h-4 w-4 text-blue-500" /> Carregar conciliações
+                </button>
+                <button type="button" onClick={() => { handleExportExcel(); setShowMoreActions(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-gray-100 dark:hover:bg-zinc-800">
+                  <Download className="h-4 w-4 text-emerald-600" /> Exportar Excel
+                </button>
+                <button type="button" onClick={() => { handleClear(); setShowMoreActions(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">
+                  <Trash2 className="h-4 w-4" /> Limpar arquivos
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-black text-gray-900 dark:text-white">Progresso da conciliação</h3>
+            <p className="text-xs text-gray-500 dark:text-zinc-400">Siga as etapas da esquerda para a direita.</p>
+          </div>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-black text-gray-600 dark:bg-zinc-800 dark:text-zinc-300">
+            {reconciliationSteps.filter(step => step.complete).length} de {reconciliationSteps.length}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {reconciliationSteps.map((step, index) => (
+            <div key={step.label} className={`flex items-center gap-3 rounded-xl border p-3 ${step.complete ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900 dark:bg-emerald-950/20' : 'border-gray-200 bg-gray-50 dark:border-zinc-800 dark:bg-zinc-950/30'}`}>
+              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${step.complete ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-600 dark:bg-zinc-700 dark:text-zinc-300'}`}>
+                {step.complete ? <Check className="h-4 w-4" /> : index + 1}
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-gray-900 dark:text-white">{step.label}</p>
+                <p className="truncate text-[11px] text-gray-500 dark:text-zinc-400">{step.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-zinc-800">
+          <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${(reconciliationSteps.filter(step => step.complete).length / reconciliationSteps.length) * 100}%` }} />
+        </div>
+      </section>
 
       {/* 4 Cards de Ingestão de Fontes */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -3228,7 +3264,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
           <div className="p-6 space-y-6">
             <div>
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400">
-                Arquitetura FinTech Modular
+                Arquitetura de Conciliação Modular
               </span>
               <h3 className="font-extrabold text-gray-900 dark:text-white text-base">
                 Scripts do Backend (Python / FastAPI) e Esquema SQL Relacional (PostgreSQL)
@@ -3259,10 +3295,10 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                 </button>
               </div>
               <p className="text-xs text-zinc-400 mb-2">
-                Contém classes <code className="text-emerald-300">FinTechParser</code> (tratamento de encoding UTF-8/Latin1, limpeza de "R$ 70,00", normalização de datas) e <code className="text-emerald-300">ReconciliationEngine</code> (Regras 1 e 2, auditoria de MDR e cálculo de KPIs).
+                Contém o parser de arquivos (tratamento de encoding UTF-8/Latin1, limpeza de "R$ 70,00" e normalização de datas) e o <code className="text-emerald-300">ReconciliationEngine</code> (regras de conciliação, auditoria de MDR e cálculo de indicadores).
               </p>
               <pre className="text-[11px] font-mono text-zinc-300 overflow-x-auto bg-zinc-900/60 p-3 rounded-xl border border-zinc-800/80">
-{`from reconciliation_engine import FinTechParser, ReconciliationEngine
+{`from reconciliation_engine import ReconciliationEngine
 
 # Ingestão e execução direta:
 engine = ReconciliationEngine(df_pdv, df_clube, df_rede_pag, df_rede_rec, df_prev)
