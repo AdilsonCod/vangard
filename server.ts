@@ -5,24 +5,66 @@ import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+const AI_WINDOW_MS = 15 * 60 * 1000;
+const AI_MAX_REQUESTS_PER_WINDOW = 20;
+const AI_MAX_TEXT_LENGTH = 20_000;
+const aiRequestWindows = new Map<string, { count: number; resetAt: number }>();
+
+function limitAiRequests(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const now = Date.now();
+  const key = req.ip || req.socket.remoteAddress || 'unknown';
+  const current = aiRequestWindows.get(key);
+
+  if (!current || current.resetAt <= now) {
+    aiRequestWindows.set(key, { count: 1, resetAt: now + AI_WINDOW_MS });
+    next();
+    return;
+  }
+
+  if (current.count >= AI_MAX_REQUESTS_PER_WINDOW) {
+    res.status(429).json({ error: 'Limite temporário de análises atingido. Tente novamente mais tarde.' });
+    return;
+  }
+
+  current.count += 1;
+  next();
+}
+
+function readLimitedText(value: unknown, field: string, required = false) {
+  if (value == null || value === '') {
+    if (required) throw new Error(`O campo ${field} é obrigatório.`);
+    return '';
+  }
+  if (typeof value !== 'string') throw new Error(`O campo ${field} deve ser texto.`);
+  if (value.length > AI_MAX_TEXT_LENGTH) throw new Error(`O campo ${field} excede o limite permitido.`);
+  return value.trim();
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.disable('x-powered-by');
+  app.set('trust proxy', 1);
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
+  app.use(express.json({ limit: '256kb' }));
 
   // API routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
 
-  app.post("/api/analyze-marketing", async (req, res) => {
+  app.post("/api/analyze-marketing", limitAiRequests, async (req, res) => {
     try {
-      const { 
-        conteudos,
-        metricas,
-        contexto
-      } = req.body;
+      const conteudos = readLimitedText(req.body?.conteudos, 'conteudos');
+      const metricas = readLimitedText(req.body?.metricas, 'metricas');
+      const contexto = readLimitedText(req.body?.contexto, 'contexto');
 
       console.log("Analyzing metrics via Gemini");
       const prompt = `
@@ -86,9 +128,10 @@ Retorne EXATAMENTE este objeto JSON estrito:
     }
   });
 
-  app.post("/api/generate-post-idea", async (req, res) => {
+  app.post("/api/generate-post-idea", limitAiRequests, async (req, res) => {
     try {
-      const { tema, publico } = req.body;
+      const tema = readLimitedText(req.body?.tema, 'tema', true);
+      const publico = readLimitedText(req.body?.publico, 'publico');
 
       const prompt = `
 Você é um diretor de conteúdo viral e marketing para barbearias e estética masculina.

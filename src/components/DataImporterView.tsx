@@ -11,7 +11,7 @@ import {
   RefreshCcw,
   Settings,
 } from "lucide-react";
-import { MonthlyBarberStats, MonthlyUnitStats } from "../types";
+import { Category, MonthlyBarberStats, MonthlyUnitStats } from "../types";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { parseDPotePDF, DPoteReport, parseDPoteSpreadsheet } from "../DPoteParser";
@@ -701,6 +701,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
               amountToBePaid: (barber.commissionProdGeral || 0) + (barber.commissionProdAvant || 0),
               status: "PENDENTE",
               isPaid: false,
+              potData: [],
             });
           }
 
@@ -758,7 +759,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
                   "cat_" +
                   Date.now() +
                   Math.random().toString(36).substring(2, 9);
-                const newCat = {
+                const newCat: Category = {
                   id: catId,
                   name: item.categoriaNome,
                   type: "SERVICE",
@@ -790,7 +791,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
                 type: catId || "",
                 price: item.valorTotal || 0,
                 unit: "ALL",
-                visibleToRoles: ["ADMIN", "MANAGER", "BARBER"],
+                visibleToRoles: ["ADMIN", "BARBER", "MANICURE"],
               });
             }
           }

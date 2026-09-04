@@ -2,10 +2,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as XLSX from 'xlsx';
+import { strToU8, zipSync } from 'fflate';
 import { parseRedeFile } from '../src/utils/reconciliationEngine';
 import { buildSettlementTransactionId, isSettlementEligible } from '../src/utils/reconciliationSettlement';
 import type { ConciliationItem } from '../src/types/reconciliation';
 import { formatFinancialPeriod, getFinancialPeriod, getLatestFinancialPeriod } from '../src/utils/financialPeriods';
+import { hydrateXlsxSharedStrings } from '../src/utils/xlsxSharedStrings';
+import { isValidFinancialAmountInput, parseFinancialAmount } from '../src/utils/financialAmount';
+import { sanitizeFirestoreData } from '../src/utils/firestoreData';
 
 function createParserFile(bytes: Uint8Array, name: string): File {
   const copy = Uint8Array.from(bytes);
@@ -13,6 +17,30 @@ function createParserFile(bytes: Uint8Array, name: string): File {
     name,
     arrayBuffer: async () => copy.buffer
   } as File;
+}
+
+function testSharedStringRecovery() {
+  const archive = zipSync({
+    'xl/sharedStrings.xml': strToU8(
+      '<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si ><t >modalidade</t></si></sst>'
+    ),
+    'xl/workbook.xml': strToU8(
+      '<?xml version="1.0"?><workbook><sheets><sheet name="pagamentos" sheetId="1" r:id="rId1"/></sheets></workbook>'
+    ),
+    'xl/_rels/workbook.xml.rels': strToU8(
+      '<?xml version="1.0"?><Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>'
+    ),
+    'xl/worksheets/sheet1.xml': strToU8(
+      '<?xml version="1.0"?><worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>'
+    )
+  });
+  const workbook = {
+    SheetNames: ['pagamentos'],
+    Sheets: { pagamentos: { A1: { t: 's', v: undefined }, '!ref': 'A1' } }
+  } as unknown as XLSX.WorkBook;
+
+  assert.equal(hydrateXlsxSharedStrings(workbook, archive), 1);
+  assert.equal(workbook.Sheets.pagamentos.A1.v, 'modalidade');
 }
 
 async function testOfficialSummaryCsv() {
@@ -66,7 +94,7 @@ async function testWorkbookWithPaymentsSheet() {
   ]);
   pagamentosRows.push([
     '06/08/2026', '04/08/2026', '654321', 'AUTH02', 'Débito', 'Mastercard',
-    70, 1.5, -1.05, 68.95, 'Liquidado'
+    70, 0.015, -1.05, 68.95, 'Liquidado'
   ]);
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(pagamentosRows), 'Pagamentos');
 
@@ -79,8 +107,10 @@ async function testWorkbookWithPaymentsSheet() {
   assert.equal(result.pagamentos[0].valorBruto, 100);
   assert.equal(result.pagamentos[0].valorMdr, 2.5);
   assert.equal(result.pagamentos[0].valorLiquido, 97.5);
+  assert.equal(result.pagamentos[0].taxaMdrPerc, 2.5);
   assert.equal(result.pagamentos[0].modalidade, 'CREDITO');
   assert.equal(result.pagamentos[1].modalidade, 'DEBITO');
+  assert.equal(result.pagamentos[1].taxaMdrPerc, 1.5);
   assert.equal(result.pagamentos[1].dataVenda, '2026-08-04');
 }
 
@@ -132,8 +162,37 @@ function testFinancialPeriodSelection() {
   assert.equal(formatFinancialPeriod('2026-08'), '08/2026');
 }
 
+function testFinancialAmountInput() {
+  assert.equal(isValidFinancialAmountInput('123456'), true);
+  assert.equal(isValidFinancialAmountInput('123456,78'), true);
+  assert.equal(isValidFinancialAmountInput('123456.78'), true);
+  assert.equal(isValidFinancialAmountInput('123456,789'), false);
+  assert.equal(isValidFinancialAmountInput('123456.789'), false);
+  assert.equal(parseFinancialAmount('123456,78'), 123456.78);
+  assert.equal(parseFinancialAmount(123456.789), 123456.79);
+}
+
+function testFirestoreDataSanitization() {
+  const input = {
+    id: 'report_1',
+    optional: undefined,
+    summary: { total: 10, missing: undefined },
+    items: [{ id: 'item_1', note: undefined }, undefined]
+  };
+  const sanitized = sanitizeFirestoreData(input);
+
+  assert.deepEqual(sanitized, {
+    id: 'report_1',
+    summary: { total: 10 },
+    items: [{ id: 'item_1' }]
+  });
+}
+
 await testOfficialSummaryCsv();
 await testWorkbookWithPaymentsSheet();
+testSharedStringRecovery();
 testSettlementEligibility();
 testFinancialPeriodSelection();
+testFinancialAmountInput();
+testFirestoreDataSanitization();
 console.log('Rede parser: testes concluídos com sucesso.');

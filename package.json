@@ -5,12 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "lint": "eslint .",
     "test:rede-parser": "tsx scripts/test-rede-parser.ts",
     "firestore:import:dry": "tsx scripts/import-firestore-backup.ts",
     "firestore:import:apply": "tsx scripts/import-firestore-backup.ts --apply",
+    "auth:migrate:dry": "tsx scripts/migrate-firebase-auth.ts",
+    "auth:migrate:apply": "tsx scripts/migrate-firebase-auth.ts --apply",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -25,6 +28,7 @@
     "@vitejs/plugin-react": "^5.2.0",
     "esbuild": "^0.28.0",
     "express": "^5.2.1",
+    "fflate": "^0.8.3",
     "firebase": "^12.13.0",
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
@@ -42,6 +46,6 @@
     "tsx": "^4.22.4",
     "typescript": "^5.9.3",
     "vite": "^6.4.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

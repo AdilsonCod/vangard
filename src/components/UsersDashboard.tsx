@@ -66,10 +66,19 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
     setPassword('');
   };
 
-  const handleSaveUser = (e: React.FormEvent) => {
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       showToast('O nome é obrigatório.', 'error');
+      return;
+    }
+    if (!email.trim()) {
+      showToast('O e-mail é obrigatório.', 'error');
+      return;
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    if (users.some((user) => user.id !== editingId && user.email?.trim().toLowerCase() === normalizedEmail)) {
+      showToast('Já existe um usuário com este e-mail.', 'error');
       return;
     }
     
@@ -84,18 +93,46 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
     }
 
     if (editingId) {
-      updateUser(editingId, { name, email, role: assignedRole, unit });
-      if (password) {
-        updateUser(editingId, { password });
+      const existingUser = users.find((user) => user.id === editingId);
+      if (!existingUser) {
+        showToast('Usuário não encontrado para atualização.', 'error');
+        return;
       }
-      showToast('Usuário atualizado com sucesso!');
+
+      try {
+        await updateUser({
+          ...existingUser,
+          name,
+          email: normalizedEmail,
+          role: assignedRole,
+          unit,
+          ...(password ? { password } : {}),
+        });
+        showToast('Usuário atualizado com sucesso!');
+      } catch {
+        showToast('Não foi possível atualizar o usuário.', 'error');
+        return;
+      }
     } else {
       if (!password) {
          showToast('A senha é obrigatória para novos usuários.', 'error');
          return;
       }
-      addUser({ name, email, role: assignedRole, unit, password, isActive: true });
-      showToast('Usuário cadastrado com sucesso!');
+      try {
+        await addUser({
+          id: `user_${crypto.randomUUID()}`,
+          name,
+          email: normalizedEmail,
+          role: assignedRole,
+          unit,
+          password,
+          isActive: true,
+        });
+        showToast('Usuário cadastrado com sucesso!');
+      } catch {
+        showToast('Não foi possível cadastrar o usuário.', 'error');
+        return;
+      }
     }
     resetForm();
   };
@@ -116,10 +153,16 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
       description: `Tem certeza que deseja inativar "${userName}"? O usuário não poderá mais acessar o sistema.`,
       confirmText: 'Inativar Usuário',
       confirmColor: 'red',
-      onConfirm: () => {
-        updateUser(id, { isActive: false });
-        showToast('Usuário inativado com sucesso.', 'info');
-        setConfirmModal(null);
+      onConfirm: async () => {
+        const existingUser = users.find((user) => user.id === id);
+        if (!existingUser) return;
+        try {
+          await updateUser({ ...existingUser, isActive: false });
+          showToast('Usuário inativado com sucesso.', 'info');
+          setConfirmModal(null);
+        } catch {
+          showToast('Não foi possível inativar o usuário.', 'error');
+        }
       }
     });
   };
@@ -130,25 +173,34 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
       description: `Deseja reativar o acesso de "${u.name}" ao sistema?`,
       confirmText: 'Reativar',
       confirmColor: 'emerald',
-      onConfirm: () => {
-        updateUser(u.id, { isActive: true });
-        showToast('Usuário reativado com sucesso.', 'success');
-        setConfirmModal(null);
+      onConfirm: async () => {
+        try {
+          await updateUser({ ...u, isActive: true });
+          showToast('Usuário reativado com sucesso.', 'success');
+          setConfirmModal(null);
+        } catch {
+          showToast('Não foi possível reativar o usuário.', 'error');
+        }
       }
     });
   };
 
-  const handleSaveUnit = (e: React.FormEvent) => {
+  const handleSaveUnit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!unitName.trim()) {
       showToast('O nome da unidade é obrigatório.', 'error');
       return;
     }
     if (editingUnitId) {
-      updateSystemUnit(editingUnitId, unitName);
+      const existingUnit = systemUnits.find((item) => item.id === editingUnitId);
+      if (!existingUnit) {
+        showToast('Unidade não encontrada para atualização.', 'error');
+        return;
+      }
+      await updateSystemUnit({ ...existingUnit, name: unitName });
       showToast('Unidade atualizada com sucesso!');
     } else {
-      addSystemUnit(unitName);
+      await addSystemUnit({ id: `unit_${crypto.randomUUID()}`, name: unitName, isActive: true });
       showToast('Unidade cadastrada com sucesso!');
     }
     setEditingUnitId(null);

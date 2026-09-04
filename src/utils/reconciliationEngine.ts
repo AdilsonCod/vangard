@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import { hydrateXlsxSharedStrings } from './xlsxSharedStrings';
 import { 
   PDVMovimentacao, 
   GatewayClubeTransacao, 
@@ -443,7 +444,9 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
       }
       workbook = XLSX.read(decodedText, { type: 'string', cellDates: true });
     } else {
-      workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+      const workbookBytes = new Uint8Array(arrayBuffer);
+      workbook = XLSX.read(workbookBytes, { type: 'array', cellDates: true });
+      hydrateXlsxSharedStrings(workbook, workbookBytes);
     }
     let bestCandidate: RedeHeaderCandidate | null = null;
 
@@ -490,12 +493,6 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
         blankrows: false,
         raw: true
       });
-      console.log('--- DBG REDE ---');
-      console.log(`Melhor aba: ${bestCandidate.sheetName}, Linha de cabeçalho: ${bestCandidate.headerRowIdx}, Score: ${bestCandidate.score}`);
-      console.log(`Linhas extraídas: ${pagamentosRows.length}`);
-      if (pagamentosRows.length > 0) {
-        console.log('Primeira linha (raw):', pagamentosRows[0]);
-      }
       
       if (resumoInfo) {
         resumoInfo.isOnlyResumo = false; // Tem transações
@@ -507,7 +504,6 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
         };
       }
     } else {
-      console.log('--- DBG REDE --- Nenhum cabeçalho válido encontrado nas abas.');
       return { pagamentos: [], recebidos: [], resumoInfo };
     }
   } catch (e) {
@@ -547,14 +543,18 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
           'valor original da venda', 'valor original', 'montante bruto'
         )
       );
-      const taxaMdrPerc = cleanTaxRate(
-        getProp(row,
+      const rawTaxaMdr = getProp(row,
           'taxa mdr', 'taxa mdr (%)', 'mdr (%)', 'mdr', 'taxa (%)', 'taxa',
           'desconto taxa (%)', '% mdr', '% taxa', 'taxa retida', 'taxa desc',
           'taxa de desconto', '% desconto', 'percentual mdr', 'taxa (%)',
           'taxa administrativa (%)', 'percentual taxa administrativa', 'percentual da taxa'
-        )
-      );
+        );
+      const taxaMdrBase = cleanTaxRate(rawTaxaMdr);
+      // Células percentuais do Excel armazenam 2% como 0,02. Valores textuais
+      // de CSV e números em pontos percentuais (ex.: 1,7) permanecem intactos.
+      const taxaMdrPerc = typeof rawTaxaMdr === 'number' && Math.abs(rawTaxaMdr) < 0.1
+        ? Number((taxaMdrBase * 100).toFixed(4))
+        : taxaMdrBase;
       const valorMdr = cleanCurrency(
         getProp(row,
           'valor mdr descontado', 'valor mdr', 'desconto mdr', 'taxa descontada',
@@ -1015,10 +1015,10 @@ export function runReconciliationEngine(
         b.status = 'CONCILIADO';
         b.diagnostico = 'Lote 100% conciliado com a Rede';
       } else if (b.totalPdv > 0 && b.totalRedeBruto === 0) {
-        b.status = 'DIVERGENTE';
+        b.status = 'NAO_ENCONTRADO_ADQUIRENTE';
         b.diagnostico = 'Vendas no PDV sem lote correspondente na Rede (Falta na Rede)';
       } else if (b.totalPdv === 0 && b.totalRedeBruto > 0) {
-        b.status = 'DIVERGENTE';
+        b.status = 'NAO_ENCONTRADO_PDV';
         b.diagnostico = 'Transação na Rede sem registro no PDV (Sobra na Rede)';
       } else if (b.diferencaBruta > 0.05) {
         b.status = 'DIVERGENTE';
@@ -1077,7 +1077,7 @@ export function runReconciliationEngine(
       mdrTaxaEfetiva: Number(b.taxaMdrMedia.toFixed(2)),
       mdrTaxaContratual: b.modalidade === 'Débito' ? 1.19 : 2.39,
       diferencaTaxa: Math.abs(b.diferencaBruta),
-      status: b.status as any,
+      status: b.status,
       statusDescricao: b.diagnostico || `Status: ${b.status}`
     });
   });
@@ -1638,6 +1638,7 @@ export function getBarbeariaDemoData() {
   const redePagamentos: AdquirenteRedePagamento[] = [];
   const clube: GatewayClubeTransacao[] = [];
   const previsao: PrevisaoRecebivel[] = [];
+  const entradasManuais: EntradaManual[] = [];
 
   const clientesNomes = [
     'Nelson Rodrigues', 'Leonardo da Silva', 'Cliente Avulso', 'Gabriel Gurgel', 'Pedro Mendes',
@@ -1806,5 +1807,5 @@ export function getBarbeariaDemoData() {
 
   const redeRecebidos: AdquirenteRedeRecebido[] = [];
 
-  return { pdv, clube, redePagamentos, redeRecebidos, previsao };
+  return { pdv, clube, redePagamentos, redeRecebidos, previsao, entradasManuais };
 }

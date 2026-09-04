@@ -69,6 +69,13 @@ export interface PrevisaoRecebivel {
 
 export type StatusDivergencia = 
   | 'CONCILIADO'
+  | 'DIVERGENTE'
+  | 'NAO_ENCONTRADO_ADQUIRENTE'
+  | 'NAO_ENCONTRADO_PDV'
+  | 'PIX_CONTA_BANCARIA'
+  | 'CAIXA_FISICO'
+  | 'ASSINATURA_CLUBE'
+  | 'SALDO_NAO_INTERMEDIADO'
   | 'NAO_AUTORIZADO'
   | 'PENDENTE_LIQUIDACAO'
   | 'DIVERGENCIA_TAXA'
@@ -141,7 +148,7 @@ export interface BatchConciliationItem {
   totalRedeLiquido: number;
   diferencaBruta: number;
   taxaMdrMedia: number;
-  status: 'CONCILIADO' | 'DIVERGENTE' | 'PIX_CONTA_BANCARIA' | 'CAIXA_FISICO' | 'ASSINATURA_CLUBE' | 'SALDO_NAO_INTERMEDIADO' | StatusDivergencia;
+  status: StatusDivergencia;
   diagnostico?: string;
   tipoSaldo?: 'INTERMEDIADO_REDE' | 'PIX_DIRETO' | 'CAIXA_GAVETA' | 'ASSINATURA_ONLINE' | 'CORTESIA_OUTROS';
 }
@@ -259,4 +266,3 @@ export interface TotaisComparativoFormasPgto {
     totalGeralNaoAdquirente: number;
   };
 }
-

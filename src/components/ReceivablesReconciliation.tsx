@@ -1,14 +1,12 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../store';
 import { FinancialTransaction } from '../types';
-import { CheckSquare, Square, DollarSign, CreditCard, Calendar, Filter, Download, Upload, FileSpreadsheet, Sparkles, Layers } from 'lucide-react';
+import { CheckSquare, Square, DollarSign, CreditCard, Calendar, Filter, Download, Upload, FileSpreadsheet } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
-import { FintechReconciliation } from './FintechReconciliation';
 
 export function ReceivablesReconciliation() {
   const { transactions, updateTransaction } = useStore();
-  const [viewMode, setViewMode] = useState<'FINTECH' | 'MANUAL'>('FINTECH');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filterMethod, setFilterMethod] = useState<string>('ALL');
   
@@ -263,41 +261,7 @@ export function ReceivablesReconciliation() {
 
   return (
     <div className="space-y-6">
-      {/* Seletor de Modo de Conciliação */}
-      <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setViewMode('FINTECH')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-              viewMode === 'FINTECH'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Motor FinTech 4 Fontes (PDV / Clube / Rede / D+31)
-          </button>
-          <button
-            onClick={() => setViewMode('MANUAL')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-              viewMode === 'MANUAL'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            Baixa Manual de Recebíveis
-          </button>
-        </div>
-        <span className="text-[11px] font-semibold text-gray-400 px-3 hidden sm:inline">
-          Barbearia Vangard Ltda
-        </span>
-      </div>
-
-      {viewMode === 'FINTECH' ? (
-        <FintechReconciliation />
-      ) : (
-        <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800 p-6 flex flex-col h-full">
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800 p-6 flex flex-col h-full">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-xl font-black text-gray-900 dark:text-white flex items-center gap-2">
@@ -575,7 +539,6 @@ export function ReceivablesReconciliation() {
         </div>
       )}
     </div>
-      )}
     </div>
   );
 }

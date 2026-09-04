@@ -72,13 +72,24 @@ import {
 } from '../utils/reconciliationEngine';
 import { buildSettlementTransactionId, isSettlementEligible } from '../utils/reconciliationSettlement';
 import { formatFinancialPeriod, getLatestFinancialPeriod } from '../utils/financialPeriods';
+import { sanitizeFirestoreData } from '../utils/firestoreData';
 
 type FintechReconciliationProps = {
   onSettlementComplete?: (dates: string[]) => void;
 };
 
+type AuditStatusFilter = 'TODAS' | StatusDivergencia;
+
 export function FintechReconciliation({ onSettlementComplete }: FintechReconciliationProps) {
-  const { addTransaction, currentUser } = useStore();
+  const {
+    addTransaction,
+    currentUser,
+    systemUnits,
+    finClassifications,
+    finSubclassifications,
+    addFinClassification,
+    addFinSubclassification,
+  } = useStore();
 
   // Estados dos arquivos brutos carregados
   const [pdvData, setPdvData] = useState<PDVMovimentacao[]>([]);
@@ -115,7 +126,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   // New States for Bulk Audit Actions
   const [selectedAuditRows, setSelectedAuditRows] = useState<Set<string>>(new Set());
   const [bulkAuditStatus, setBulkAuditStatus] = useState<StatusDivergencia | ''>('');
-  const [selectedUnidade, setSelectedUnidade] = useState<string>('Sudoeste');
+  const [selectedUnidade, setSelectedUnidade] = useState<string>('');
 
   const [kpis, setKpis] = useState<ReconciliationKPIs>({
     saldoRealEmConta: 0,
@@ -132,9 +143,9 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
 
   // Navegação de visualização
   const [activeTab, setActiveTab] = useState<
-    'FECHAMENTO' | 'REGRA_1' | 'REGRA_2' | 'DIVERGENCIAS' | 'PROJECAO' | 'CODIGO_BACKEND'
+    'FECHAMENTO' | 'REGRA_1' | 'REGRA_2' | 'REGRA_3' | 'DIVERGENCIAS' | 'PROJECAO' | 'CODIGO_BACKEND'
   >('FECHAMENTO');
-  const [divergenceFilter, setDivergenceFilter] = useState<string>('TODAS');
+  const [divergenceFilter, setDivergenceFilter] = useState<AuditStatusFilter>('TODAS');
   const [expandedDailyDates, setExpandedDailyDates] = useState<Set<string>>(new Set());
   const [copiedCodeTab, setCopiedCodeTab] = useState<string | null>(null);
   const [selectedItemsToSettle, setSelectedItemsToSettle] = useState<Set<string>>(new Set());
@@ -161,6 +172,98 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const reconciliationUnits = useMemo(
+    () => [...(systemUnits || [])].sort((a, b) => {
+      if (a.isActive !== b.isActive) return a.isActive === false ? 1 : -1;
+      return a.name.localeCompare(b.name, 'pt-BR');
+    }),
+    [systemUnits]
+  );
+
+  const selectedUnitName = useMemo(
+    () => reconciliationUnits.find(unit => unit.id === selectedUnidade)?.name || selectedUnidade,
+    [reconciliationUnits, selectedUnidade]
+  );
+
+  useEffect(() => {
+    if (reconciliationUnits.length === 0) return;
+
+    // Relatórios antigos armazenavam o nome; os atuais usam o ID canônico.
+    const existingSelection = reconciliationUnits.find(
+      unit => unit.id === selectedUnidade || unit.name === selectedUnidade
+    );
+    if (existingSelection) {
+      if (selectedUnidade !== existingSelection.id) setSelectedUnidade(existingSelection.id);
+      return;
+    }
+
+    const userUnit = reconciliationUnits.find(
+      unit => unit.id === currentUser?.unit || unit.name === currentUser?.unit
+    );
+    const fallbackUnit = reconciliationUnits.find(unit => unit.isActive !== false) || reconciliationUnits[0];
+    setSelectedUnidade((userUnit || fallbackUnit).id);
+  }, [currentUser?.unit, reconciliationUnits, selectedUnidade]);
+
+  const normalizeAccountingName = (value: string) => value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+  const getPaymentTypeName = (value: string) => {
+    const normalized = normalizeAccountingName(value);
+    if (normalized.includes('debito')) return 'Débito';
+    if (normalized.includes('credito') || normalized.includes('cartao')) return 'Crédito';
+    if (normalized.includes('pix')) return 'PIX';
+    if (normalized.includes('dinheiro') || normalized.includes('especie')) return 'Dinheiro';
+    if (normalized.includes('assinatura')) return 'Assinatura';
+    return value.trim() || 'Outros';
+  };
+
+  const getPaymentMetadata = (value: string) => {
+    const paymentType = getPaymentTypeName(value);
+    if (paymentType === 'Débito') return { paymentMethod: 'DEBIT' as const, sourceChannel: 'CARD_MACHINE' as const };
+    if (paymentType === 'Crédito') return { paymentMethod: 'CREDIT' as const, sourceChannel: 'CARD_MACHINE' as const };
+    if (paymentType === 'PIX') return { paymentMethod: 'PIX' as const, sourceChannel: 'PIX_MACHINE' as const };
+    if (paymentType === 'Dinheiro') return { paymentMethod: 'CASH' as const, sourceChannel: 'CASH' as const };
+    if (paymentType === 'Assinatura') return { paymentMethod: 'SUBSCRIPTION' as const, sourceChannel: 'SUBSCRIPTION_GATEWAY' as const };
+    return { paymentMethod: 'OTHER' as const, sourceChannel: 'OTHER' as const };
+  };
+
+  const ensureRevenueAccounting = async (paymentType: string) => {
+    const existingRevenue = finClassifications.find(classification =>
+      classification.type === 'INCOME' &&
+      normalizeAccountingName(classification.name) === 'receita'
+    );
+    const classificationId = existingRevenue?.id || 'fintech_receita';
+
+    if (!existingRevenue) {
+      await addFinClassification({
+        id: classificationId,
+        name: 'Receita',
+        type: 'INCOME',
+      });
+    }
+
+    const paymentTypeName = getPaymentTypeName(paymentType);
+    const normalizedPaymentType = normalizeAccountingName(paymentTypeName);
+    const existingSubclass = finSubclassifications.find(subclassification =>
+      subclassification.classificationId === classificationId &&
+      normalizeAccountingName(subclassification.name) === normalizedPaymentType
+    );
+    const subclassificationId = existingSubclass?.id || `fintech_receita_${normalizedPaymentType.replace(/[^a-z0-9]+/g, '_')}`;
+
+    if (!existingSubclass) {
+      await addFinSubclassification({
+        id: subclassificationId,
+        name: paymentTypeName,
+        classificationId,
+      });
+    }
+
+    return { classificationId, subclassificationId };
   };
 
   // Carrega dados simulados de demonstração da Barbearia Vangard
@@ -393,9 +496,11 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     const batch = batches.find(b => b.id === batchId);
     if (!batch || settledItems.has(batch.id)) return;
 
-    const unitId = currentUser?.unit || selectedUnidade || 'ALL';
+    const unitId = selectedUnidade || currentUser?.unit || 'ALL';
 
     try {
+      const accounting = await ensureRevenueAccounting(batch.modalidade);
+      const paymentMetadata = getPaymentMetadata(batch.modalidade);
       await addTransaction({
         id: buildSettlementTransactionId(unitId, batch.id),
         unitId,
@@ -405,7 +510,12 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
         amount: batch.totalRedeLiquido,
         date: batch.dataVenda,
         status: 'RECEBIDO',
-        classification: 'RECEBIMENTO_OPERACIONAL',
+        classification: accounting.classificationId,
+        subclassification: accounting.subclassificationId,
+        ...paymentMetadata,
+        movementNature: 'REVENUE',
+        reconciliationStatus: 'RECONCILED',
+        sourceReference: batch.id,
       });
 
       const newSettled = new Set(settledItems);
@@ -469,11 +579,22 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
 
   const processSettlement = async (itemsToProcess: ConciliationItem[]) => {
     const newSettled = new Set(settledItems);
-    const unitId = currentUser?.unit || selectedUnidade || 'ALL';
+    const unitId = selectedUnidade || currentUser?.unit || 'ALL';
 
     try {
+      const accountingByPaymentType = new Map<string, Awaited<ReturnType<typeof ensureRevenueAccounting>>>();
+      for (const item of itemsToProcess) {
+        const paymentType = getPaymentTypeName(item.modalidadeOuPlano);
+        if (!accountingByPaymentType.has(paymentType)) {
+          accountingByPaymentType.set(paymentType, await ensureRevenueAccounting(paymentType));
+        }
+      }
+
       await Promise.all(itemsToProcess.map(async item => {
         const isExpense = item.valorLiquido < 0;
+        const paymentType = getPaymentTypeName(item.modalidadeOuPlano);
+        const accounting = accountingByPaymentType.get(paymentType)!;
+        const paymentMetadata = getPaymentMetadata(item.modalidadeOuPlano);
 
         await addTransaction({
           // ID determinístico: repetir a operação atualiza o mesmo documento
@@ -486,7 +607,12 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
           amount: Math.abs(item.valorLiquido),
           date: item.dataLiquidacaoEfetiva || item.dataVenda,
           status: isExpense ? 'PAGO' : 'RECEBIDO',
-          classification: isExpense ? 'DESPESA_OPERACIONAL' : 'RECEBIMENTO_OPERACIONAL',
+          classification: isExpense ? 'DESPESA_OPERACIONAL' : accounting.classificationId,
+          ...(!isExpense && { subclassification: accounting.subclassificationId }),
+          ...paymentMetadata,
+          movementNature: isExpense ? 'EXPENSE' : 'REVENUE',
+          reconciliationStatus: 'RECONCILED',
+          sourceReference: item.id,
         });
         newSettled.add(item.id);
       }));
@@ -532,12 +658,17 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
         ...(!currentSessionId && { createdAt: new Date().toISOString() }),
       };
       
-      await setDoc(doc(db, 'reconciliation_reports', sessionId), report, { merge: true });
+      await setDoc(
+        doc(db, 'reconciliation_reports', sessionId),
+        sanitizeFirestoreData(report),
+        { merge: true }
+      );
       setCurrentSessionId(sessionId);
       showToast('Relatório de conciliação salvo com sucesso no banco de dados!');
     } catch (error) {
-      console.error(error);
-      showToast('Erro ao salvar no Firestore.');
+      console.error('Erro ao salvar relatório de conciliação:', error);
+      const reason = error instanceof Error ? error.message : 'erro desconhecido';
+      showToast(`Erro ao salvar a conciliação: ${reason}`);
     } finally {
       setIsSaving(false);
     }
@@ -548,7 +679,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     try {
       const q = query(collection(db, 'reconciliation_reports'));
       const snapshot = await getDocs(q);
-      const fetched = snapshot.docs.map(d => d.data());
+      const fetched: any[] = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
       // Sort desc by createdAt
       fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setSessions(fetched);
@@ -590,8 +721,8 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       try {
         const snapshot = await getDocs(query(collection(db, 'reconciliation_reports')));
         const targetUnit = currentUser.unit || selectedUnidade;
-        const reports = snapshot.docs
-          .map(document => document.data())
+        const reports: any[] = snapshot.docs
+          .map(document => ({ ...document.data(), id: document.id } as any))
           .filter(report => !targetUnit || !report.unidade || report.unidade === targetUnit)
           .sort((a, b) => {
             const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
@@ -640,7 +771,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       return;
     }
 
-    const newItems = items.map(item => {
+    const newItems: ConciliationItem[] = items.map(item => {
       if (item.id === manualReconItem.id) {
         const bruto = item.valorBruto;
         const mdrRetido = bruto - liqVal;
@@ -686,7 +817,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const handleBulkStatusChange = () => {
     if (!bulkAuditStatus || selectedAuditRows.size === 0) return;
     
-    const newItems = items.map(item => {
+    const newItems: ConciliationItem[] = items.map(item => {
       if (selectedAuditRows.has(item.id)) {
         return {
           ...item,
@@ -704,7 +835,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   };
 
   const handleTratarEstorno = (itemId: string) => {
-    const newItems = items.map(item => {
+    const newItems: ConciliationItem[] = items.map(item => {
       if (item.id === itemId) {
         return {
           ...item,
@@ -865,8 +996,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   // Itens filtrados para a aba de divergências
   const filteredDivergences = useMemo(() => {
     return items.filter((item) => {
-      if (item.status === 'CONCILIADO') return false;
-      if (divergenceFilter === 'TODAS') return true;
+      if (divergenceFilter === 'TODAS') return item.status !== 'CONCILIADO';
       return item.status === divergenceFilter;
     });
   }, [items, divergenceFilter]);
@@ -888,7 +1018,10 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       if (selectedBatchStatus === 'CONCILIADOS' && b.status !== 'CONCILIADO') {
         return false;
       }
-      if (selectedBatchStatus === 'DIVERGENTES' && b.status !== 'DIVERGENTE') {
+      if (
+        selectedBatchStatus === 'DIVERGENTES' &&
+        !['DIVERGENTE', 'NAO_ENCONTRADO_ADQUIRENTE', 'NAO_ENCONTRADO_PDV'].includes(b.status)
+      ) {
         return false;
       }
       if (selectedBatchStatus === 'NAO_INTERMEDIADOS' && !['PIX_CONTA_BANCARIA', 'CAIXA_FISICO', 'ASSINATURA_CLUBE', 'SALDO_NAO_INTERMEDIADO'].includes(b.status)) {
@@ -1095,13 +1228,16 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
               <select 
                 value={selectedUnidade}
                 onChange={e => setSelectedUnidade(e.target.value)}
+                disabled={reconciliationUnits.length === 0}
                 className="bg-transparent font-bold text-gray-700 dark:text-zinc-200 focus:outline-none cursor-pointer"
               >
-                <option value="Sudoeste">Matriz Sudoeste</option>
-                <option value="Águas Claras">Águas Claras</option>
-                <option value="Asa Sul">Asa Sul</option>
-                <option value="Asa Norte">Asa Norte</option>
-                <option value="Guará">Guará</option>
+                {reconciliationUnits.length === 0 ? (
+                  <option value="">Nenhuma unidade cadastrada</option>
+                ) : reconciliationUnits.map(unit => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.name}{unit.isActive === false ? ' (Inativa)' : ''}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -1959,7 +2095,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                   </span>
                   <span className="text-xs text-gray-500 dark:text-zinc-400 font-semibold flex items-center gap-1">
                     <MapPin className="w-3 h-3 text-emerald-600" />
-                    Unidade: {selectedUnidade}
+                    Unidade: {selectedUnitName || 'Não selecionada'}
                   </span>
                 </div>
                 <h3 className="font-extrabold text-gray-900 dark:text-white text-lg">
@@ -2137,7 +2273,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                   </p>
                 </div>
                 <span className="text-[11px] font-bold text-gray-500 dark:text-zinc-400">
-                  Unidade Oficial: <strong className="text-gray-900 dark:text-white">{selectedUnidade}</strong>
+                  Unidade Oficial: <strong className="text-gray-900 dark:text-white">{selectedUnitName || 'Não selecionada'}</strong>
                 </span>
               </div>
 
@@ -2940,14 +3076,26 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                 <span className="text-xs font-bold text-gray-500">Filtrar por:</span>
                 <select
                   value={divergenceFilter}
-                  onChange={(e) => setDivergenceFilter(e.target.value)}
+                  onChange={(e) => setDivergenceFilter(e.target.value as AuditStatusFilter)}
                   className="px-3 py-1.5 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-gray-700 dark:text-zinc-200"
                 >
                   <option value="TODAS">Todas as Divergências</option>
-                  <option value="DIVERGENCIA_TAXA">Divergência de Taxa MDR</option>
-                  <option value="NAO_AUTORIZADO">Não Autorizado no Gateway</option>
-                  <option value="PENDENTE_LIQUIDACAO">Pendente Liquidação (D+31)</option>
-                  <option value="NAO_ENCONTRADO_REDE">Não Encontrado na Rede</option>
+                  <optgroup label="Conciliação PDV × Adquirente">
+                    <option value="CONCILIADO">Conciliado</option>
+                    <option value="DIVERGENTE">Divergente</option>
+                    <option value="NAO_ENCONTRADO_ADQUIRENTE">Falta na Adquirente</option>
+                    <option value="NAO_ENCONTRADO_PDV">Sobra na Adquirente</option>
+                    <option value="PIX_CONTA_BANCARIA">PIX em Conta Bancária</option>
+                    <option value="CAIXA_FISICO">Caixa Físico</option>
+                    <option value="ASSINATURA_CLUBE">Assinatura Clube</option>
+                    <option value="SALDO_NAO_INTERMEDIADO">Saldo Não Intermediado</option>
+                  </optgroup>
+                  <optgroup label="Outros fluxos de auditoria">
+                    <option value="DIVERGENCIA_TAXA">Divergência de Taxa MDR</option>
+                    <option value="NAO_AUTORIZADO">Não Autorizado no Gateway</option>
+                    <option value="PENDENTE_LIQUIDACAO">Pendente Liquidação (D+31)</option>
+                    <option value="NAO_ENCONTRADO_REDE">Não Encontrado na Rede</option>
+                  </optgroup>
                 </select>
               </div>
             </div>

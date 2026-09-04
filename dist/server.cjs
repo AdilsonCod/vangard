@@ -27,20 +27,56 @@ var import_path = __toESM(require("path"), 1);
 var import_vite = require("vite");
 var import_genai = require("@google/genai");
 var ai = new import_genai.GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+var AI_WINDOW_MS = 15 * 60 * 1e3;
+var AI_MAX_REQUESTS_PER_WINDOW = 20;
+var AI_MAX_TEXT_LENGTH = 2e4;
+var aiRequestWindows = /* @__PURE__ */ new Map();
+function limitAiRequests(req, res, next) {
+  const now = Date.now();
+  const key = req.ip || req.socket.remoteAddress || "unknown";
+  const current = aiRequestWindows.get(key);
+  if (!current || current.resetAt <= now) {
+    aiRequestWindows.set(key, { count: 1, resetAt: now + AI_WINDOW_MS });
+    next();
+    return;
+  }
+  if (current.count >= AI_MAX_REQUESTS_PER_WINDOW) {
+    res.status(429).json({ error: "Limite tempor\xE1rio de an\xE1lises atingido. Tente novamente mais tarde." });
+    return;
+  }
+  current.count += 1;
+  next();
+}
+function readLimitedText(value, field, required = false) {
+  if (value == null || value === "") {
+    if (required) throw new Error(`O campo ${field} \xE9 obrigat\xF3rio.`);
+    return "";
+  }
+  if (typeof value !== "string") throw new Error(`O campo ${field} deve ser texto.`);
+  if (value.length > AI_MAX_TEXT_LENGTH) throw new Error(`O campo ${field} excede o limite permitido.`);
+  return value.trim();
+}
 async function startServer() {
   const app = (0, import_express.default)();
   const PORT = 3e3;
-  app.use(import_express.default.json());
+  app.disable("x-powered-by");
+  app.set("trust proxy", 1);
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    next();
+  });
+  app.use(import_express.default.json({ limit: "256kb" }));
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
-  app.post("/api/analyze-marketing", async (req, res) => {
+  app.post("/api/analyze-marketing", limitAiRequests, async (req, res) => {
     try {
-      const {
-        conteudos,
-        metricas,
-        contexto
-      } = req.body;
+      const conteudos = readLimitedText(req.body?.conteudos, "conteudos");
+      const metricas = readLimitedText(req.body?.metricas, "metricas");
+      const contexto = readLimitedText(req.body?.contexto, "contexto");
       console.log("Analyzing metrics via Gemini");
       const prompt = `
 Voc\xEA \xE9 um Engenheiro de IA s\xEAnior e Especialista em Business Intelligence para redes de varejo e servi\xE7os locais. Sua fun\xE7\xE3o \xE9 atuar como o motor de an\xE1lise de uma aba de Marketing e Tr\xE1fego integrada a um sistema de gest\xE3o corporativo.
@@ -99,9 +135,10 @@ Retorne EXATAMENTE este objeto JSON estrito:
       res.status(500).json({ error: "Failed to perform marketing analysis." });
     }
   });
-  app.post("/api/generate-post-idea", async (req, res) => {
+  app.post("/api/generate-post-idea", limitAiRequests, async (req, res) => {
     try {
-      const { tema, publico } = req.body;
+      const tema = readLimitedText(req.body?.tema, "tema", true);
+      const publico = readLimitedText(req.body?.publico, "publico");
       const prompt = `
 Voc\xEA \xE9 um diretor de conte\xFAdo viral e marketing para barbearias e est\xE9tica masculina.
 Crie UMA (1) ideia de postagem extremamente engajadora e pr\xE1tica baseada no tema fornecido.
@@ -150,4 +187,3 @@ Retorne o resultado estritamente neste formato JSON:
   });
 }
 startServer();
-//# sourceMappingURL=server.cjs.map

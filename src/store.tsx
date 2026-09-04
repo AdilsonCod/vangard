@@ -15,13 +15,14 @@ import {
   SystemNotification,
   SystemAnnouncement,
   FinancialTransaction,
+  CashClosing,
   FinancialCategory,
   Supplier,
   FinClassification,
   FinSubclassification,
 } from './types';
 import { db } from './firebase';
-import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { seedDatabase } from './firebase-sync';
 
 // Mock initial data
@@ -76,6 +77,7 @@ interface AppState {
   gdvEntries: GDVEntry[];
   gdvSettings: GDVSettings[];
   transactions: FinancialTransaction[];
+  cashClosings: CashClosing[];
   financialCategories: FinancialCategory[];
   suppliers: Supplier[];
   finClassifications: FinClassification[];
@@ -83,6 +85,7 @@ interface AppState {
   addTransaction: (t: FinancialTransaction) => Promise<void>;
   updateTransaction: (t: FinancialTransaction) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
+  saveCashClosing: (closing: CashClosing) => Promise<void>;
   addFinancialCategory: (cat: FinancialCategory) => Promise<void>;
   deleteFinancialCategory: (id: string) => Promise<void>;
   addSupplier: (supplier: Supplier) => Promise<void>;
@@ -105,11 +108,11 @@ interface AppState {
 }
 
 interface StoreContextType extends AppState {
-  login: (email: string, pass: string) => boolean;
+  login: (email: string, pass: string) => Promise<boolean>;
   logout: () => void;
-  addUser: (user: User) => void;
-  updateUser: (user: User) => void;
-  deleteUser: (id: string) => void;
+  addUser: (user: User) => Promise<void>;
+  updateUser: (user: User) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
   addEntry: (entry: DailyEntry) => void;
   updateEntry: (entry: DailyEntry) => void;
   deleteEntry: (id: string) => void;
@@ -123,12 +126,12 @@ interface StoreContextType extends AppState {
   updateCatalog: (catalog: CatalogItem[]) => void;
   updateCategories: (categories: Category[]) => void;
   updateSubcategories: (subcategories: Subcategory[]) => void;
-  addPayment: (payment: PaymentRecord) => void;
-  updatePayment: (payment: PaymentRecord) => void;
-  addSystemUnit: (unit: SystemUnit) => void;
-  updateSystemUnit: (unit: SystemUnit) => void;
-  deleteSystemUnit: (id: string) => void;
-  deletePayment: (id: string) => void;
+  addPayment: (payment: PaymentRecord) => Promise<void>;
+  updatePayment: (payment: PaymentRecord) => Promise<void>;
+  addSystemUnit: (unit: SystemUnit) => Promise<void>;
+  updateSystemUnit: (unit: SystemUnit) => Promise<void>;
+  deleteSystemUnit: (id: string) => Promise<void>;
+  deletePayment: (id: string) => Promise<void>;
   addNotification: (notification: SystemNotification) => Promise<void>;
   markNotificationAsRead: (id: string) => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
@@ -149,6 +152,14 @@ const StoreContext = createContext<StoreContextType | null>(null);
 const AUTH_SESSION_KEY = 'vans_authenticated_user_id';
 const SHOULD_SEED_DATABASE = (import.meta as any).env?.VITE_ENABLE_DATABASE_SEED === 'true';
 
+// O ID do documento e o ID salvo no conteúdo podem divergir em importações
+// antigas. O caminho do Firestore é a referência canônica para atualizações e
+// exclusões, então sempre o incorporamos ao objeto carregado.
+const withDocumentId = <T,>(snapshot: { id: string; data: () => unknown }): T => ({
+  ...(snapshot.data() as object),
+  id: snapshot.id,
+} as T);
+
 export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -165,6 +176,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [gdvEntries, setGdvEntries] = useState<GDVEntry[]>([]);
   const [gdvSettings, setGdvSettings] = useState<GDVSettings[]>([]);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
+  const [cashClosings, setCashClosings] = useState<CashClosing[]>([]);
   const [financialCategories, setFinancialCategories] = useState<FinancialCategory[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [finClassifications, setFinClassifications] = useState<FinClassification[]>([]);
@@ -208,62 +220,22 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (isInitializing) return;
 
-    const unsubCatalog = onSnapshot(collection(db, 'catalog'), snap => {
-      setCatalog(snap.docs.map(d => d.data() as CatalogItem));
-    });
-    const unsubEntries = onSnapshot(collection(db, 'entries'), snap => {
-      setEntries(snap.docs.map(d => d.data() as DailyEntry));
-    });
-    const unsubGdv = onSnapshot(collection(db, 'gdvEntries'), snap => {
-      setGdvEntries(snap.docs.map(d => d.data() as GDVEntry));
-    });
-    const unsubGdvSettings = onSnapshot(collection(db, 'gdvSettings'), snap => {
-      setGdvSettings(snap.docs.map(d => d.data() as GDVSettings));
-    });
-    const unsubMonthlyStats = onSnapshot(collection(db, 'monthlyUnitStats'), snap => {
-      setMonthlyUnitStats(snap.docs.map(d => d.data() as MonthlyUnitStats));
-    });
-    const unsubMonthlyBarberStats = onSnapshot(collection(db, 'monthlyBarberStats'), snap => {
-      setMonthlyBarberStats(snap.docs.map(d => d.data() as MonthlyBarberStats));
-    });
-    const unsubTargets = onSnapshot(collection(db, 'targets'), snap => {
-      const tg: Record<string, Target> = {};
-      snap.docs.forEach(d => tg[d.id] = d.data() as Target);
-      setTargets(tg);
-    });
-    const unsubCategories = onSnapshot(collection(db, 'categories'), snap => {
-      setCategories(snap.docs.map(d => d.data() as Category));
-    });
-    const unsubSubcategories = onSnapshot(collection(db, 'subcategories'), snap => {
-      setSubcategories(snap.docs.map(d => d.data() as Subcategory));
-    });
-    const unsubSystemUnits = onSnapshot(collection(db, 'systemUnits'), snap => {
-      setSystemUnits(snap.docs.map(d => d.data() as SystemUnit));
-    });
-    const unsubUsers = onSnapshot(
-      collection(db, 'users'),
-      snap => {
-        const nextUsers = snap.docs.map(d => d.data() as User);
-        setUsers(nextUsers);
+    const storedUserId = localStorage.getItem(AUTH_SESSION_KEY);
+    if (!storedUserId) {
+      setHasLoadedUsers(true);
+      return;
+    }
 
-        // Restaura somente o ID da sessão e sempre utiliza o documento atual do
-        // Firestore. Usuários removidos ou desativados perdem a sessão.
-        setCurrentUser(previousUser => {
-          const storedUserId = previousUser?.id || localStorage.getItem(AUTH_SESSION_KEY);
-          if (!storedUserId) return null;
-
-          const refreshedUser = nextUsers.find(user =>
-            user.id === storedUserId && user.isActive !== false
-          );
-
-          if (!refreshedUser) {
-            localStorage.removeItem(AUTH_SESSION_KEY);
-            return null;
-          }
-
-          localStorage.setItem(AUTH_SESSION_KEY, refreshedUser.id);
-          return refreshedUser;
-        });
+    const unsubscribe = onSnapshot(
+      doc(db, 'users', storedUserId),
+      snapshot => {
+        const storedUser = snapshot.exists() ? withDocumentId<User>(snapshot) : null;
+        if (!storedUser || storedUser.isActive === false) {
+          localStorage.removeItem(AUTH_SESSION_KEY);
+          setCurrentUser(null);
+        } else {
+          setCurrentUser(storedUser);
+        }
         setHasLoadedUsers(true);
       },
       error => {
@@ -271,32 +243,87 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
         setHasLoadedUsers(true);
       }
     );
+
+    return unsubscribe;
+  }, [isInitializing]);
+
+  useEffect(() => {
+    if (isInitializing || !currentUser) return;
+
+    const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
+      const nextUsers = snap.docs.map(d => withDocumentId<User>(d));
+      setUsers(nextUsers);
+      const refreshedUser = nextUsers.find(user => user.id === currentUser.id);
+      if (!refreshedUser || refreshedUser.isActive === false) {
+        localStorage.removeItem(AUTH_SESSION_KEY);
+        setCurrentUser(null);
+      } else {
+        setCurrentUser(refreshedUser);
+      }
+    });
+
+    const unsubCatalog = onSnapshot(collection(db, 'catalog'), snap => {
+      setCatalog(snap.docs.map(d => withDocumentId<CatalogItem>(d)));
+    });
+    const unsubEntries = onSnapshot(collection(db, 'entries'), snap => {
+      setEntries(snap.docs.map(d => withDocumentId<DailyEntry>(d)));
+    });
+    const unsubGdv = onSnapshot(collection(db, 'gdvEntries'), snap => {
+      setGdvEntries(snap.docs.map(d => withDocumentId<GDVEntry>(d)));
+    });
+    const unsubGdvSettings = onSnapshot(collection(db, 'gdvSettings'), snap => {
+      setGdvSettings(snap.docs.map(d => withDocumentId<GDVSettings>(d)));
+    });
+    const unsubMonthlyStats = onSnapshot(collection(db, 'monthlyUnitStats'), snap => {
+      setMonthlyUnitStats(snap.docs.map(d => withDocumentId<MonthlyUnitStats>(d)));
+    });
+    const unsubMonthlyBarberStats = onSnapshot(collection(db, 'monthlyBarberStats'), snap => {
+      setMonthlyBarberStats(snap.docs.map(d => withDocumentId<MonthlyBarberStats>(d)));
+    });
+    const unsubTargets = onSnapshot(collection(db, 'targets'), snap => {
+      const tg: Record<string, Target> = {};
+      snap.docs.forEach(d => tg[d.id] = d.data() as Target);
+      setTargets(tg);
+    });
+    const unsubCategories = onSnapshot(collection(db, 'categories'), snap => {
+      setCategories(snap.docs.map(d => withDocumentId<Category>(d)));
+    });
+    const unsubSubcategories = onSnapshot(collection(db, 'subcategories'), snap => {
+      setSubcategories(snap.docs.map(d => withDocumentId<Subcategory>(d)));
+    });
+    const unsubSystemUnits = onSnapshot(collection(db, 'systemUnits'), snap => {
+      setSystemUnits(snap.docs.map(d => withDocumentId<SystemUnit>(d)));
+    });
     const unsubPayments = onSnapshot(collection(db, 'payments'), snap => {
-      setPayments(snap.docs.map(d => d.data() as PaymentRecord));
+      setPayments(snap.docs.map(d => withDocumentId<PaymentRecord>(d)));
     });
     const unsubNotifications = onSnapshot(collection(db, 'notifications'), snap => {
-      setNotifications(snap.docs.map(d => d.data() as SystemNotification));
+      setNotifications(snap.docs.map(d => withDocumentId<SystemNotification>(d)));
     });
     const unsubAnnouncements = onSnapshot(collection(db, 'announcements'), snap => {
-      setAnnouncements(snap.docs.map(d => d.data() as SystemAnnouncement));
+      setAnnouncements(snap.docs.map(d => withDocumentId<SystemAnnouncement>(d)));
     });
     const unsubTransactions = onSnapshot(collection(db, 'transactions'), snap => {
-      setTransactions(snap.docs.map(d => d.data() as FinancialTransaction));
+      setTransactions(snap.docs.map(d => withDocumentId<FinancialTransaction>(d)));
+    });
+    const unsubCashClosings = onSnapshot(collection(db, 'cashClosings'), snap => {
+      setCashClosings(snap.docs.map(d => withDocumentId<CashClosing>(d)));
     });
     const unsubFinancialCategories = onSnapshot(collection(db, 'financialCategories'), snap => {
-      setFinancialCategories(snap.docs.map(d => d.data() as FinancialCategory));
+      setFinancialCategories(snap.docs.map(d => withDocumentId<FinancialCategory>(d)));
     });
     const unsubSuppliers = onSnapshot(collection(db, 'suppliers'), snap => {
-      setSuppliers(snap.docs.map(d => d.data() as Supplier));
+      setSuppliers(snap.docs.map(d => withDocumentId<Supplier>(d)));
     });
     const unsubFinClassifications = onSnapshot(collection(db, 'finClassifications'), snap => {
-      setFinClassifications(snap.docs.map(d => d.data() as FinClassification));
+      setFinClassifications(snap.docs.map(d => withDocumentId<FinClassification>(d)));
     });
     const unsubFinSubclassifications = onSnapshot(collection(db, 'finSubclassifications'), snap => {
-      setFinSubclassifications(snap.docs.map(d => d.data() as FinSubclassification));
+      setFinSubclassifications(snap.docs.map(d => withDocumentId<FinSubclassification>(d)));
     });
 
     return () => {
+      unsubUsers();
       unsubCatalog();
       unsubEntries();
       unsubGdv();
@@ -307,17 +334,17 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       unsubCategories();
       unsubSubcategories();
       unsubSystemUnits();
-      unsubUsers();
       unsubPayments();
       unsubNotifications();
       unsubAnnouncements();
       unsubTransactions();
+      unsubCashClosings();
       unsubFinancialCategories();
       unsubSuppliers();
       unsubFinClassifications();
       unsubFinSubclassifications();
     };
-  }, [isInitializing]);
+  }, [isInitializing, currentUser?.id]);
 
   useEffect(() => {
     localStorage.setItem('barber_theme_color', themeColor);
@@ -342,8 +369,12 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem('barber_theme_dark', String(isDarkMode));
   }, [isDarkMode]);
 
-  const login = (email: string, pass: string) => {
-    const u = users.find(u => u.email === email && u.password === pass && u.isActive !== false);
+  const login = async (email: string, pass: string) => {
+    const normalizedEmail = email.trim();
+    const snapshot = await getDocs(query(collection(db, 'users'), where('email', '==', normalizedEmail)));
+    const u = snapshot.docs
+      .map(document => withDocumentId<User>(document))
+      .find(user => user.password === pass && user.isActive !== false);
     if (u) {
       setCurrentUser(u);
       localStorage.setItem(AUTH_SESSION_KEY, u.id);
@@ -377,6 +408,9 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   };
   const updateTransaction = async (t: FinancialTransaction) => {
     await setDoc(doc(db, 'transactions', t.id), cleanUndefined(t));
+  };
+  const saveCashClosing = async (closing: CashClosing) => {
+    await setDoc(doc(db, 'cashClosings', closing.id), cleanUndefined(closing));
   };
   const addFinancialCategory = async (cat: FinancialCategory) => {
       try {
@@ -647,6 +681,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       await setDoc(doc(db, 'users', user.id), sanitizedUser);
     } catch(err) {
       console.error("Error adding user:", err);
+      throw err;
     }
   }
 
@@ -664,6 +699,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       }
     } catch(err) {
       console.error("Error updating user:", err);
+      throw err;
     }
   };
 
@@ -746,8 +782,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <StoreContext.Provider value={{ 
-      financialCategories, suppliers, finClassifications, finSubclassifications, users, entries, gdvEntries, gdvSettings, transactions, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
-      login, logout, addUser, updateUser, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
+      financialCategories, suppliers, finClassifications, finSubclassifications, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
+      login, logout, addUser, updateUser, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
       updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, markNotificationAsRead, deleteNotification, addAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
       isDarkMode, setIsDarkMode
     }}>

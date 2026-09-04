@@ -458,7 +458,9 @@ export function MarketingDashboard() {
                       <div className="flex justify-between items-center text-sm">
                         <label className="text-xs font-bold text-gray-700 dark:text-zinc-300 flex items-center gap-1">
                           Custos Operacionais Extra (Brindes/Taxas):
-                          <Info className="w-3.5 h-3.5 text-gray-400" title="Custo com brindes, taxas de agendamento ou outros adicionais ao tráfego." />
+                          <span title="Custo com brindes, taxas de agendamento ou outros adicionais ao tráfego.">
+                            <Info className="w-3.5 h-3.5 text-gray-400" />
+                          </span>
                         </label>
                         <span className="font-bold text-gray-600 dark:text-zinc-400">R$ {outrosCustosCalc.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                       </div>

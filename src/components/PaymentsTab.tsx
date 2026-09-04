@@ -4,7 +4,7 @@ import { PaymentRecord, PotServiceData } from '../types';
 import { FileText, Plus, Save, Trash2, Check, X, DollarSign, User as UserIcon, Edit2, ChevronDown, ChevronRight } from 'lucide-react';
 
 export function PaymentsTab() {
-  const { users, payments, addPayment, updatePayment, deletePayment, catalog, systemUnits, addNotification } = useStore();
+  const { users, payments, addPayment, updatePayment, deletePayment, addTransaction, deleteTransaction, catalog, systemUnits, addNotification } = useStore();
   
   const barbers = useMemo(() => {
     return users.filter(u => u.role === 'BARBER' || u.role === 'MANICURE');
@@ -141,8 +141,45 @@ export function PaymentsTab() {
   };
 
   const totalDiscount = discountsList.reduce((sum, d) => sum + (d.value || 0), 0);
+
+  const getCommissionTransactionId = (paymentId: string) => `commission_payment_${paymentId}`;
+
+  const formatPaymentDate = (paymentDate: string) => {
+    const [year, month, day] = paymentDate.split('-');
+    return year && month && day ? `${day}/${month}/${year}` : paymentDate;
+  };
+
+  const syncPaymentWithCash = async (record: PaymentRecord, previousWasPaid = false) => {
+    const transactionId = getCommissionTransactionId(record.id);
+
+    if (record.status !== 'PAGO') {
+      if (previousWasPaid) await deleteTransaction(transactionId);
+      return;
+    }
+
+    const barber = users.find(user => user.id === record.userId);
+    const barberName = barber?.name || 'Profissional não identificado';
+    await addTransaction({
+      id: transactionId,
+      type: 'EXPENSE',
+      category: 'Comissões',
+      description: `Comissão - ${barberName} - ${formatPaymentDate(record.date)}`,
+      amount: record.amountToBePaid,
+      date: record.date,
+      dueDate: record.date,
+      unitId: barber?.unit || 'ALL',
+      status: 'PAGO',
+      supplier: barberName,
+      classification: 'COMISSOES',
+      sourceChannel: 'OTHER',
+      paymentMethod: 'OTHER',
+      movementNature: 'EXPENSE',
+      reconciliationStatus: 'NOT_APPLICABLE',
+      sourceReference: record.id,
+    });
+  };
   
-  const handleSavePayment = () => {
+  const handleSavePayment = async () => {
       const record: PaymentRecord = {
          id: editingPaymentId || crypto.randomUUID(),
          userId: selectedBarberId,
@@ -160,23 +197,62 @@ export function PaymentsTab() {
          potData: potServices,
          potPercentage: potPercentage
       };
-      if (editingPaymentId) {
-         updatePayment(record);
-      } else {
-         addPayment(record);
-         // Enviar notificação ao barbeiro sobre o novo pagamento
-         addNotification({
-            id: crypto.randomUUID(),
-            userId: selectedBarberId,
-            title: 'Novo Pagamento Registrado',
-            message: `Um pagamento no valor de R$ ${record.amountToBePaid.toFixed(2)} referente a ${record.date} foi registrado com status: ${record.status}.`,
-            type: 'success',
-            createdAt: new Date().toISOString(),
-            read: false,
-         });
+      const previousPayment = editingPaymentId
+        ? payments.find(payment => payment.id === editingPaymentId)
+        : undefined;
+      const previousWasPaid = previousPayment?.status === 'PAGO' || Boolean(previousPayment?.isPaid && !previousPayment.status);
+
+      try {
+        if (editingPaymentId) {
+           await updatePayment(record);
+        } else {
+           await addPayment(record);
+           // Enviar notificação ao barbeiro sobre o novo pagamento
+           addNotification({
+              id: crypto.randomUUID(),
+              userId: selectedBarberId,
+              title: 'Novo Pagamento Registrado',
+              message: `Um pagamento no valor de R$ ${record.amountToBePaid.toFixed(2)} referente a ${record.date} foi registrado com status: ${record.status}.`,
+              type: 'success',
+              createdAt: new Date().toISOString(),
+              read: false,
+           });
+        }
+        await syncPaymentWithCash(record, previousWasPaid);
+      } catch (error) {
+        console.error('Erro ao salvar pagamento e sincronizar com o Caixa:', error);
+        alert('Não foi possível salvar o pagamento ou sincronizá-lo com o Caixa. Tente novamente.');
+        return;
       }
       setIsEditing(false);
       setEditingPaymentId(null);
+  };
+
+  const handleStatusChange = async (
+    payment: PaymentRecord,
+    newStatus: 'PENDENTE' | 'AGENDADO' | 'PAGO'
+  ) => {
+    const previousWasPaid = payment.status === 'PAGO' || Boolean(payment.isPaid && !payment.status);
+    const updatedPayment = { ...payment, status: newStatus, isPaid: newStatus === 'PAGO' };
+
+    try {
+      await updatePayment(updatedPayment);
+      await syncPaymentWithCash(updatedPayment, previousWasPaid);
+    } catch (error) {
+      console.error('Erro ao atualizar status e sincronizar com o Caixa:', error);
+      alert('Não foi possível atualizar o status ou sincronizá-lo com o Caixa.');
+    }
+  };
+
+  const handleDeletePayment = async (paymentId: string) => {
+    try {
+      await deletePayment(paymentId);
+      await deleteTransaction(getCommissionTransactionId(paymentId));
+      setDeleteConfirmId(null);
+    } catch (error) {
+      console.error('Erro ao excluir pagamento e lançamento do Caixa:', error);
+      alert('Não foi possível excluir o pagamento. Tente novamente.');
+    }
   };
 
   const handleAddPotService = () => {
@@ -428,7 +504,7 @@ export function PaymentsTab() {
                            </div>
                            <div className="flex gap-2 shrink-0">
                               <button onClick={() => setDeleteConfirmId(null)} className="px-3.5 py-1.5 bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 rounded-lg text-xs font-semibold text-gray-700 dark:text-zinc-300 transition cursor-pointer">Cancelar</button>
-                              <button onClick={() => { deletePayment(deleteConfirmId); setDeleteConfirmId(null); }} className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow transition cursor-pointer">Excluir</button>
+                              <button onClick={() => handleDeletePayment(deleteConfirmId)} className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow transition cursor-pointer">Excluir</button>
                            </div>
                         </div>
                      )}
@@ -447,9 +523,9 @@ export function PaymentsTab() {
                                    <div className="flex items-center gap-4">
                                       <select 
                                          value={p.status || (p.isPaid ? 'PAGO' : 'PENDENTE')}
-                                         onChange={e => {
+                                         onChange={async e => {
                                             const newStatus = e.target.value as 'PENDENTE' | 'AGENDADO' | 'PAGO';
-                                            updatePayment({...p, status: newStatus, isPaid: newStatus === 'PAGO'});
+                                            await handleStatusChange(p, newStatus);
                                          }}
                                          className={`text-xs font-bold uppercase rounded-full px-3 py-1 outline-none cursor-pointer border ${
                                             (p.status === 'PAGO' || (p.isPaid && !p.status)) ? 'bg-green-100 text-green-800 border-green-200' : 

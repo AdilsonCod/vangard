@@ -5,6 +5,7 @@ export type ItemType = string;
 export interface SystemUnit {
   id: string;
   name: string;
+  isActive?: boolean;
 }
 
 export interface Category {
@@ -205,6 +206,27 @@ export interface FinancialTransaction {
   customIntervalValue?: number;
   installments?: number;
   installmentIndex?: number;
+  sourceChannel?: 'CARD_MACHINE' | 'PIX_MACHINE' | 'DIRECT_PIX' | 'CASH' | 'SUBSCRIPTION_GATEWAY' | 'BANK' | 'VOUCHER' | 'COURTESY' | 'TIP' | 'OTHER';
+  paymentMethod?: 'CREDIT' | 'DEBIT' | 'PIX' | 'CASH' | 'SUBSCRIPTION' | 'VOUCHER' | 'COURTESY' | 'TIP' | 'OTHER';
+  movementNature?: 'REVENUE' | 'EXPENSE' | 'PASS_THROUGH' | 'INTERNAL_TRANSFER' | 'ADVANCE' | 'COMMERCIAL_DISCOUNT' | 'NON_FINANCIAL';
+  reconciliationStatus?: 'PENDING' | 'AWAITING_SETTLEMENT' | 'DIVERGENT' | 'RECONCILED' | 'NOT_APPLICABLE';
+  sourceReference?: string;
+}
+
+export interface CashClosing {
+  id: string;
+  unitId: string;
+  date: string;
+  openingBalance: number;
+  cashIncome: number;
+  cashOutflow: number;
+  expectedBalance: number;
+  countedBalance: number;
+  difference: number;
+  status: 'CLOSED' | 'DIVERGENT';
+  notes?: string;
+  closedAt: string;
+  closedBy?: string;
 }
 export interface FinancialCategory {
   id: string;

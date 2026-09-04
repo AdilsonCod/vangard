@@ -9,9 +9,15 @@ export default function Login() {
   const [error, setError] = useState(false);
   const { login, isDarkMode, setIsDarkMode } = useStore();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!login(email, password)) {
+    try {
+      if (await login(email, password)) {
+        setError(false);
+        return;
+      }
+      setError(true);
+    } catch {
       setError(true);
     }
   };

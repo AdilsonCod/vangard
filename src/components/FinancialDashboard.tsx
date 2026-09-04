@@ -11,7 +11,7 @@ import {
   Clock,
   Plus,
   Trash2,
-  Edit2, Filter, Activity
+  Edit2, Filter, Activity, RotateCcw, ShieldCheck, AlertTriangle
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -27,14 +27,97 @@ import {
   Cell,
   ComposedChart, Line
 } from 'recharts';
-import { FinancialTransaction } from '../types';
+import { CashClosing, FinancialTransaction } from '../types';
 import { BankReconciliation } from './BankReconciliation';
 import { ReceivablesReconciliation } from './ReceivablesReconciliation';
 import { FintechReconciliation } from './FintechReconciliation';
 import { getLatestFinancialPeriod } from '../utils/financialPeriods';
+import { isValidFinancialAmountInput, parseFinancialAmount } from '../utils/financialAmount';
+
+type FinancialTransactionForm = Omit<Partial<FinancialTransaction>, 'amount'> & {
+  amount?: number | string;
+};
+
+const SOURCE_CHANNEL_OPTIONS: { value: NonNullable<FinancialTransaction['sourceChannel']>; label: string }[] = [
+  { value: 'CARD_MACHINE', label: 'Maquininha Crédito/Débito' },
+  { value: 'PIX_MACHINE', label: 'Maquininha PIX' },
+  { value: 'DIRECT_PIX', label: 'PIX direto na conta' },
+  { value: 'CASH', label: 'Caixa físico' },
+  { value: 'SUBSCRIPTION_GATEWAY', label: 'Gateway de assinaturas D+31' },
+  { value: 'BANK', label: 'Conta bancária / OFX' },
+  { value: 'VOUCHER', label: 'Vales' },
+  { value: 'COURTESY', label: 'Cortesias e descontos' },
+  { value: 'TIP', label: 'Gorjetas' },
+  { value: 'OTHER', label: 'Outras fontes' },
+];
+
+const PAYMENT_METHOD_OPTIONS: { value: NonNullable<FinancialTransaction['paymentMethod']>; label: string }[] = [
+  { value: 'CREDIT', label: 'Crédito' },
+  { value: 'DEBIT', label: 'Débito' },
+  { value: 'PIX', label: 'PIX' },
+  { value: 'CASH', label: 'Espécie' },
+  { value: 'SUBSCRIPTION', label: 'Assinatura' },
+  { value: 'VOUCHER', label: 'Vale' },
+  { value: 'COURTESY', label: 'Cortesia / desconto' },
+  { value: 'TIP', label: 'Gorjeta' },
+  { value: 'OTHER', label: 'Outro' },
+];
+
+const MOVEMENT_NATURE_OPTIONS: { value: NonNullable<FinancialTransaction['movementNature']>; label: string }[] = [
+  { value: 'REVENUE', label: 'Receita operacional' },
+  { value: 'EXPENSE', label: 'Despesa operacional' },
+  { value: 'PASS_THROUGH', label: 'Valor transitório / repasse' },
+  { value: 'INTERNAL_TRANSFER', label: 'Movimento interno / troco' },
+  { value: 'ADVANCE', label: 'Vale vendido / adiantamento' },
+  { value: 'COMMERCIAL_DISCOUNT', label: 'Desconto comercial' },
+  { value: 'NON_FINANCIAL', label: 'Cortesia sem movimento financeiro' },
+];
+
+const RECONCILIATION_STATUS_OPTIONS: { value: NonNullable<FinancialTransaction['reconciliationStatus']>; label: string }[] = [
+  { value: 'PENDING', label: 'Pendente' },
+  { value: 'AWAITING_SETTLEMENT', label: 'Aguardando liquidação' },
+  { value: 'DIVERGENT', label: 'Divergente' },
+  { value: 'RECONCILED', label: 'Conciliado' },
+  { value: 'NOT_APPLICABLE', label: 'Não se aplica' },
+];
+
+const QUICK_OPERATION_PRESETS: { label: string; preset: Partial<FinancialTransactionForm> }[] = [
+  { label: 'PIX direto', preset: { type: 'INCOME', sourceChannel: 'DIRECT_PIX', paymentMethod: 'PIX', movementNature: 'REVENUE', reconciliationStatus: 'PENDING', description: 'Recebimento PIX direto' } },
+  { label: 'Venda em espécie', preset: { type: 'INCOME', sourceChannel: 'CASH', paymentMethod: 'CASH', movementNature: 'REVENUE', reconciliationStatus: 'PENDING', description: 'Venda recebida em espécie' } },
+  { label: 'Compra do caixa', preset: { type: 'EXPENSE', sourceChannel: 'CASH', paymentMethod: 'CASH', movementNature: 'EXPENSE', reconciliationStatus: 'NOT_APPLICABLE', status: 'PAGO', description: 'Compra operacional paga pelo caixa' } },
+  { label: 'Gorjeta em espécie', preset: { type: 'INCOME', sourceChannel: 'CASH', paymentMethod: 'TIP', movementNature: 'PASS_THROUGH', reconciliationStatus: 'PENDING', description: 'Gorjeta em espécie recebida para repasse' } },
+  { label: 'Repasse de gorjeta', preset: { type: 'EXPENSE', sourceChannel: 'CASH', paymentMethod: 'TIP', movementNature: 'PASS_THROUGH', reconciliationStatus: 'RECONCILED', status: 'PAGO', description: 'Repasse de gorjeta em espécie ao profissional' } },
+  { label: 'Reforço de troco', preset: { type: 'INCOME', sourceChannel: 'CASH', paymentMethod: 'CASH', movementNature: 'INTERNAL_TRANSFER', reconciliationStatus: 'NOT_APPLICABLE', status: 'RECEBIDO', description: 'Reforço de troco no caixa físico' } },
+  { label: 'Retirada de troco', preset: { type: 'EXPENSE', sourceChannel: 'CASH', paymentMethod: 'CASH', movementNature: 'INTERNAL_TRANSFER', reconciliationStatus: 'NOT_APPLICABLE', status: 'PAGO', description: 'Retirada de troco do caixa físico' } },
+  { label: 'Vale vendido', preset: { type: 'INCOME', sourceChannel: 'VOUCHER', paymentMethod: 'VOUCHER', movementNature: 'ADVANCE', reconciliationStatus: 'PENDING', description: 'Vale vendido — receita antecipada' } },
+  { label: 'Cortesia / aniversário', preset: { type: 'EXPENSE', sourceChannel: 'COURTESY', paymentMethod: 'COURTESY', movementNature: 'NON_FINANCIAL', reconciliationStatus: 'PENDING', status: 'PAGO', description: 'Cortesia ou vale de aniversário' } },
+];
+
+function inferSourceChannel(transaction: FinancialTransaction): NonNullable<FinancialTransaction['sourceChannel']> {
+  if (transaction.sourceChannel) return transaction.sourceChannel;
+  const text = `${transaction.category} ${transaction.description} ${transaction.classification || ''}`
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (text.includes('assinatura') || text.includes('gateway')) return 'SUBSCRIPTION_GATEWAY';
+  if (text.includes('gorjeta')) return 'TIP';
+  if (text.includes('cortesia') || text.includes('desconto')) return 'COURTESY';
+  if (text.includes('vale')) return 'VOUCHER';
+  if (text.includes('dinheiro') || text.includes('especie') || text.includes('caixa fisico')) return 'CASH';
+  if (text.includes('pix')) return 'DIRECT_PIX';
+  if (text.includes('cartao') || text.includes('rede') || text.includes('adquirente')) return 'CARD_MACHINE';
+  return 'OTHER';
+}
+
+function formatTransactionDate(value?: string): string {
+  if (!value) return 'Não informado';
+  const isoDate = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('pt-BR');
+}
 
 export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'CONCILIACAO_FINTECH' }) {
-  const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, addTransaction, updateTransaction, deleteTransaction } = useStore();
+  const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, cashClosings, currentUser, addTransaction, updateTransaction, deleteTransaction, saveCashClosing } = useStore();
   
   const activeTab = currentTab;
   
@@ -64,8 +147,6 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     }
   };
 
-  const [conciliacaoSubTab, setConciliacaoSubTab] = useState<'FINTECH' | 'OFX'>('FINTECH');
-
   // List Filters
   const [filterType, setFilterType] = useState<string>('ALL');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
@@ -74,9 +155,51 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
   const [filterSupplier, setFilterSupplier] = useState<string>('ALL');
   const [filterClass, setFilterClass] = useState<string>('ALL');
   const [filterSubclass, setFilterSubclass] = useState<string>('ALL');
+  const [filterSourceChannel, setFilterSourceChannel] = useState<string>('ALL');
+  const [filterReconciliationStatus, setFilterReconciliationStatus] = useState<string>('ALL');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isSavingTransaction, setIsSavingTransaction] = useState(false);
+  const [transactionFeedback, setTransactionFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<FinancialTransaction | null>(null);
+  const [operationsPeriod, setOperationsPeriod] = useState<'DAY' | 'WEEK' | 'MONTH'>('WEEK');
+  const [operationsDate, setOperationsDate] = useState(new Date().toISOString().slice(0, 10));
+  const [operationsUnit, setOperationsUnit] = useState('ALL');
+  const [isCashClosingOpen, setIsCashClosingOpen] = useState(false);
+  const [cashOpeningBalance, setCashOpeningBalance] = useState<string>('0,00');
+  const [cashCountedBalance, setCashCountedBalance] = useState<string>('0,00');
+  const [cashClosingNotes, setCashClosingNotes] = useState('');
+
+  const hasActiveCashFilters =
+    filterType !== 'ALL' ||
+    filterStatus !== 'ALL' ||
+    filterAccount !== 'ALL' ||
+    filterUnit !== 'ALL' ||
+    filterSupplier !== 'ALL' ||
+    filterClass !== 'ALL' ||
+    filterSubclass !== 'ALL' ||
+    filterSourceChannel !== 'ALL' ||
+    filterReconciliationStatus !== 'ALL' ||
+    Boolean(filterDateFrom) ||
+    Boolean(filterDateTo);
+
+  const clearCashFilters = () => {
+    setFilterType('ALL');
+    setFilterStatus('ALL');
+    setFilterAccount('ALL');
+    setFilterUnit('ALL');
+    setFilterSupplier('ALL');
+    setFilterClass('ALL');
+    setFilterSubclass('ALL');
+    setFilterSourceChannel('ALL');
+    setFilterReconciliationStatus('ALL');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+  };
 
   useEffect(() => {
     if (
@@ -99,10 +222,19 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     hasAutoSelectedTransactionPeriod.current = true;
   }, [activeTab, filterDateFrom, filterDateTo, monthStr, transactions]);
 
+  useEffect(() => {
+    if (!selectedTransaction) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedTransaction(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [selectedTransaction]);
+
   // Transaction form state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [transForms, setTransForms] = useState<Partial<FinancialTransaction>[]>([{
+  const [transForms, setTransForms] = useState<FinancialTransactionForm[]>([{
     type: 'EXPENSE',
     category: '',
     description: '',
@@ -115,7 +247,11 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     installments: 1,
     supplier: '',
     classification: '',
-    subclassification: ''
+    subclassification: '',
+    sourceChannel: 'OTHER',
+    paymentMethod: 'OTHER',
+    movementNature: 'EXPENSE',
+    reconciliationStatus: 'NOT_APPLICABLE'
   }]);
 
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -149,7 +285,11 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
       installments: 1,
       supplier: '',
       classification: '',
-      subclassification: ''
+      subclassification: '',
+      sourceChannel: 'OTHER',
+      paymentMethod: 'OTHER',
+      movementNature: 'EXPENSE',
+      reconciliationStatus: 'NOT_APPLICABLE'
     }]);
   };
 
@@ -158,11 +298,23 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
   };
 
   const handleSaveTransaction = async () => {
-    for (const transForm of transForms) {
-      if (!transForm.category || !transForm.amount) {
-        alert('Por favor, preencha o tipo de conta bancária e o valor.');
-        return;
-      }
+    if (isSavingTransaction) return;
+
+    const invalidFormIndex = transForms.findIndex(
+      form => !form.category || parseFinancialAmount(form.amount) <= 0
+    );
+    if (invalidFormIndex >= 0) {
+      alert(`Preencha a conta bancária e o valor no lançamento ${invalidFormIndex + 1}.`);
+      return;
+    }
+
+    setIsSavingTransaction(true);
+    setTransactionFeedback(null);
+    const savedDates: string[] = [];
+    let savedCount = 0;
+
+    try {
+      for (const transForm of transForms) {
       
       const installments = (transForm.recurrence !== 'NONE' && transForm.installments && transForm.installments > 1) ? transForm.installments : 1;
       
@@ -213,7 +365,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
           type: transForm.type as 'INCOME' | 'EXPENSE',
           category: transForm.category,
           description: desc,
-          amount: Number(transForm.amount),
+          amount: parseFinancialAmount(transForm.amount),
           date: nextDate,
           dueDate: nextDueDate,
           unitId: transForm.unitId as string,
@@ -225,7 +377,12 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
           customIntervalValue: transForm.customIntervalValue || null,
           supplier: transForm.supplier || '',
           classification: transForm.classification || '',
-          subclassification: transForm.subclassification || ''
+          subclassification: transForm.subclassification || '',
+          sourceChannel: transForm.sourceChannel || 'OTHER',
+          paymentMethod: transForm.paymentMethod || 'OTHER',
+          movementNature: transForm.movementNature || (transForm.type === 'INCOME' ? 'REVENUE' : 'EXPENSE'),
+          reconciliationStatus: transForm.reconciliationStatus || 'NOT_APPLICABLE',
+          sourceReference: transForm.sourceReference || ''
         };
         
         // Remove undefined keys to prevent Firestore unsupported field value errors
@@ -236,17 +393,121 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
         } else {
           await addTransaction(t);
         }
+        savedDates.push(nextDate);
+        savedCount += 1;
       }
+      }
+
+      // Ao criar, exibe imediatamente o novo lançamento. Durante uma edição,
+      // preserva período e filtros para o usuário continuar na mesma consulta.
+      if (!editingId) {
+        const savedPeriod = savedDates[0]?.slice(0, 7);
+        if (/^\d{4}-\d{2}$/.test(savedPeriod || '')) {
+          selectFinancialPeriod(savedPeriod);
+          hasAutoSelectedTransactionPeriod.current = true;
+        }
+        clearCashFilters();
+      }
+
+      setIsModalOpen(false);
+      setEditingId(null);
+      setTransactionFeedback({
+        type: 'success',
+        message: `${savedCount} lançamento${savedCount === 1 ? '' : 's'} salvo${savedCount === 1 ? '' : 's'} com sucesso.`
+      });
+    } catch (error) {
+      console.error('Erro ao salvar lançamento financeiro:', error);
+      const message = error instanceof Error ? error.message : 'Falha desconhecida no Firestore.';
+      setTransactionFeedback({
+        type: 'error',
+        message: `Não foi possível salvar o lançamento: ${message}`
+      });
+    } finally {
+      setIsSavingTransaction(false);
     }
-    
-    setIsModalOpen(false);
-    setEditingId(null);
   };
 
   const handleEdit = (t: FinancialTransaction) => {
     setTransForms([{...t}]);
     setEditingId(t.id);
     setIsModalOpen(true);
+  };
+
+  const openQuickTransaction = (preset: Partial<FinancialTransactionForm>) => {
+    const today = new Date().toISOString().split('T')[0];
+    setTransForms([{
+      type: 'INCOME',
+      category: '',
+      description: '',
+      amount: 0,
+      unitId: operationsUnit === 'ALL' ? 'ALL' : operationsUnit,
+      status: 'RECEBIDO',
+      date: today,
+      dueDate: today,
+      recurrence: 'NONE',
+      installments: 1,
+      supplier: '',
+      classification: '',
+      subclassification: '',
+      sourceChannel: 'OTHER',
+      paymentMethod: 'OTHER',
+      movementNature: 'REVENUE',
+      reconciliationStatus: 'PENDING',
+      ...preset,
+    }]);
+    setEditingId(null);
+    setIsModalOpen(true);
+  };
+
+  const openCashClosing = () => {
+    if (operationsUnit === 'ALL') {
+      setTransactionFeedback({ type: 'error', message: 'Selecione uma unidade para fechar o caixa físico.' });
+      return;
+    }
+    const existingClosing = cashClosings.find(closing =>
+      closing.unitId === operationsUnit && closing.date === operationsDate
+    );
+    const previousClosing = cashClosings
+      .filter(closing => closing.unitId === operationsUnit && closing.date < operationsDate)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    const suggestedOpening = existingClosing?.openingBalance ?? previousClosing?.countedBalance ?? 0;
+    setCashOpeningBalance(String(suggestedOpening).replace('.', ','));
+    setCashCountedBalance(existingClosing ? String(existingClosing.countedBalance).replace('.', ',') : '0,00');
+    setCashClosingNotes(existingClosing?.notes || '');
+    setIsCashClosingOpen(true);
+  };
+
+  const handleSaveCashClosing = async () => {
+    if (operationsUnit === 'ALL') return;
+    const closing: CashClosing = {
+      id: `cash_closing_${operationsUnit}_${operationsDate}`,
+      unitId: operationsUnit,
+      date: operationsDate,
+      openingBalance: cashClosingPreview.openingBalance,
+      cashIncome: cashClosingPreview.cashIncome,
+      cashOutflow: cashClosingPreview.cashOutflow,
+      expectedBalance: cashClosingPreview.expectedBalance,
+      countedBalance: cashClosingPreview.countedBalance,
+      difference: cashClosingPreview.difference,
+      status: Math.abs(cashClosingPreview.difference) <= 0.01 ? 'CLOSED' : 'DIVERGENT',
+      notes: cashClosingNotes.trim() || undefined,
+      closedAt: new Date().toISOString(),
+      closedBy: currentUser?.id,
+    };
+
+    try {
+      await saveCashClosing(closing);
+      setIsCashClosingOpen(false);
+      setTransactionFeedback({
+        type: closing.status === 'CLOSED' ? 'success' : 'error',
+        message: closing.status === 'CLOSED'
+          ? 'Caixa físico fechado sem divergências.'
+          : `Caixa fechado com diferença de ${closing.difference.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`,
+      });
+    } catch (error) {
+      console.error('Erro ao salvar fechamento do caixa:', error);
+      setTransactionFeedback({ type: 'error', message: 'Não foi possível salvar o fechamento do caixa.' });
+    }
   };
 
   const handleAddClass = async () => {
@@ -307,9 +568,150 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     if (filterSupplier !== 'ALL') filtered = filtered.filter(t => t.supplier === filterSupplier);
     if (filterClass !== 'ALL') filtered = filtered.filter(t => t.classification === filterClass);
     if (filterSubclass !== 'ALL') filtered = filtered.filter(t => t.subclassification === filterSubclass);
+    if (filterSourceChannel !== 'ALL') filtered = filtered.filter(t => inferSourceChannel(t) === filterSourceChannel);
+    if (filterReconciliationStatus !== 'ALL') {
+      filtered = filtered.filter(t => (t.reconciliationStatus || 'NOT_APPLICABLE') === filterReconciliationStatus);
+    }
 
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, filterType, filterStatus, filterAccount, filterUnit, filterSupplier, filterClass, filterSubclass, filterDateFrom, filterDateTo, monthStr]);
+  }, [transactions, filterType, filterStatus, filterAccount, filterUnit, filterSupplier, filterClass, filterSubclass, filterSourceChannel, filterReconciliationStatus, filterDateFrom, filterDateTo, monthStr]);
+
+  const operationsCenter = useMemo(() => {
+    const anchor = /^\d{4}-\d{2}-\d{2}$/.test(operationsDate)
+      ? operationsDate
+      : `${monthStr}-01`;
+    let startDate = `${monthStr}-01`;
+    let endDate = `${monthStr}-31`;
+
+    if (operationsPeriod === 'DAY') {
+      startDate = anchor;
+      endDate = anchor;
+    } else if (operationsPeriod === 'WEEK') {
+      const [year, month, day] = anchor.split('-').map(Number);
+      const anchorDate = new Date(year, month - 1, day);
+      const weekday = (anchorDate.getDay() + 6) % 7;
+      const monday = new Date(year, month - 1, day - weekday);
+      const sunday = new Date(year, month - 1, day - weekday + 6);
+      const toIsoDate = (date: Date) => [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0'),
+      ].join('-');
+      startDate = toIsoDate(monday);
+      endDate = toIsoDate(sunday);
+    }
+
+    type OperationsRow = {
+      key: string;
+      unitId: string;
+      unitName: string;
+      channel: NonNullable<FinancialTransaction['sourceChannel']>;
+      expected: number;
+      received: number;
+      outgoing: number;
+      pending: number;
+      divergent: number;
+      reconciled: number;
+    };
+    const rowMap = new Map<string, OperationsRow>();
+
+    transactions
+      .filter(transaction => transaction.date >= startDate && transaction.date <= endDate)
+      .filter(transaction => operationsUnit === 'ALL' || transaction.unitId === operationsUnit)
+      .forEach(transaction => {
+        const channel = inferSourceChannel(transaction);
+        const unitId = transaction.unitId || 'ALL';
+        const key = `${unitId}|${channel}`;
+        const unitName = unitId === 'ALL'
+          ? 'Todas as unidades'
+          : systemUnits.find(unit => unit.id === unitId)?.name || unitId;
+        const row = rowMap.get(key) || {
+          key,
+          unitId,
+          unitName,
+          channel,
+          expected: 0,
+          received: 0,
+          outgoing: 0,
+          pending: 0,
+          divergent: 0,
+          reconciled: 0,
+        };
+        const nature = transaction.movementNature || (transaction.type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
+        const hasFinancialEffect = nature !== 'NON_FINANCIAL' && nature !== 'COMMERCIAL_DISCOUNT';
+
+        if (transaction.type === 'INCOME' && hasFinancialEffect) {
+          row.expected += transaction.amount;
+          if (transaction.status === 'RECEBIDO') row.received += transaction.amount;
+        }
+        if (transaction.type === 'EXPENSE' && hasFinancialEffect && transaction.status === 'PAGO') {
+          row.outgoing += transaction.amount;
+        }
+        if (transaction.reconciliationStatus === 'DIVERGENT') row.divergent += 1;
+        else if (transaction.reconciliationStatus === 'RECONCILED') row.reconciled += 1;
+        else if (
+          transaction.reconciliationStatus === 'PENDING' ||
+          transaction.reconciliationStatus === 'AWAITING_SETTLEMENT' ||
+          transaction.status === 'PENDENTE' ||
+          transaction.status === 'AGENDADO'
+        ) row.pending += 1;
+        rowMap.set(key, row);
+      });
+
+    const rows = Array.from(rowMap.values()).sort((a, b) =>
+      a.unitName.localeCompare(b.unitName, 'pt-BR') || a.channel.localeCompare(b.channel)
+    );
+    return {
+      startDate,
+      endDate,
+      rows,
+      pending: rows.reduce((sum, row) => sum + row.pending, 0),
+      divergent: rows.reduce((sum, row) => sum + row.divergent, 0),
+      cashBalance: rows
+        .filter(row => row.channel === 'CASH')
+        .reduce((sum, row) => sum + row.received - row.outgoing, 0),
+    };
+  }, [monthStr, operationsDate, operationsPeriod, operationsUnit, systemUnits, transactions]);
+
+  const cashClosingPreview = useMemo(() => {
+    const movements = transactions.filter(transaction =>
+      operationsUnit !== 'ALL' &&
+      transaction.unitId === operationsUnit &&
+      transaction.date === operationsDate &&
+      inferSourceChannel(transaction) === 'CASH'
+    );
+    const cashIncome = movements
+      .filter(transaction =>
+        transaction.type === 'INCOME' &&
+        transaction.status === 'RECEBIDO' &&
+        transaction.movementNature !== 'NON_FINANCIAL' &&
+        transaction.movementNature !== 'COMMERCIAL_DISCOUNT'
+      )
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const cashOutflow = movements
+      .filter(transaction =>
+        transaction.type === 'EXPENSE' &&
+        transaction.status === 'PAGO' &&
+        transaction.movementNature !== 'NON_FINANCIAL' &&
+        transaction.movementNature !== 'COMMERCIAL_DISCOUNT'
+      )
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const openingBalance = parseFinancialAmount(cashOpeningBalance);
+    const countedBalance = parseFinancialAmount(cashCountedBalance);
+    const expectedBalance = Number((openingBalance + cashIncome - cashOutflow).toFixed(2));
+    return {
+      cashIncome: Number(cashIncome.toFixed(2)),
+      cashOutflow: Number(cashOutflow.toFixed(2)),
+      openingBalance,
+      countedBalance,
+      expectedBalance,
+      difference: Number((countedBalance - expectedBalance).toFixed(2)),
+    };
+  }, [cashCountedBalance, cashOpeningBalance, operationsDate, operationsUnit, transactions]);
+
+  const selectedCashClosing = useMemo(() => cashClosings.find(closing =>
+    operationsUnit !== 'ALL' && closing.unitId === operationsUnit && closing.date === operationsDate
+  ), [cashClosings, operationsDate, operationsUnit]);
 
   // Process data for the selected month
   const { 
@@ -370,12 +772,14 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     let tIncomes = 0;
     
     mTrans.forEach(t => {
+      const isAutomaticCommission = t.id.startsWith('commission_payment_');
+      const nature = t.movementNature || (t.type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
       if (t.type === 'EXPENSE') {
-        tExpenses += t.amount;
-        if (t.unitId !== 'ALL' && unitMap.has(t.unitId)) {
+        if (!isAutomaticCommission && nature === 'EXPENSE') tExpenses += t.amount;
+        if (!isAutomaticCommission && nature === 'EXPENSE' && t.unitId !== 'ALL' && unitMap.has(t.unitId)) {
           unitMap.get(t.unitId)!.expenses += t.amount;
         }
-      } else {
+      } else if (nature === 'REVENUE') {
         tIncomes += t.amount;
       }
     });
@@ -411,7 +815,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     // Calculate Expenses by Classification (Selected Month)
     const expClassMap = new Map<string, number>();
     mTrans.forEach(t => {
-      if (t.type === 'EXPENSE' && t.status === 'PAGO') {
+      const nature = t.movementNature || (t.type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
+      if (t.type === 'EXPENSE' && t.status === 'PAGO' && nature === 'EXPENSE') {
         const clsName = finClassifications.find(c => c.id === t.classification)?.name || 'Sem Classificação';
         expClassMap.set(clsName, (expClassMap.get(clsName) || 0) + t.amount);
       }
@@ -442,6 +847,9 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     });
 
     (transactions || []).forEach(t => {
+      if (t.id.startsWith('commission_payment_')) return;
+      const nature = t.movementNature || (t.type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
+      if (nature === 'NON_FINANCIAL' || nature === 'COMMERCIAL_DISCOUNT') return;
       const dateToUse = (t.status === 'PAGO' || t.status === 'RECEBIDO') ? t.date : (t.dueDate || t.date);
       if (dateToUse && dateToUse.startsWith(monthStr)) {
         const day = dateToUse.split('-')[2];
@@ -485,11 +893,19 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
-console.log('--- DBG ---');
-  console.log('Transactions length:', transactions?.length);
-  console.log('Caixa Transactions length:', caixaTransactions?.length);
-  console.log('monthStr:', monthStr);
-  console.log('filters:', { filterType, filterStatus, filterAccount, filterDateFrom, filterDateTo });
+  const selectedTransactionAccount = selectedTransaction
+    ? financialCategories.find(category => category.name === selectedTransaction.category)
+    : undefined;
+  const selectedTransactionUnit = selectedTransaction?.unitId === 'ALL'
+    ? 'Todas as unidades'
+    : systemUnits.find(unit => unit.id === selectedTransaction?.unitId)?.name || 'Unidade não encontrada';
+  const selectedTransactionClassification = finClassifications.find(
+    classification => classification.id === selectedTransaction?.classification
+  )?.name;
+  const selectedTransactionSubclass = finSubclassifications.find(
+    subclass => subclass.id === selectedTransaction?.subclassification
+  )?.name;
+
   return (
     <div className="space-y-6">
       {/* HEADER */}
@@ -532,6 +948,19 @@ console.log('--- DBG ---');
           </select>
         </div>
       </div>
+
+      {transactionFeedback && (
+        <div
+          role="status"
+          className={`rounded-xl border px-4 py-3 text-sm font-bold ${
+            transactionFeedback.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300'
+          }`}
+        >
+          {transactionFeedback.message}
+        </div>
+      )}
 
       {activeTab === 'RESUMO' && (
         <>
@@ -585,6 +1014,183 @@ console.log('--- DBG ---');
               </p>
             </div>
           </div>
+
+          <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex flex-col gap-4 border-b border-gray-200 p-5 dark:border-zinc-800 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="flex items-center gap-2 font-black text-gray-900 dark:text-white">
+                  <ShieldCheck className="h-5 w-5 text-blue-600" />
+                  Central de conciliação por unidade e canal
+                </h3>
+                <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">
+                  Entradas, liquidações, saídas e pendências separadas pela origem real do dinheiro.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="mb-1 block text-[10px] font-black uppercase text-gray-400">Visão</label>
+                  <select
+                    value={operationsPeriod}
+                    onChange={event => setOperationsPeriod(event.target.value as 'DAY' | 'WEEK' | 'MONTH')}
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold dark:border-zinc-700 dark:bg-zinc-800"
+                  >
+                    <option value="DAY">Diária</option>
+                    <option value="WEEK">Semanal</option>
+                    <option value="MONTH">Mensal</option>
+                  </select>
+                </div>
+                {operationsPeriod !== 'MONTH' && (
+                  <div>
+                    <label className="mb-1 block text-[10px] font-black uppercase text-gray-400">Data de referência</label>
+                    <input
+                      type="date"
+                      value={operationsDate}
+                      onChange={event => setOperationsDate(event.target.value)}
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold dark:border-zinc-700 dark:bg-zinc-800"
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="mb-1 block text-[10px] font-black uppercase text-gray-400">Unidade</label>
+                  <select
+                    value={operationsUnit}
+                    onChange={event => setOperationsUnit(event.target.value)}
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold dark:border-zinc-700 dark:bg-zinc-800"
+                  >
+                    <option value="ALL">Todas as unidades</option>
+                    {systemUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={openCashClosing}
+                  disabled={operationsUnit === 'ALL'}
+                  title={operationsUnit === 'ALL' ? 'Selecione uma unidade para fechar o caixa' : undefined}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  {selectedCashClosing ? 'Revisar fechamento' : 'Fechar caixa'}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 border-b border-gray-100 bg-gray-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-950/30 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <p className="text-[10px] font-black uppercase text-gray-400">Período operacional</p>
+                <p className="mt-1 text-sm font-black text-gray-900 dark:text-white">
+                  {formatTransactionDate(operationsCenter.startDate)} — {formatTransactionDate(operationsCenter.endDate)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/20">
+                <p className="text-[10px] font-black uppercase text-amber-600">Pendências / divergências</p>
+                <p className="mt-1 text-lg font-black text-amber-700 dark:text-amber-400">
+                  {operationsCenter.pending} / {operationsCenter.divergent}
+                </p>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-950/20">
+                <p className="text-[10px] font-black uppercase text-emerald-600">Saldo operacional em espécie</p>
+                <p className="mt-1 text-lg font-black text-emerald-700 dark:text-emerald-400">
+                  {operationsCenter.cashBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+              </div>
+              <div className={`rounded-xl border p-3 ${
+                selectedCashClosing?.status === 'CLOSED'
+                  ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/20'
+                  : selectedCashClosing?.status === 'DIVERGENT'
+                    ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20'
+                    : 'border-gray-200 bg-white dark:border-zinc-800 dark:bg-zinc-900'
+              }`}>
+                <p className="text-[10px] font-black uppercase text-gray-500 dark:text-zinc-400">Fechamento do caixa físico</p>
+                <p className={`mt-1 text-sm font-black ${
+                  selectedCashClosing?.status === 'CLOSED'
+                    ? 'text-emerald-700 dark:text-emerald-400'
+                    : selectedCashClosing?.status === 'DIVERGENT'
+                      ? 'text-red-700 dark:text-red-400'
+                      : 'text-gray-700 dark:text-zinc-300'
+                }`}>
+                  {operationsUnit === 'ALL'
+                    ? 'Selecione uma unidade'
+                    : selectedCashClosing
+                      ? `${selectedCashClosing.status === 'CLOSED' ? 'Fechado' : 'Com divergência'} · ${selectedCashClosing.countedBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+                      : 'Ainda não realizado'}
+                </p>
+              </div>
+            </div>
+
+            <div className="border-b border-gray-100 px-4 py-3 dark:border-zinc-800">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Lançamentos rápidos</p>
+                <p className="hidden text-[10px] font-semibold text-gray-400 sm:block">A conta de destino será escolhida no formulário.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {QUICK_OPERATION_PRESETS.map(operation => (
+                  <button
+                    key={operation.label}
+                    type="button"
+                    onClick={() => openQuickTransaction(operation.preset)}
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
+                  >
+                    + {operation.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[850px] text-left text-xs">
+                <thead className="border-b border-gray-200 bg-gray-50 text-[10px] font-black uppercase text-gray-500 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
+                  <tr>
+                    <th className="px-4 py-3">Unidade</th>
+                    <th className="px-4 py-3">Canal</th>
+                    <th className="px-4 py-3 text-right">Previsto</th>
+                    <th className="px-4 py-3 text-right">Recebido</th>
+                    <th className="px-4 py-3 text-right">Saídas</th>
+                    <th className="px-4 py-3 text-right">Diferença</th>
+                    <th className="px-4 py-3">Situação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+                  {operationsCenter.rows.map(row => {
+                    const difference = row.expected - row.received;
+                    const status = row.divergent > 0
+                      ? 'Divergente'
+                      : row.pending > 0 || difference > 0.01
+                        ? 'Pendente'
+                        : 'Conciliado';
+                    return (
+                      <tr key={row.key} className="hover:bg-gray-50 dark:hover:bg-zinc-800/40">
+                        <td className="px-4 py-3 font-bold text-gray-900 dark:text-white">{row.unitName}</td>
+                        <td className="px-4 py-3 font-semibold text-gray-600 dark:text-zinc-300">
+                          {SOURCE_CHANNEL_OPTIONS.find(option => option.value === row.channel)?.label || row.channel}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono">{row.expected.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="px-4 py-3 text-right font-mono text-emerald-600">{row.received.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="px-4 py-3 text-right font-mono text-red-500">{row.outgoing.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className={`px-4 py-3 text-right font-mono font-bold ${Math.abs(difference) > 0.01 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          {difference.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-black ${
+                            status === 'Conciliado'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                              : status === 'Divergente'
+                                ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                          }`}>
+                            {status !== 'Conciliado' && <AlertTriangle className="h-3 w-3" />}
+                            {status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {operationsCenter.rows.length === 0 && (
+                    <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-500">Nenhum movimento encontrado para este período e unidade.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* CHART: Faturamento vs Pagamentos (Unidades) */}
@@ -742,41 +1348,7 @@ console.log('--- DBG ---');
       )}
 
       {activeTab === 'CONCILIACAO' && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setConciliacaoSubTab('FINTECH')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-                  conciliacaoSubTab === 'FINTECH'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                Motor FinTech 4 Fontes (PDV / Clube / Rede / D+31)
-              </button>
-              <button
-                onClick={() => setConciliacaoSubTab('OFX')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-                  conciliacaoSubTab === 'OFX'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                Extrato Bancário OFX / CSV
-              </button>
-            </div>
-            <span className="text-[11px] font-semibold text-gray-400 px-3 hidden sm:inline">
-              Barbearia Vangard Ltda
-            </span>
-          </div>
-
-          {conciliacaoSubTab === 'FINTECH' ? (
-            <FintechReconciliation onSettlementComplete={handleFintechSettlement} />
-          ) : (
-            <BankReconciliation />
-          )}
-        </div>
+        <BankReconciliation />
       )}
 
       {activeTab === 'RECEBIMENTOS' && (
@@ -811,9 +1383,13 @@ console.log('--- DBG ---');
                    status: 'PENDENTE',
                    recurrence: 'NONE',
                    installments: 1,
-                   supplier: '',
-                   classification: '',
-                   subclassification: ''
+                    supplier: '',
+                    classification: '',
+                    subclassification: '',
+                    sourceChannel: 'OTHER',
+                    paymentMethod: 'OTHER',
+                    movementNature: 'EXPENSE',
+                    reconciliationStatus: 'NOT_APPLICABLE'
                  }]);
                  setEditingId(null);
                  setIsModalOpen(true);
@@ -844,6 +1420,20 @@ console.log('--- DBG ---');
                   <option value="PAGO">Pago</option>
                   <option value="RECEBIDO">Recebido</option>
                   <option value="AGENDADO">Agendado</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Canal de origem</label>
+                <select value={filterSourceChannel} onChange={event => setFilterSourceChannel(event.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm font-semibold">
+                  <option value="ALL">Todos os Canais</option>
+                  {SOURCE_CHANNEL_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Conciliação</label>
+                <select value={filterReconciliationStatus} onChange={event => setFilterReconciliationStatus(event.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm font-semibold">
+                  <option value="ALL">Todas as Situações</option>
+                  {RECONCILIATION_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </div>
               <div>
@@ -891,11 +1481,35 @@ console.log('--- DBG ---');
                   <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm font-semibold" />
                 </div>
               </div>
+              <div className="flex items-end md:col-span-4 md:justify-end">
+                <button
+                  type="button"
+                  onClick={clearCashFilters}
+                  disabled={!hasActiveCashFilters}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 transition-colors hover:border-blue-300 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-blue-700 dark:hover:text-blue-400 md:w-auto"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Limpar filtros
+                </button>
+              </div>
             </div>
           )}
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
              {(caixaTransactions || []).map(t => (
-               <div key={t.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 rounded-xl border border-gray-100 dark:border-zinc-800/80 bg-gray-50/50 dark:bg-zinc-800/30 gap-4">
+               <div
+                 key={t.id}
+                 role="button"
+                 tabIndex={0}
+                 aria-label={`Ver resumo de ${t.description}`}
+                 onClick={() => setSelectedTransaction(t)}
+                 onKeyDown={event => {
+                   if (event.key === 'Enter' || event.key === ' ') {
+                     event.preventDefault();
+                     setSelectedTransaction(t);
+                   }
+                 }}
+                 className="flex cursor-pointer flex-col sm:flex-row justify-between items-start sm:items-center p-4 rounded-xl border border-gray-100 dark:border-zinc-800/80 bg-gray-50/50 dark:bg-zinc-800/30 hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:border-blue-800 dark:hover:bg-blue-950/20 gap-4 transition-colors"
+               >
                   <div className="flex gap-4 items-center w-full sm:w-auto">
                     <div className={`p-3 rounded-xl ${t.type === 'INCOME' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'}`}>
                       {t.type === 'INCOME' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
@@ -921,7 +1535,7 @@ console.log('--- DBG ---');
                       <div className="text-xs text-gray-500 dark:text-zinc-400 mt-1 flex gap-3">
                         <span className="flex items-center gap-1">
                            <Calendar className="w-3 h-3" />
-                           Lan: {new Date(t.date).toLocaleDateString('pt-BR')} {t.dueDate ? `| Venc: ${new Date(t.dueDate).toLocaleDateString('pt-BR')}` : ''} {t.recurrence !== 'NONE' && t.installmentIndex ? `| (${t.installmentIndex}/${t.installments})` : ''}
+                           Lan: {formatTransactionDate(t.date)} {t.dueDate ? `| Venc: ${formatTransactionDate(t.dueDate)}` : ''} {t.recurrence !== 'NONE' && t.installmentIndex ? `| (${t.installmentIndex}/${t.installments})` : ''}
                         </span>
                         <span>
                           {t.unitId === 'ALL' ? 'Todas Unidades' : systemUnits?.find(u => u.id === t.unitId)?.name}
@@ -939,10 +1553,24 @@ console.log('--- DBG ---');
                        </p>
                      </div>
                      <div className="flex gap-2">
-                       <button onClick={() => handleEdit(t)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg border border-gray-200 dark:border-zinc-700 hover:text-blue-500 transition-colors">
+                       <button
+                         onClick={event => {
+                           event.stopPropagation();
+                           handleEdit(t);
+                         }}
+                         aria-label={`Editar ${t.description}`}
+                         className="p-2 bg-white dark:bg-zinc-800 rounded-lg border border-gray-200 dark:border-zinc-700 hover:text-blue-500 transition-colors"
+                       >
                          <Edit2 className="w-4 h-4" />
                        </button>
-                       <button onClick={() => deleteTransaction(t.id)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg border border-gray-200 dark:border-zinc-700 hover:text-red-500 transition-colors">
+                       <button
+                         onClick={event => {
+                           event.stopPropagation();
+                           deleteTransaction(t.id);
+                         }}
+                         aria-label={`Excluir ${t.description}`}
+                         className="p-2 bg-white dark:bg-zinc-800 rounded-lg border border-gray-200 dark:border-zinc-700 hover:text-red-500 transition-colors"
+                       >
                          <Trash2 className="w-4 h-4" />
                        </button>
                      </div>
@@ -956,6 +1584,280 @@ console.log('--- DBG ---');
                  Nenhum lançamento encontrado para este mês.
                </div>
              )}
+          </div>
+        </div>
+      )}
+
+
+      {/* RESUMO DO LANÇAMENTO */}
+      {selectedTransaction && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={() => setSelectedTransaction(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="transaction-summary-title"
+            onClick={event => event.stopPropagation()}
+            className="w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-gray-200 p-5 dark:border-zinc-800">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">
+                  Resumo do lançamento
+                </p>
+                <h2 id="transaction-summary-title" className="mt-1 text-xl font-black text-gray-900 dark:text-white">
+                  {selectedTransaction.description}
+                </h2>
+              </div>
+              <button
+                onClick={() => setSelectedTransaction(null)}
+                aria-label="Fechar resumo"
+                className="rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-5 p-5">
+              <div className={`rounded-xl p-4 ${
+                selectedTransaction.type === 'INCOME'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/30'
+                  : 'bg-red-50 dark:bg-red-950/30'
+              }`}>
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">
+                  {selectedTransaction.type === 'INCOME' ? 'Receita' : 'Despesa'}
+                </p>
+                <p className={`mt-1 text-3xl font-black ${
+                  selectedTransaction.type === 'INCOME'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {selectedTransaction.type === 'INCOME' ? '+' : '-'}
+                  {selectedTransaction.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+                <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-black uppercase ${
+                  selectedTransaction.status === 'PENDENTE'
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                    : selectedTransaction.status === 'AGENDADO'
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                }`}>
+                  {selectedTransaction.status}
+                </span>
+              </div>
+
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Conta</dt>
+                  <dd className="mt-1 font-semibold text-gray-900 dark:text-white">{selectedTransaction.category}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Centro de custo</dt>
+                  <dd className="mt-1 font-semibold text-gray-900 dark:text-white">{selectedTransactionUnit}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Data do lançamento</dt>
+                  <dd className="mt-1 font-semibold text-gray-900 dark:text-white">{formatTransactionDate(selectedTransaction.date)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Vencimento</dt>
+                  <dd className="mt-1 font-semibold text-gray-900 dark:text-white">{formatTransactionDate(selectedTransaction.dueDate)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Fornecedor/origem</dt>
+                  <dd className="mt-1 font-semibold text-gray-900 dark:text-white">{selectedTransaction.supplier || 'Não informado'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Classificação</dt>
+                  <dd className="mt-1 font-semibold text-gray-900 dark:text-white">
+                    {selectedTransactionClassification || 'Não informada'}
+                    {selectedTransactionSubclass ? ` › ${selectedTransactionSubclass}` : ''}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Canal / meio</dt>
+                  <dd className="mt-1 font-semibold text-gray-900 dark:text-white">
+                    {SOURCE_CHANNEL_OPTIONS.find(option => option.value === inferSourceChannel(selectedTransaction))?.label || 'Outras fontes'}
+                    {selectedTransaction.paymentMethod
+                      ? ` › ${PAYMENT_METHOD_OPTIONS.find(option => option.value === selectedTransaction.paymentMethod)?.label || selectedTransaction.paymentMethod}`
+                      : ''}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Natureza / conciliação</dt>
+                  <dd className="mt-1 font-semibold text-gray-900 dark:text-white">
+                    {MOVEMENT_NATURE_OPTIONS.find(option => option.value === (selectedTransaction.movementNature || (selectedTransaction.type === 'INCOME' ? 'REVENUE' : 'EXPENSE')))?.label}
+                    {' › '}
+                    {RECONCILIATION_STATUS_OPTIONS.find(option => option.value === (selectedTransaction.reconciliationStatus || 'NOT_APPLICABLE'))?.label}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Recorrência</dt>
+                  <dd className="mt-1 font-semibold text-gray-900 dark:text-white">
+                    {selectedTransaction.recurrence && selectedTransaction.recurrence !== 'NONE'
+                      ? `${selectedTransaction.recurrence} — parcela ${selectedTransaction.installmentIndex || 1}/${selectedTransaction.installments || 1}`
+                      : 'Sem recorrência'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Banco</dt>
+                  <dd className="mt-1 font-semibold text-gray-900 dark:text-white">
+                    {selectedTransaction.bankName || selectedTransactionAccount?.bankName || 'Não informado'}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="rounded-xl bg-gray-50 p-3 dark:bg-zinc-800/60">
+                <p className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Identificador</p>
+                <p className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-zinc-300">{selectedTransaction.id}</p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-gray-200 bg-gray-50/50 p-5 dark:border-zinc-800 dark:bg-zinc-800/30">
+              <button
+                onClick={() => setSelectedTransaction(null)}
+                className="rounded-xl px-5 py-2.5 font-bold text-gray-600 hover:bg-gray-200 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => {
+                  const transaction = selectedTransaction;
+                  setSelectedTransaction(null);
+                  handleEdit(transaction);
+                }}
+                className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 font-bold text-white hover:bg-blue-700"
+              >
+                <Edit2 className="h-4 w-4" /> Editar lançamento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* FECHAMENTO DO CAIXA FÍSICO */}
+      {isCashClosingOpen && operationsUnit !== 'ALL' && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={() => setIsCashClosingOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cash-closing-title"
+            onClick={event => event.stopPropagation()}
+            className="w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-gray-200 p-5 dark:border-zinc-800">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Conferência diária</p>
+                <h2 id="cash-closing-title" className="mt-1 text-xl font-black text-gray-900 dark:text-white">
+                  Fechamento do caixa físico
+                </h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-zinc-400">
+                  {systemUnits.find(unit => unit.id === operationsUnit)?.name || operationsUnit} · {formatTransactionDate(operationsDate)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCashClosingOpen(false)}
+                aria-label="Fechar"
+                className="rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-5 p-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black uppercase text-gray-500 dark:text-zinc-400">Saldo inicial</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={cashOpeningBalance}
+                    onChange={event => {
+                      const value = event.target.value;
+                      if (isValidFinancialAmountInput(value)) setCashOpeningBalance(value);
+                    }}
+                    className="w-full rounded-xl border border-gray-200 bg-white p-3 font-mono font-bold dark:border-zinc-700 dark:bg-zinc-950"
+                    placeholder="0,00"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black uppercase text-gray-500 dark:text-zinc-400">Valor contado no caixa</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={cashCountedBalance}
+                    onChange={event => {
+                      const value = event.target.value;
+                      if (isValidFinancialAmountInput(value)) setCashCountedBalance(value);
+                    }}
+                    className="w-full rounded-xl border border-gray-200 bg-white p-3 font-mono font-bold dark:border-zinc-700 dark:bg-zinc-950"
+                    placeholder="0,00"
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-xl bg-emerald-50 p-3 dark:bg-emerald-950/30">
+                  <p className="text-[10px] font-black uppercase text-emerald-600">Entradas</p>
+                  <p className="mt-1 font-mono text-sm font-black text-emerald-700 dark:text-emerald-400">
+                    {cashClosingPreview.cashIncome.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-red-50 p-3 dark:bg-red-950/30">
+                  <p className="text-[10px] font-black uppercase text-red-600">Saídas</p>
+                  <p className="mt-1 font-mono text-sm font-black text-red-700 dark:text-red-400">
+                    {cashClosingPreview.cashOutflow.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-gray-100 p-3 dark:bg-zinc-800">
+                  <p className="text-[10px] font-black uppercase text-gray-500">Saldo esperado</p>
+                  <p className="mt-1 font-mono text-sm font-black text-gray-900 dark:text-white">
+                    {cashClosingPreview.expectedBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </p>
+                </div>
+                <div className={`rounded-xl p-3 ${Math.abs(cashClosingPreview.difference) <= 0.01 ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'bg-amber-50 dark:bg-amber-950/30'}`}>
+                  <p className="text-[10px] font-black uppercase text-gray-500">Diferença</p>
+                  <p className={`mt-1 font-mono text-sm font-black ${Math.abs(cashClosingPreview.difference) <= 0.01 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
+                    {cashClosingPreview.difference.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </p>
+                </div>
+              </div>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-black uppercase text-gray-500 dark:text-zinc-400">Observações</span>
+                <textarea
+                  value={cashClosingNotes}
+                  onChange={event => setCashClosingNotes(event.target.value)}
+                  rows={3}
+                  placeholder="Registre sangrias, trocos, gorjetas ou a justificativa de eventual diferença."
+                  className="w-full resize-none rounded-xl border border-gray-200 bg-white p-3 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-gray-200 bg-gray-50/50 p-5 dark:border-zinc-800 dark:bg-zinc-800/30">
+              <button
+                type="button"
+                onClick={() => setIsCashClosingOpen(false)}
+                className="rounded-xl px-5 py-2.5 font-bold text-gray-600 hover:bg-gray-200 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCashClosing}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 font-black text-white hover:bg-emerald-700"
+              >
+                <CheckCircle className="h-4 w-4" /> Salvar fechamento
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1000,9 +1902,10 @@ console.log('--- DBG ---');
                          <select
                            value={form.type}
                            onChange={e => {
-                             const newForms = [...transForms];
-                             newForms[index].type = e.target.value as 'INCOME' | 'EXPENSE';
-                             setTransForms(newForms);
+                              const newForms = [...transForms];
+                              newForms[index].type = e.target.value as 'INCOME' | 'EXPENSE';
+                              newForms[index].movementNature = e.target.value === 'INCOME' ? 'REVENUE' : 'EXPENSE';
+                              setTransForms(newForms);
                            }}
                            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2.5 font-bold text-sm"
                          >
@@ -1056,9 +1959,69 @@ console.log('--- DBG ---');
                            <option value="RECEBIDO">Recebido</option>
                            <option value="AGENDADO">Agendado</option>
                          </select>
-                       </div>
-                       
-                       <div className="md:col-span-1">
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Canal de origem</label>
+                          <select
+                            value={form.sourceChannel || 'OTHER'}
+                            onChange={event => {
+                              const newForms = [...transForms];
+                              newForms[index].sourceChannel = event.target.value as FinancialTransaction['sourceChannel'];
+                              setTransForms(newForms);
+                            }}
+                            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2.5 text-sm"
+                          >
+                            {SOURCE_CHANNEL_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Meio de pagamento</label>
+                          <select
+                            value={form.paymentMethod || 'OTHER'}
+                            onChange={event => {
+                              const newForms = [...transForms];
+                              newForms[index].paymentMethod = event.target.value as FinancialTransaction['paymentMethod'];
+                              setTransForms(newForms);
+                            }}
+                            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2.5 text-sm"
+                          >
+                            {PAYMENT_METHOD_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Natureza do movimento</label>
+                          <select
+                            value={form.movementNature || (form.type === 'INCOME' ? 'REVENUE' : 'EXPENSE')}
+                            onChange={event => {
+                              const newForms = [...transForms];
+                              newForms[index].movementNature = event.target.value as FinancialTransaction['movementNature'];
+                              setTransForms(newForms);
+                            }}
+                            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2.5 text-sm"
+                          >
+                            {MOVEMENT_NATURE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Situação da conciliação</label>
+                          <select
+                            value={form.reconciliationStatus || 'NOT_APPLICABLE'}
+                            onChange={event => {
+                              const newForms = [...transForms];
+                              newForms[index].reconciliationStatus = event.target.value as FinancialTransaction['reconciliationStatus'];
+                              setTransForms(newForms);
+                            }}
+                            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2.5 text-sm"
+                          >
+                            {RECONCILIATION_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+
+                        <div className="md:col-span-1">
                          <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Recorrência</label>
                          <select
                            value={form.recurrence || 'NONE'}
@@ -1191,12 +2154,15 @@ console.log('--- DBG ---');
                        <div className="md:col-span-2">
                          <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Valor (R$)</label>
                          <input
-                           type="number"
-                           step="0.01"
+                           type="text"
+                           inputMode="decimal"
+                           placeholder="0,00"
                            value={form.amount || ''}
                            onChange={e => {
+                             const rawValue = e.target.value;
+                             if (!isValidFinancialAmountInput(rawValue)) return;
                              const newForms = [...transForms];
-                             newForms[index].amount = parseFloat(e.target.value) || 0;
+                             newForms[index].amount = rawValue;
                              setTransForms(newForms);
                            }}
                            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2.5 font-mono text-sm"
@@ -1277,9 +2243,10 @@ console.log('--- DBG ---');
                  </button>
                  <button 
                    onClick={handleSaveTransaction}
-                   className="px-6 py-2.5 bg-[var(--theme-color)] text-white font-black rounded-xl shadow-lg shadow-[var(--theme-color)]/20 hover:bg-[#ff6b42] transition-colors"
+                   disabled={isSavingTransaction}
+                   className="px-6 py-2.5 bg-[var(--theme-color)] text-white font-black rounded-xl shadow-lg shadow-[var(--theme-color)]/20 hover:bg-[#ff6b42] transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                  >
-                   Salvar Lançamentos
+                   {isSavingTransaction ? 'Salvando...' : 'Salvar Lançamentos'}
                  </button>
               </div>
            </div>
