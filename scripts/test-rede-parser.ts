@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as XLSX from 'xlsx';
 import { parseRedeFile } from '../src/utils/reconciliationEngine';
+import { buildSettlementTransactionId, isSettlementEligible } from '../src/utils/reconciliationSettlement';
+import type { ConciliationItem } from '../src/types/reconciliation';
+import { formatFinancialPeriod, getFinancialPeriod, getLatestFinancialPeriod } from '../src/utils/financialPeriods';
 
 function createParserFile(bytes: Uint8Array, name: string): File {
   const copy = Uint8Array.from(bytes);
@@ -81,6 +84,56 @@ async function testWorkbookWithPaymentsSheet() {
   assert.equal(result.pagamentos[1].dataVenda, '2026-08-04');
 }
 
+function testSettlementEligibility() {
+  const baseItem: ConciliationItem = {
+    id: 'batch_2026-08-05|Crédito',
+    regra: 'REGRA_2_PDV_REDE',
+    dataVenda: '2026-08-05',
+    identificador: 'Lote 2026-08-05',
+    clienteOuDesc: 'Fechamento Lote',
+    modalidadeOuPlano: 'Crédito',
+    valorBruto: 100,
+    valorMdrRetido: 2.5,
+    valorLiquido: 97.5,
+    mdrTaxaEfetiva: 2.5,
+    diferencaTaxa: 0,
+    status: 'CONCILIADO',
+    statusDescricao: 'Conciliado'
+  };
+
+  assert.equal(isSettlementEligible(baseItem), true);
+  assert.equal(isSettlementEligible({ ...baseItem, status: 'CONCILIADO_REDE' }), true);
+  assert.equal(isSettlementEligible({ ...baseItem, status: 'CONCILIADO_PIX_BANCO' }), true);
+  assert.equal(isSettlementEligible({ ...baseItem, status: 'DIVERGENCIA_TAXA' }), false);
+  assert.equal(isSettlementEligible({ ...baseItem, status: 'PENDENTE_LIQUIDACAO' }), false);
+  assert.equal(isSettlementEligible({ ...baseItem, valorLiquido: 0 }), false);
+  assert.equal(
+    isSettlementEligible({ ...baseItem, regra: 'REGRA_1_CLUBE_PREVISAO' }),
+    false,
+    'Previsão D+31 não deve entrar no Caixa antes da liquidação efetiva'
+  );
+  assert.equal(
+    buildSettlementTransactionId('Matriz Sudoeste', baseItem.id),
+    'reconciliation_Matriz_Sudoeste_batch_2026-08-05_Cr_dito'
+  );
+}
+
+function testFinancialPeriodSelection() {
+  assert.equal(getFinancialPeriod('2026-08-31'), '2026-08');
+  assert.equal(getFinancialPeriod('31/08/2026'), null);
+  assert.equal(
+    getLatestFinancialPeriod([
+      { date: '2026-07-31' },
+      { date: '2026-08-01' },
+      { date: '2026-08-31' }
+    ]),
+    '2026-08'
+  );
+  assert.equal(formatFinancialPeriod('2026-08'), '08/2026');
+}
+
 await testOfficialSummaryCsv();
 await testWorkbookWithPaymentsSheet();
+testSettlementEligibility();
+testFinancialPeriodSelection();
 console.log('Rede parser: testes concluídos com sucesso.');

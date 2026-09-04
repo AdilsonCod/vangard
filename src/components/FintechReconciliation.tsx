@@ -43,7 +43,9 @@ import {
   Legend 
 } from 'recharts';
 import * as XLSX from 'xlsx';
+import { collection, doc, getDocs, query, setDoc } from 'firebase/firestore';
 import { useStore } from '../store';
+import { db } from '../firebase';
 import { 
   PDVMovimentacao, 
   GatewayClubeTransacao, 
@@ -57,7 +59,8 @@ import {
   EntradaManual,
   FormaPagamentoComparison,
   TotaisComparativoFormasPgto,
-  ResumoLotesCartao
+  ResumoLotesCartao,
+  StatusDivergencia
 } from '../types/reconciliation';
 import { 
   parsePDVFile, 
@@ -67,8 +70,14 @@ import {
   runReconciliationEngine, 
   getBarbeariaDemoData 
 } from '../utils/reconciliationEngine';
+import { buildSettlementTransactionId, isSettlementEligible } from '../utils/reconciliationSettlement';
+import { formatFinancialPeriod, getLatestFinancialPeriod } from '../utils/financialPeriods';
 
-export function FintechReconciliation() {
+type FintechReconciliationProps = {
+  onSettlementComplete?: (dates: string[]) => void;
+};
+
+export function FintechReconciliation({ onSettlementComplete }: FintechReconciliationProps) {
   const { addTransaction, currentUser } = useStore();
 
   // Estados dos arquivos brutos carregados
@@ -328,7 +337,11 @@ export function FintechReconciliation() {
         const liqFmt = resumoInfo.liquidoRecebido
           ? resumoInfo.liquidoRecebido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
           : 'R$ 0,00';
-        showToast(`Aba Resumo/Capa da Rede identificada (Líquido: ${liqFmt}). Para lotes diários, envie a planilha com a aba 'Pagamentos'.`);
+        setKpis(prev => ({
+          ...prev,
+          saldoRealEmConta: resumoInfo.liquidoRecebido || 0,
+        }));
+        showToast(`Resumo da Rede reconhecido (líquido: ${liqFmt}). Este CSV não contém abas nem as parcelas; para conciliar, envie o XLSX completo ou o CSV da aba “Pagamentos”.`);
       } else if (pagamentos.length === 0) {
         // Debug: arquivo carregado mas nenhuma transação foi extraída
         showToast(`⚠️ Arquivo "${file.name}" carregado, mas nenhuma transação foi identificada. Verifique se o arquivo contém a aba "Pagamentos" com colunas de valor, data e modalidade.`);
@@ -375,122 +388,117 @@ export function FintechReconciliation() {
 
   // Efetivar / Baixar no caixa da barbearia
   
-  const handleSettleBatch = (batchId: string) => {
+  const handleSettleBatch = async (batchId: string) => {
     const batch = batches.find(b => b.id === batchId);
     if (!batch || settledItems.has(batch.id)) return;
-    
-    addTransaction({
-      id: crypto.randomUUID(),
-      unitId: currentUser?.unitId || 'ALL',
-      type: 'INCOME',
-      category: 'Atendimentos Cartão (Lote)',
-      description: `[Conciliado Lote] ${batch.modalidade} - ${batch.dataVenda}`,
-      amount: batch.totalRedeLiquido,
-      date: batch.dataVenda,
-      status: 'RECEBIDO',
-      classification: 'RECEBIMENTO_OPERACIONAL',
-    } as any);
 
-    const newSettled = new Set(settledItems);
-    newSettled.add(batch.id);
-    setSettledItems(newSettled);
-    showToast(`Lote de ${batch.modalidade} salvo com sucesso no Caixa Oficial!`);
+    const unitId = currentUser?.unit || selectedUnidade || 'ALL';
+
+    try {
+      await addTransaction({
+        id: buildSettlementTransactionId(unitId, batch.id),
+        unitId,
+        type: 'INCOME',
+        category: 'Atendimentos Cartão (Lote)',
+        description: `[Conciliação FinTech - Lote] ${batch.modalidade} - ${batch.dataVenda}`,
+        amount: batch.totalRedeLiquido,
+        date: batch.dataVenda,
+        status: 'RECEBIDO',
+        classification: 'RECEBIMENTO_OPERACIONAL',
+      });
+
+      const newSettled = new Set(settledItems);
+      newSettled.add(batch.id);
+      setSettledItems(newSettled);
+      onSettlementComplete?.([batch.dataVenda]);
+      const period = getLatestFinancialPeriod([{ date: batch.dataVenda }]);
+      showToast(`Lote de ${batch.modalidade} efetivado no Caixa${period ? ` em ${formatFinancialPeriod(period)}` : ''}!`);
+    } catch (error) {
+      console.error('Erro ao efetivar lote no Caixa:', error);
+      showToast('Erro ao efetivar o lote no Caixa. Tente novamente.');
+    }
   };
 
-  const handleSettleSelected = () => {
+  const handleSettleSelected = async () => {
     if (selectedItemsToSettle.size === 0) {
       showToast('Selecione ao menos um item conciliado para efetivar no fluxo de caixa.');
       return;
     }
 
-    let count = 0;
-    const newSettled = new Set(settledItems);
-    selectedItemsToSettle.forEach((id) => {
-      const item = items.find((i) => i.id === id);
-      if (item && !newSettled.has(item.id)) {
-        addTransaction({
-          id: crypto.randomUUID(),
-          unitId: currentUser?.unitId || 'ALL',
-          type: 'INCOME',
-          category: item.regra === 'REGRA_1_CLUBE_PREVISAO' ? 'Mensalidades Clube' : 'Atendimentos Cartão',
-          description: `[Conciliado] ${item.clienteOuDesc} - ${item.modalidadeOuPlano} (${item.identificador})`,
-          amount: item.valorLiquido,
-          date: item.dataLiquidacaoEfetiva || item.dataVenda,
-          status: 'RECEBIDO',
-          classification: 'RECEBIMENTO_OPERACIONAL',
-        } as any);
-        newSettled.add(item.id);
-        count++;
-      }
-    });
+    const selectedEligibleItems = items.filter(item =>
+      selectedItemsToSettle.has(item.id) &&
+      !settledItems.has(item.id) &&
+      isSettlementEligible(item)
+    );
 
-    setSettledItems(newSettled);
-    setSelectedItemsToSettle(new Set());
-    if (count > 0) {
-      showToast(`${count} recebimentos baixados com sucesso no Caixa Oficial da Barbearia!`);
-    } else {
-      showToast('Os itens selecionados já foram baixados.');
+    if (selectedEligibleItems.length === 0) {
+      showToast('Os itens selecionados não estão aptos para efetivação ou já foram baixados.');
+      return;
     }
+
+    await processSettlement(selectedEligibleItems);
+    setSelectedItemsToSettle(new Set());
   };
 
-  const handleSettleAll = () => {
-    const conciliatedItems = items.filter(i => i.status === 'CONCILIADO' && !settledItems.has(i.id));
+  const handleSettleAll = async () => {
+    const conciliatedItems = items.filter(item =>
+      isSettlementEligible(item) && !settledItems.has(item.id)
+    );
     if (conciliatedItems.length === 0) {
-      showToast('Nenhum item conciliado novo para efetivar.');
+      showToast('Nenhum recebimento confirmado novo para efetivar. Para guardar o relatório, use “Salvar Conciliação”.');
       return;
     }
     
-    processSettlement(conciliatedItems);
+    await processSettlement(conciliatedItems);
   };
 
-  const handleSettleDailyBatch = (date: string) => {
+  const handleSettleDailyBatch = async (date: string) => {
     const batchItems = items.filter(i => i.dataVenda === date);
-    
-    // Check if there are divergences. If the user clicks "Baixar Lote", we will only launch the CONCILIADO ones, OR force them to be CONCILIADO?
-    // Let's force all non-DIVERGENTE to be CONCILIADO and launch them.
-    const validItems = batchItems.filter(i => i.status === 'CONCILIADO' || i.status === 'PROCESSANDO');
-    const itemsToSettle = validItems.filter(i => !settledItems.has(i.id));
+    const itemsToSettle = batchItems.filter(item =>
+      isSettlementEligible(item) && !settledItems.has(item.id)
+    );
 
     if (itemsToSettle.length === 0) {
-      showToast('Nenhum item válido para baixar neste lote.');
+      showToast('Nenhum recebimento confirmado novo para efetivar neste lote.');
       return;
     }
 
-    // Force status to CONCILIADO before processing
-    const newItems = items.map(item => {
-      if (itemsToSettle.some(i => i.id === item.id)) {
-        return { ...item, status: 'CONCILIADO' as ConciliationStatus };
-      }
-      return item;
-    });
-    setItems(newItems);
-
-    processSettlement(itemsToSettle);
+    await processSettlement(itemsToSettle);
   };
 
-  const processSettlement = (itemsToProcess: ConciliationItem[]) => {
-    let count = 0;
+  const processSettlement = async (itemsToProcess: ConciliationItem[]) => {
     const newSettled = new Set(settledItems);
-    itemsToProcess.forEach(item => {
-      const isExpense = item.valorLiquido < 0;
-      
-      addTransaction({
-        id: crypto.randomUUID(),
-        unitId: currentUser?.unitId || 'ALL',
-        type: isExpense ? 'EXPENSE' : 'INCOME',
-        category: isExpense ? 'Taxas e Estornos (MDR)' : (item.regra === 'REGRA_1_CLUBE_PREVISAO' ? 'Mensalidades Clube' : 'Atendimentos Cartão'),
-        description: `[Lote Conciliado] ${item.clienteOuDesc} - ${item.modalidadeOuPlano} (${item.identificador})`,
-        amount: Math.abs(item.valorLiquido),
-        date: item.dataLiquidacaoEfetiva || item.dataVenda,
-        status: isExpense ? 'PAGO' : 'RECEBIDO',
-        classification: isExpense ? 'DESPESA_OPERACIONAL' : 'RECEBIMENTO_OPERACIONAL',
-      } as any);
-      newSettled.add(item.id);
-      count++;
-    });
+    const unitId = currentUser?.unit || selectedUnidade || 'ALL';
 
-    setSettledItems(newSettled);
-    showToast(`${count} transações efetivadas com sucesso no Caixa Oficial!`);
+    try {
+      await Promise.all(itemsToProcess.map(async item => {
+        const isExpense = item.valorLiquido < 0;
+
+        await addTransaction({
+          // ID determinístico: repetir a operação atualiza o mesmo documento
+          // no Firestore em vez de duplicar o lançamento no Caixa.
+          id: buildSettlementTransactionId(unitId, item.id),
+          unitId,
+          type: isExpense ? 'EXPENSE' : 'INCOME',
+          category: isExpense ? 'Taxas e Estornos (MDR)' : 'Atendimentos Cartão',
+          description: `[Conciliação FinTech] ${item.clienteOuDesc} - ${item.modalidadeOuPlano} (${item.identificador})`,
+          amount: Math.abs(item.valorLiquido),
+          date: item.dataLiquidacaoEfetiva || item.dataVenda,
+          status: isExpense ? 'PAGO' : 'RECEBIDO',
+          classification: isExpense ? 'DESPESA_OPERACIONAL' : 'RECEBIMENTO_OPERACIONAL',
+        });
+        newSettled.add(item.id);
+      }));
+
+      setSettledItems(newSettled);
+      const settlementDates = itemsToProcess.map(item => item.dataLiquidacaoEfetiva || item.dataVenda);
+      onSettlementComplete?.(settlementDates);
+      const period = getLatestFinancialPeriod(settlementDates.map(date => ({ date })));
+      showToast(`${itemsToProcess.length} transações efetivadas no Caixa${period ? ` em ${formatFinancialPeriod(period)}` : ''}!`);
+    } catch (error) {
+      console.error('Erro ao efetivar conciliação no Caixa:', error);
+      showToast('Erro ao efetivar os recebimentos no Caixa. Nenhum item foi marcado como salvo.');
+    }
   };
 
   const handleSaveSession = async () => {
@@ -509,7 +517,6 @@ export function FintechReconciliation() {
       const report = {
         id: sessionId,
         name: sessionName || suggestedName,
-        createdAt: currentSessionId ? undefined : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         unidade: selectedUnidade,
         items,
@@ -518,8 +525,8 @@ export function FintechReconciliation() {
         dailyClosings,
         kpis,
         comparativoFormasPgto,
+        ...(!currentSessionId && { createdAt: new Date().toISOString() }),
       };
-      if (!currentSessionId) report.createdAt = report.updatedAt;
       
       await setDoc(doc(db, 'reconciliation_reports', sessionId), report, { merge: true });
       setCurrentSessionId(sessionId);
@@ -1090,7 +1097,7 @@ export function FintechReconciliation() {
             className="px-4 py-2.5 bg-emerald-600 text-white font-bold text-sm rounded-xl hover:bg-emerald-700 shadow-sm flex items-center gap-2 transition disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
-            {isSaving ? 'Salvando...' : 'Salvar Dados'}
+            {isSaving ? 'Salvando...' : 'Salvar Conciliação'}
           </button>
           <button
             onClick={handleFetchSessions}
@@ -1105,7 +1112,7 @@ export function FintechReconciliation() {
             className="px-4 py-2.5 bg-emerald-600 text-white font-bold text-sm rounded-xl hover:bg-emerald-700 shadow-sm flex items-center gap-2 transition"
           >
             <CheckCircle className="w-4 h-4" />
-            Salvar Conciliados
+            Efetivar no Caixa
           </button>
 
           <button
@@ -1239,11 +1246,11 @@ export function FintechReconciliation() {
           <div className="flex items-start justify-between gap-2 mb-3">
             <div>
               <span className="text-[10px] font-extrabold uppercase text-emerald-600 dark:text-emerald-400 tracking-wider">
-                Fonte 3 • XLSX (Aba Pagamentos)
+                Fonte 3 • XLSX multiabas / CSV Pagamentos
               </span>
               <h4 className="font-bold text-gray-900 dark:text-white text-base">Adquirente Rede</h4>
               <p className="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
-                Rede_Rel_Recebimentos...xlsx ou .csv (Aba Pagamentos / Recebidos)
+                XLSX completo da Rede ou CSV exportado da aba Pagamentos
               </p>
             </div>
             <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
@@ -1260,8 +1267,8 @@ export function FintechReconciliation() {
                     <CheckCircle className="w-3.5 h-3.5" /> {redePagamentos.length} transações (Aba Pagamentos)
                   </span>
                 ) : redeResumoInfo?.isOnlyResumo ? (
-                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                    <CheckCircle className="w-3.5 h-3.5" /> Resumo carregado — sem transações
+                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5" /> Resumo reconhecido • {(redeResumoInfo.liquidoRecebido || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                   </span>
                 ) : (
                   <span className="text-gray-400">Pendente</span>
@@ -1287,7 +1294,11 @@ export function FintechReconciliation() {
             className="w-full py-2 px-3 border border-dashed border-emerald-300 dark:border-emerald-800 hover:border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition bg-emerald-50/50 dark:bg-emerald-950/20"
           >
             <Upload className="w-3.5 h-3.5" />
-            {redePagamentos.length > 0 ? 'Substituir Arquivo' : 'Subir Extrato Rede (.xlsx ou .csv)'}
+            {redePagamentos.length > 0
+              ? 'Substituir Arquivo'
+              : redeResumoInfo?.isOnlyResumo
+                ? 'Enviar XLSX ou CSV Pagamentos'
+                : 'Subir Extrato Rede (.xlsx ou .csv)'}
           </button>
         </div>
 
@@ -1945,7 +1956,7 @@ export function FintechReconciliation() {
                     Identificamos o valor consolidado de <strong>{(redeResumoInfo.liquidoRecebido || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong> {redeResumoInfo.periodo ? `no período de ${redeResumoInfo.periodo}` : ''}.
                   </p>
                   <p className="mt-1 text-blue-700 dark:text-blue-300">
-                    💡 <em>Dica:</em> Para auditar a conciliação lote a lote diário (Cartão de Crédito, Débito e Pix por dia), importe o arquivo Excel completo (.xlsx) contendo a aba <strong>'Pagamentos'</strong> ou o arquivo CSV exportado da aba de pagamentos.
+                    Este arquivo CSV possui somente a capa do relatório: as demais abas citadas no texto e as 941 parcelas não fazem parte dele. Para auditar a conciliação lote a lote diário (Cartão de Crédito, Débito e Pix por dia), importe o arquivo Excel completo (.xlsx) contendo a aba <strong>Pagamentos</strong> ou o CSV exportado especificamente dessa aba.
                   </p>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStore } from '../store';
 import { 
   DollarSign, 
@@ -31,6 +31,7 @@ import { FinancialTransaction } from '../types';
 import { BankReconciliation } from './BankReconciliation';
 import { ReceivablesReconciliation } from './ReceivablesReconciliation';
 import { FintechReconciliation } from './FintechReconciliation';
+import { getLatestFinancialPeriod } from '../utils/financialPeriods';
 
 export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'CONCILIACAO_FINTECH' }) {
   const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, addTransaction, updateTransaction, deleteTransaction } = useStore();
@@ -46,6 +47,22 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
   );
   
   const monthStr = `${selectedYear}-${selectedMonth}`;
+  const hasAutoSelectedTransactionPeriod = useRef(false);
+
+  const selectFinancialPeriod = (period: string) => {
+    const [year, month] = period.split('-');
+    if (!year || !month) return;
+    setSelectedYear(year);
+    setSelectedMonth(month);
+  };
+
+  const handleFintechSettlement = (dates: string[]) => {
+    const latestPeriod = getLatestFinancialPeriod(dates.map(date => ({ date })));
+    if (latestPeriod) {
+      selectFinancialPeriod(latestPeriod);
+      hasAutoSelectedTransactionPeriod.current = true;
+    }
+  };
 
   const [conciliacaoSubTab, setConciliacaoSubTab] = useState<'FINTECH' | 'OFX'>('FINTECH');
 
@@ -60,6 +77,27 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+
+  useEffect(() => {
+    if (
+      activeTab !== 'CAIXA' ||
+      hasAutoSelectedTransactionPeriod.current ||
+      filterDateFrom ||
+      filterDateTo ||
+      transactions.length === 0
+    ) {
+      return;
+    }
+
+    if (transactions.some(transaction => transaction.date?.startsWith(monthStr))) {
+      hasAutoSelectedTransactionPeriod.current = true;
+      return;
+    }
+
+    const latestPeriod = getLatestFinancialPeriod(transactions);
+    if (latestPeriod) selectFinancialPeriod(latestPeriod);
+    hasAutoSelectedTransactionPeriod.current = true;
+  }, [activeTab, filterDateFrom, filterDateTo, monthStr, transactions]);
 
   // Transaction form state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -700,7 +738,7 @@ console.log('--- DBG ---');
       )}
 
       {activeTab === 'CONCILIACAO_FINTECH' && (
-        <FintechReconciliation />
+        <FintechReconciliation onSettlementComplete={handleFintechSettlement} />
       )}
 
       {activeTab === 'CONCILIACAO' && (
@@ -734,7 +772,7 @@ console.log('--- DBG ---');
           </div>
 
           {conciliacaoSubTab === 'FINTECH' ? (
-            <FintechReconciliation />
+            <FintechReconciliation onSettlementComplete={handleFintechSettlement} />
           ) : (
             <BankReconciliation />
           )}
