@@ -724,6 +724,11 @@ export function runReconciliationEngine(
     return match ? match[1].toUpperCase() : desc.trim().toUpperCase();
   };
 
+  const extractNsu = (desc: string) => {
+    const match = desc.match(/NSU(?:\s*\/\s*CV)?[\s:=-]*([A-Za-z0-9-]+)/i);
+    return match ? match[1].trim().toUpperCase() : undefined;
+  };
+
   entradasManuais.forEach(entrada => {
     const isRede = entrada.tag === 'ASSINATURA_BALCAO_REDE';
     const isPix = entrada.tag === 'ASSINATURA_BALCAO_PIX';
@@ -744,6 +749,7 @@ export function runReconciliationEngine(
           regra: 'REGRA_3_ASSINATURA_BALCAO_REDE',
           dataVenda: entrada.data,
           identificador: chave,
+          nsu: match.nsuCv || extractNsu(entrada.descricao),
           clienteOuDesc: entrada.cliente,
           modalidadeOuPlano: 'Assinatura Balcão (Rede)',
           valorBruto: entrada.valor,
@@ -761,6 +767,7 @@ export function runReconciliationEngine(
           regra: 'REGRA_3_ASSINATURA_BALCAO_REDE',
           dataVenda: entrada.data,
           identificador: chave,
+          nsu: extractNsu(entrada.descricao),
           clienteOuDesc: entrada.cliente,
           modalidadeOuPlano: 'Assinatura Balcão (Rede)',
           valorBruto: entrada.valor,

@@ -80,6 +80,20 @@ type FintechReconciliationProps = {
 
 type AuditStatusFilter = 'TODAS' | StatusDivergencia;
 
+function resolveConciliationNsu(
+  item: ConciliationItem,
+  payments: AdquirenteRedePagamento[]
+): string {
+  if (item.nsu) return item.nsu;
+  const identifier = item.identificador?.trim().toUpperCase();
+  if (!identifier) return '';
+  return payments.find(payment =>
+    payment.nsuCv?.trim().toUpperCase() === identifier ||
+    payment.numAutorizacao?.trim().toUpperCase() === identifier ||
+    payment.tid?.trim().toUpperCase() === identifier
+  )?.nsuCv || '';
+}
+
 export function FintechReconciliation({ onSettlementComplete }: FintechReconciliationProps) {
   const {
     addTransaction,
@@ -983,6 +997,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
         Regra: i.regra,
         Data: i.dataVenda,
         Identificador: i.identificador,
+        NSU: resolveConciliationNsu(i, redePagamentos) || '-',
         Cliente: i.clienteOuDesc,
         Modalidade: i.modalidadeOuPlano,
         Bandeira: i.bandeira || '-',
@@ -3037,6 +3052,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                   <tr className="border-b border-gray-200 dark:border-zinc-800 text-[11px] font-black uppercase text-gray-400 tracking-wider bg-gray-50/50 dark:bg-zinc-800/30">
                     <th className="py-3 px-4">Cliente / ID</th>
                     <th className="py-3 px-4">Origem</th>
+                    <th className="py-3 px-4">NSU</th>
                     <th className="py-3 px-4">Data</th>
                     <th className="py-3 px-4">Valor Bruto</th>
                     <th className="py-3 px-4">Valor Líquido</th>
@@ -3057,6 +3073,9 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                         </td>
                         <td className="py-3 px-4 text-gray-700 dark:text-zinc-300 font-medium">
                           {item.modalidadeOuPlano}
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-gray-700 dark:text-zinc-200">
+                          {resolveConciliationNsu(item, redePagamentos) || '—'}
                         </td>
                         <td className="py-3 px-4 text-gray-600 dark:text-zinc-300">{item.dataVenda}</td>
                         <td className="py-3 px-4 font-bold text-gray-900 dark:text-white">
@@ -3084,7 +3103,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                     ))}
                   {items.filter((i) => i.regra.includes('REGRA_3') || i.regra.includes('REGRA_4')).length === 0 && (
                     <tr>
-                      <td colSpan={7} className="text-center py-8 text-gray-400">
+                      <td colSpan={8} className="text-center py-8 text-gray-400">
                         Nenhuma Assinatura de Balcão processada.
                       </td>
                     </tr>

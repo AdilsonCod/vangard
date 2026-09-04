@@ -94,6 +94,7 @@ export interface ConciliationItem {
   | 'REGRA_4_GATEWAY_EXTERNO';
   dataVenda: string;
   identificador: string; // TID ou Código/Transação
+  nsu?: string; // NSU/CV informado pela adquirente quando disponível
   clienteOuDesc: string;
   modalidadeOuPlano: string;
   bandeira?: string;
