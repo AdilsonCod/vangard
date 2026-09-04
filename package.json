@@ -9,6 +9,8 @@
     "start": "node dist/server.cjs",
     "lint": "eslint .",
     "test:rede-parser": "tsx scripts/test-rede-parser.ts",
+    "firestore:import:dry": "tsx scripts/import-firestore-backup.ts",
+    "firestore:import:apply": "tsx scripts/import-firestore-backup.ts --apply",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -155,6 +155,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const clubeInputRef = useRef<HTMLInputElement>(null);
   const redeInputRef = useRef<HTMLInputElement>(null);
   const previsaoInputRef = useRef<HTMLInputElement>(null);
+  const hasAutoRestoredReportRef = useRef(false);
 
   // Toast temporário
   const showToast = (msg: string) => {
@@ -525,6 +526,9 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
         dailyClosings,
         kpis,
         comparativoFormasPgto,
+        fileNames,
+        redeResumoInfo,
+        settledItems: Array.from(settledItems),
         ...(!currentSessionId && { createdAt: new Date().toISOString() }),
       };
       
@@ -554,7 +558,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     }
   };
 
-  const handleLoadSession = (session: any) => {
+  const handleLoadSession = (session: any, notify = true) => {
     setItems(session.items || []);
     if (session.unidade) setSelectedUnidade(session.unidade);
     setBatches(session.batches || []);
@@ -569,11 +573,46 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       totalDivergenciasCount: 0,
       taxaEfetivaGlobal: 0,
     });
-    setSettledItems(new Set());
+    setFileNames(session.fileNames || {});
+    setRedeResumoInfo(session.redeResumoInfo || null);
+    setSettledItems(new Set(session.settledItems || []));
     setCurrentSessionId(session.id);
     setShowSessionsModal(false);
-    showToast('Relatório carregado com sucesso!');
+    if (notify) showToast('Relatório carregado com sucesso!');
   };
+
+  useEffect(() => {
+    if (!currentUser?.id || hasAutoRestoredReportRef.current || items.length > 0) return;
+    hasAutoRestoredReportRef.current = true;
+
+    let cancelled = false;
+    const restoreLatestReport = async () => {
+      try {
+        const snapshot = await getDocs(query(collection(db, 'reconciliation_reports')));
+        const targetUnit = currentUser.unit || selectedUnidade;
+        const reports = snapshot.docs
+          .map(document => document.data())
+          .filter(report => !targetUnit || !report.unidade || report.unidade === targetUnit)
+          .sort((a, b) => {
+            const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+            const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+            return dateB - dateA;
+          });
+
+        if (!cancelled && reports[0]) {
+          handleLoadSession(reports[0], false);
+          showToast('Última conciliação salva restaurada automaticamente.');
+        }
+      } catch (error) {
+        console.error('Erro ao restaurar a última conciliação:', error);
+      }
+    };
+
+    restoreLatestReport();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, selectedUnidade]);
 
   const handleManualReconciliation = (itemId: string) => {
     const item = items.find(i => i.id === itemId);

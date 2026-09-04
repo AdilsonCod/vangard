@@ -1,5 +1,25 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { MonthlyUnitStats, MonthlyBarberStats, SystemUnit, User, DailyEntry, Target, CatalogItem, Category, Subcategory, PaymentRecord, GDVEntry, GDVSettings, SystemNotification, SystemAnnouncement } from './types';
+import {
+  MonthlyUnitStats,
+  MonthlyBarberStats,
+  SystemUnit,
+  User,
+  DailyEntry,
+  Target,
+  CatalogItem,
+  Category,
+  Subcategory,
+  PaymentRecord,
+  GDVEntry,
+  GDVSettings,
+  SystemNotification,
+  SystemAnnouncement,
+  FinancialTransaction,
+  FinancialCategory,
+  Supplier,
+  FinClassification,
+  FinSubclassification,
+} from './types';
 import { db } from './firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { seedDatabase } from './firebase-sync';
@@ -126,9 +146,13 @@ interface StoreContextType extends AppState {
 
 const StoreContext = createContext<StoreContextType | null>(null);
 
+const AUTH_SESSION_KEY = 'vans_authenticated_user_id';
+const SHOULD_SEED_DATABASE = (import.meta as any).env?.VITE_ENABLE_DATABASE_SEED === 'true';
+
 export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [hasLoadedUsers, setHasLoadedUsers] = useState(false);
 
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [entries, setEntries] = useState<DailyEntry[]>([]);
@@ -167,7 +191,11 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const init = async () => {
       try {
-        await seedDatabase();
+        // A carga inicial altera coleções vazias. Em bancos com dados reais ela
+        // fica desativada por padrão e só roda quando explicitamente habilitada.
+        if (SHOULD_SEED_DATABASE) {
+          await seedDatabase();
+        }
       } catch (err) {
         console.error('Error seeding database:', err);
       } finally {
@@ -212,9 +240,37 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unsubSystemUnits = onSnapshot(collection(db, 'systemUnits'), snap => {
       setSystemUnits(snap.docs.map(d => d.data() as SystemUnit));
     });
-    const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
-      setUsers(snap.docs.map(d => d.data() as User));
-    });
+    const unsubUsers = onSnapshot(
+      collection(db, 'users'),
+      snap => {
+        const nextUsers = snap.docs.map(d => d.data() as User);
+        setUsers(nextUsers);
+
+        // Restaura somente o ID da sessão e sempre utiliza o documento atual do
+        // Firestore. Usuários removidos ou desativados perdem a sessão.
+        setCurrentUser(previousUser => {
+          const storedUserId = previousUser?.id || localStorage.getItem(AUTH_SESSION_KEY);
+          if (!storedUserId) return null;
+
+          const refreshedUser = nextUsers.find(user =>
+            user.id === storedUserId && user.isActive !== false
+          );
+
+          if (!refreshedUser) {
+            localStorage.removeItem(AUTH_SESSION_KEY);
+            return null;
+          }
+
+          localStorage.setItem(AUTH_SESSION_KEY, refreshedUser.id);
+          return refreshedUser;
+        });
+        setHasLoadedUsers(true);
+      },
+      error => {
+        console.error('Erro ao carregar usuários do Firestore:', error);
+        setHasLoadedUsers(true);
+      }
+    );
     const unsubPayments = onSnapshot(collection(db, 'payments'), snap => {
       setPayments(snap.docs.map(d => d.data() as PaymentRecord));
     });
@@ -290,12 +346,14 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const u = users.find(u => u.email === email && u.password === pass && u.isActive !== false);
     if (u) {
       setCurrentUser(u);
+      localStorage.setItem(AUTH_SESSION_KEY, u.id);
       return true;
     }
     return false;
   };
 
   const logout = () => {
+    localStorage.removeItem(AUTH_SESSION_KEY);
     setCurrentUser(null);
   };
 
@@ -659,7 +717,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     await deleteDoc(doc(db, 'announcements', id));
   };
 
-  if (isInitializing) {
+  if (isInitializing || !hasLoadedUsers) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-zinc-950 text-gray-800 dark:text-zinc-200 p-6">
         <div className="flex flex-col items-center max-w-sm w-full text-center space-y-6">
