@@ -57,7 +57,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </p>
             <button 
               onClick={() => window.location.reload()} 
-              className="w-full bg-[var(--theme-color)] hover:bg-[#e05f3a] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md active:scale-98 font-sans text-sm cursor-pointer"
+              className="w-full bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md active:scale-98 font-sans text-sm cursor-pointer"
             >
               Recarregar Painel
             </button>

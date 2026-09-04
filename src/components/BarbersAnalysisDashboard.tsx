@@ -572,7 +572,7 @@ export function BarbersAnalysisDashboard() {
                    <XAxis dataKey="name" tick={{fontSize: 12, fill: '#888'}} />
                    <YAxis tickFormatter={(v) => `R$${v}`} tick={{fontSize: 12, fill: '#888'}} width={60} />
                    <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
-                   <Bar dataKey="faturamento" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                   <Bar dataKey="faturamento" fill="var(--theme-color)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
            </div>
@@ -586,7 +586,7 @@ export function BarbersAnalysisDashboard() {
                    <XAxis dataKey="name" tick={{fontSize: 12, fill: '#888'}} />
                    <YAxis tick={{fontSize: 12, fill: '#888'}} width={40} />
                    <Tooltip />
-                   <Bar dataKey="atendimentos" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                   <Bar dataKey="atendimentos" fill="var(--theme-300)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
            </div>
@@ -619,8 +619,8 @@ export function BarbersAnalysisDashboard() {
                      return [value, 'Atendimentos'];
                    }} />
                    <Legend wrapperStyle={{ fontSize: '12px' }} />
-                   <Line yAxisId="left" type="monotone" dataKey="faturamento" name="faturamento" stroke="#a855f7" strokeWidth={3} dot={{r: 4, fill: '#a855f7'}} activeDot={{r: 6}} />
-                   <Line yAxisId="right" type="monotone" dataKey="atendimentos" name="atendimentos" stroke="#3b82f6" strokeWidth={3} dot={{r: 4, fill: '#3b82f6'}} activeDot={{r: 6}} />
+                   <Line yAxisId="left" type="monotone" dataKey="faturamento" name="faturamento" stroke="var(--theme-color)" strokeWidth={3} dot={{r: 4, fill: 'var(--theme-color)'}} activeDot={{r: 6}} />
+                   <Line yAxisId="right" type="monotone" dataKey="atendimentos" name="atendimentos" stroke="var(--theme-300)" strokeWidth={3} dot={{r: 4, fill: 'var(--theme-300)'}} activeDot={{r: 6}} />
                 </LineChart>
               </ResponsiveContainer>
            </div>

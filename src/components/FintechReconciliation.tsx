@@ -1802,8 +1802,8 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                   labelFormatter={(lbl) => `Data: ${lbl}`}
                   contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px', color: '#fff' }}
                 />
-                <Bar dataKey="realizado" name="Realizado (Caixa/Depósitos)" fill="#2563eb" radius={[6, 6, 0, 0]} barSize={24} />
-                <Bar dataKey="projetado" name="Projetado D+31 (Clube)" fill="#a855f7" radius={[6, 6, 0, 0]} barSize={24} />
+                <Bar dataKey="realizado" name="Realizado (Caixa/Depósitos)" fill="var(--theme-color)" radius={[6, 6, 0, 0]} barSize={24} />
+                <Bar dataKey="projetado" name="Projetado D+31 (Clube)" fill="var(--theme-300)" radius={[6, 6, 0, 0]} barSize={24} />
                 <Line type="monotone" dataKey="taxas" name="MDR Descontado" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4 }} />
               </ComposedChart>
             </ResponsiveContainer>

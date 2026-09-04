@@ -307,7 +307,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
                <button
                  type="button"
                  onClick={() => { setEditingUnitId(null); setUnitName(''); }}
-                 className="text-[var(--theme-color)] hover:text-[#e05f3a] flex items-center gap-1 text-sm font-semibold transition"
+                 className="text-[var(--theme-color)] hover:text-[var(--theme-color-strong)] flex items-center gap-1 text-sm font-semibold transition"
                >
                  <X className="w-4 h-4" /> Cancelar
                </button>
@@ -389,7 +389,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
                <button
                  type="button"
                  onClick={resetForm}
-                 className="text-[var(--theme-color)] hover:text-[#e05f3a] flex items-center gap-1 text-sm font-semibold transition"
+                 className="text-[var(--theme-color)] hover:text-[var(--theme-color-strong)] flex items-center gap-1 text-sm font-semibold transition"
                >
                  <X className="w-4 h-4" /> Cancelar
                </button>

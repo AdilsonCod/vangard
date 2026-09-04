@@ -287,7 +287,7 @@ export function GDVDashboard() {
                  <span className="text-xs font-bold text-gray-400 dark:text-zinc-500 uppercase">SVA Total</span>
               </div>
               <div className="flex items-center gap-2 bg-gray-50 dark:bg-zinc-950 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-zinc-800">
-                 <div className="w-3 h-3 rounded-full bg-[#f97316]"></div>
+                 <div className="w-3 h-3 rounded-full bg-[var(--theme-color)]"></div>
                  <span className="text-xs font-bold text-gray-400 dark:text-zinc-500 uppercase">Recorrências</span>
               </div>
             </div>
@@ -297,12 +297,12 @@ export function GDVDashboard() {
               <AreaChart data={reportData.map(d => ({ day: d.date.split('-')[2], SVA: d.svaTotal, Recorrencia: d.recorrencia }))} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorSVA" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#d18e24" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#d18e24" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="var(--theme-color-strong)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="var(--theme-color-strong)" stopOpacity={0}/>
                   </linearGradient>
                   <linearGradient id="colorRec" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="var(--theme-color)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="var(--theme-color)" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" vertical={false} />
@@ -322,8 +322,8 @@ export function GDVDashboard() {
                   formatter={(value: number) => [formatCurrency(value), '']} 
                   labelFormatter={(label) => `Dia ${label}`}
                 />
-                <Area type="monotone" dataKey="SVA" stroke="#d18e24" strokeWidth={3} fillOpacity={1} fill="url(#colorSVA)" />
-                <Area type="monotone" dataKey="Recorrencia" stroke="#f97316" strokeWidth={3} fillOpacity={1} fill="url(#colorRec)" />
+                <Area type="monotone" dataKey="SVA" stroke="var(--theme-color-strong)" strokeWidth={3} fillOpacity={1} fill="url(#colorSVA)" />
+                <Area type="monotone" dataKey="Recorrencia" stroke="var(--theme-color)" strokeWidth={3} fillOpacity={1} fill="url(#colorRec)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -397,7 +397,7 @@ export function GDVDashboard() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 text-center flex-1">
-               <div className={`p-4 sm:p-6 flex sm:flex-col items-center sm:justify-center justify-between border-b sm:border-b-0 sm:border-r border-gray-200 dark:border-zinc-800 ${currentSettings.metaGeral - monthlyTotals.svaTotal <= 0 ? 'bg-green-600' : 'bg-[#f97316]'}`}>
+               <div className={`p-4 sm:p-6 flex sm:flex-col items-center sm:justify-center justify-between border-b sm:border-b-0 sm:border-r border-gray-200 dark:border-zinc-800 ${currentSettings.metaGeral - monthlyTotals.svaTotal <= 0 ? 'bg-green-600' : 'bg-[var(--theme-color)]'}`}>
                  <span className="text-[10px] text-white font-black italic uppercase sm:mb-2 text-shadow-sm">Faturamento Restante</span>
                  <span className="text-white font-bold text-lg sm:text-2xl md:text-3xl font-mono text-shadow-sm">
                    {currentSettings.metaGeral - monthlyTotals.svaTotal <= 0 ? 'OBJETIVO BATIDO 🎉' : formatCurrency(currentSettings.metaGeral - monthlyTotals.svaTotal)}
@@ -457,7 +457,7 @@ export function GDVDashboard() {
                     </div>
                     <div className="flex flex-col border-b border-l border-gray-200 dark:border-zinc-800 md:border-l-0 md:border-b-0 md:border-r">
                       <div className="p-2 bg-amber-900/40 text-gray-900 dark:text-zinc-100 text-[10px] font-black italic uppercase shadow-sm">FATURAMENTO RESTANTE</div>
-                      <div className={`p-4 flex-1 flex items-center justify-center font-bold text-white text-xl md:text-2xl min-h-[5rem] ${leftSVA <= 0 ? 'bg-green-600' : 'bg-[#ea580c]'}`}>
+                      <div className={`p-4 flex-1 flex items-center justify-center font-bold text-white text-xl md:text-2xl min-h-[5rem] ${leftSVA <= 0 ? 'bg-green-600' : 'bg-[var(--theme-color-strong)]'}`}>
                         {leftSVA <= 0 ? 'OBJETIVO BATIDO 🎉' : formatCurrency(leftSVA)}
                       </div>
                     </div>
@@ -566,7 +566,7 @@ export function GDVDashboard() {
                     </div>
                     <div className="flex flex-col border-b border-l border-gray-200 dark:border-zinc-800 md:border-l-0 md:border-b-0 md:border-r">
                       <div className="p-2 bg-amber-900/40 text-gray-900 dark:text-zinc-100 text-[10px] font-black italic uppercase shadow-sm">FATURAMENTO RESTANTE</div>
-                      <div className={`p-4 flex-1 flex items-center justify-center font-bold text-white text-xl md:text-2xl min-h-[5rem] ${leftSVA <= 0 ? 'bg-green-600' : 'bg-[#ea580c]'}`}>
+                      <div className={`p-4 flex-1 flex items-center justify-center font-bold text-white text-xl md:text-2xl min-h-[5rem] ${leftSVA <= 0 ? 'bg-green-600' : 'bg-[var(--theme-color-strong)]'}`}>
                         {leftSVA <= 0 ? 'OBJETIVO BATIDO 🎉' : formatCurrency(leftSVA)}
                       </div>
                     </div>
@@ -665,7 +665,7 @@ export function GDVDashboard() {
                    <React.Fragment key={unit}>
                      <th className="p-3 border-b border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">Serviços</th>
                      <th className="p-3 border-b border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">Produtos</th>
-                     <th className="p-3 border-b border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-[#f97316]">Assin.</th>
+                     <th className="p-3 border-b border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-[var(--theme-color)]">Assin.</th>
                      <th className="p-3 border-b border-r border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 bg-gray-100 dark:bg-zinc-800">SVA</th>
                    </React.Fragment>
                  ))}
@@ -980,7 +980,7 @@ export function GDVDashboard() {
                           <span className="text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase">SVA Total</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-[#f97316]"></div>
+                          <div className="w-2.5 h-2.5 rounded-full bg-[var(--theme-color)]"></div>
                           <span className="text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase">Recorrências</span>
                         </div>
                       </div>
@@ -990,12 +990,12 @@ export function GDVDashboard() {
                         <AreaChart data={reportData.map(d => ({ day: d.date.split('-')[2], SVA: d.units[unit]?.total || 0, Recorrencia: d.units[unit]?.assinaturas || 0 }))} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                            <defs>
                              <linearGradient id={`colorSVA-${unit.replace(/\s+/g, '-')}`} x1="0" y1="0" x2="0" y2="1">
-                               <stop offset="5%" stopColor="#d18e24" stopOpacity={0.3}/>
-                               <stop offset="95%" stopColor="#d18e24" stopOpacity={0}/>
+                               <stop offset="5%" stopColor="var(--theme-color-strong)" stopOpacity={0.3}/>
+                               <stop offset="95%" stopColor="var(--theme-color-strong)" stopOpacity={0}/>
                              </linearGradient>
                              <linearGradient id={`colorRec-${unit.replace(/\s+/g, '-')}`} x1="0" y1="0" x2="0" y2="1">
-                               <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
-                               <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                               <stop offset="5%" stopColor="var(--theme-color)" stopOpacity={0.3}/>
+                               <stop offset="95%" stopColor="var(--theme-color)" stopOpacity={0}/>
                              </linearGradient>
                            </defs>
                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" className="dark:stroke-zinc-800" vertical={false} />
@@ -1014,8 +1014,8 @@ export function GDVDashboard() {
                              formatter={(value: number) => [`R$ ${value.toFixed(2)}`, undefined]}
                              labelStyle={{ color: '#a1a1aa', marginBottom: '4px' }}
                            />
-                           <Area type="monotone" dataKey="SVA" stroke="#d18e24" strokeWidth={3} fillOpacity={1} fill={`url(#colorSVA-${unit.replace(/\s+/g, '-')})`} activeDot={{ r: 5, fill: '#d18e24', stroke: '#fff', strokeWidth: 2 }} />
-                           <Area type="monotone" dataKey="Recorrencia" stroke="#f97316" strokeWidth={3} fillOpacity={1} fill={`url(#colorRec-${unit.replace(/\s+/g, '-')})`} activeDot={{ r: 5, fill: '#f97316', stroke: '#fff', strokeWidth: 2 }} />
+                           <Area type="monotone" dataKey="SVA" stroke="var(--theme-color-strong)" strokeWidth={3} fillOpacity={1} fill={`url(#colorSVA-${unit.replace(/\s+/g, '-')})`} activeDot={{ r: 5, fill: 'var(--theme-color-strong)', stroke: '#fff', strokeWidth: 2 }} />
+                           <Area type="monotone" dataKey="Recorrencia" stroke="var(--theme-color)" strokeWidth={3} fillOpacity={1} fill={`url(#colorRec-${unit.replace(/\s+/g, '-')})`} activeDot={{ r: 5, fill: 'var(--theme-color)', stroke: '#fff', strokeWidth: 2 }} />
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>

@@ -270,7 +270,7 @@ function MiniChart({
           if (event.target === event.currentTarget) setIsExpanded(false);
         }}
       >
-        <div className="flex h-[min(82vh,760px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-[#041b1b]">
+        <div className="app-themed-panel flex h-[min(82vh,760px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
           <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-white/10 sm:px-6">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--theme-color)]">Análise anual da unidade</p>
@@ -957,40 +957,40 @@ export function UnitsAnalysisDashboard() {
             data={monthRows}
             dataKey="faturamentoTotal"
             name="Faturamento Total"
-            color="#22c55e"
+            color="var(--theme-500)"
             isCurrency
           />
           <MiniChart
             data={monthRows}
             dataKey="ticketMedio"
             name="Ticket Médio"
-            color="#f59e0b"
+            color="var(--theme-300)"
             isCurrency
           />
           <MiniChart
             data={monthRows}
             dataKey="geracaoDemanda"
             name="Geração Demanda"
-            color="#ec4899"
+            color="var(--theme-600)"
           />
           <MiniChart
             data={monthRows}
             dataKey="taxaRetorno"
             name="Taxa de Retorno"
-            color="#8b5cf6"
+            color="var(--theme-400)"
             isPercentage
           />
           <MiniChart
             data={monthRows}
             dataKey="clientesAtendidos"
             name="Atendimentos"
-            color="#3b82f6"
+            color="var(--theme-700)"
           />
           <MiniChart
             data={monthRows}
             dataKey="vendaProdutosValor"
             name="Venda Produtos (R$)"
-            color="#eab308"
+            color="var(--theme-200)"
             isCurrency
           />
         </div>
@@ -1000,38 +1000,38 @@ export function UnitsAnalysisDashboard() {
             data={monthRows}
             dataKey="faturamentoAssinatura"
             name="Faturamento"
-            color="#a855f7"
+            color="var(--theme-500)"
             isCurrency
           />
           <MiniChart
             data={monthRows}
             dataKey="assinantes"
             name="Nº de Assinantes"
-            color="#3b82f6"
+            color="var(--theme-300)"
           />
           <MiniChart
             data={monthRows}
             dataKey="assinantesNovos"
             name="Novos Assinantes"
-            color="#22c55e"
+            color="var(--theme-600)"
           />
           <MiniChart
             data={monthRows}
             dataKey="assinantesCancelados"
             name="Cancelamentos"
-            color="#ef4444"
+            color="var(--theme-700)"
           />
           <MiniChart
             data={monthRows}
             dataKey="assinantesReativados"
             name="Reativações"
-            color="#f59e0b"
+            color="var(--theme-400)"
           />
           <MiniChart
             data={monthRows}
             dataKey="valorFichaAssinantes"
             name="Valor da Ficha"
-            color="#06b6d4"
+            color="var(--theme-200)"
             isCurrency
           />
         </div>

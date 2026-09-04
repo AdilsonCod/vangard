@@ -179,7 +179,7 @@ export function AdminEntryModal({
 
         <div className="p-4 border-t dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 rounded-b-xl flex justify-end">
           <button onClick={onClose} className="px-6 py-2 rounded-lg font-bold text-gray-600 bg-white dark:bg-zinc-800 border dark:border-zinc-700 shadow-sm mr-2 hover:bg-gray-50 dark:hover:bg-zinc-700">Cancelar</button>
-          <button onClick={handleSave} className="px-6 py-2 rounded-lg font-bold text-white bg-[var(--theme-color)] shadow-sm hover:bg-[#e05f3a] flex items-center gap-2">
+          <button onClick={handleSave} className="px-6 py-2 rounded-lg font-bold text-white bg-[var(--theme-color)] shadow-sm hover:bg-[var(--theme-color-strong)] flex items-center gap-2">
              <Check className="w-5 h-5"/> Salvar Alterações
           </button>
         </div>

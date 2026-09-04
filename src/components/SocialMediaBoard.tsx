@@ -106,7 +106,7 @@ export function SocialMediaBoard() {
           </div>
           <button 
             onClick={() => openForm()}
-            className="flex items-center gap-2 bg-[var(--theme-color)] hover:bg-[#e05f3a] text-white px-4 py-2 rounded-lg font-bold transition shadow-sm"
+            className="flex items-center gap-2 bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white px-4 py-2 rounded-lg font-bold transition shadow-sm"
           >
             <Plus className="w-4 h-4" /> Nova Pauta
           </button>
@@ -568,7 +568,7 @@ function PostModal({ post, onClose, users }: { post: SocialPost, onClose: () => 
             <button 
               onClick={saveForm}
               disabled={loading}
-              className="px-6 py-2 bg-[var(--theme-color)] hover:bg-[#e05f3a] text-white rounded-lg font-bold shadow-sm transition"
+              className="px-6 py-2 bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white rounded-lg font-bold shadow-sm transition"
             >
               {loading ? 'Salvando...' : 'Salvar Pauta'}
             </button>

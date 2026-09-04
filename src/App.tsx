@@ -5,6 +5,14 @@ import AdminDashboard from './components/AdminDashboard';
 import BarberDashboard from './components/BarberDashboard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
+const THEME_COLORS: Record<string, { main: string; strong: string; soft: string }> = {
+  green: { main: '#22c55e', strong: '#16a34a', soft: '#dcfce7' },
+  red: { main: '#ef4444', strong: '#dc2626', soft: '#fee2e2' },
+  blue: { main: '#3b82f6', strong: '#2563eb', soft: '#dbeafe' },
+  orange: { main: '#f97316', strong: '#ea580c', soft: '#ffedd5' },
+  purple: { main: '#a855f7', strong: '#9333ea', soft: '#f3e8ff' },
+};
+
 function AppContent() {
   const { currentUser, isDarkMode, themeColor, themeLightBg, themeDarkBg } = useStore();
 
@@ -37,7 +45,10 @@ function AppContent() {
   }, [themeLightBg, themeDarkBg]);
 
   useEffect(() => {
-    document.documentElement.style.setProperty('--theme-color', themeColor || '#0ea5e9'); // Default or fallback
+    const palette = THEME_COLORS[themeColor] || THEME_COLORS.orange;
+    document.documentElement.style.setProperty('--theme-color', palette.main);
+    document.documentElement.style.setProperty('--theme-color-strong', palette.strong);
+    document.documentElement.style.setProperty('--theme-color-soft', palette.soft);
   }, [themeColor]);
 
   if (!currentUser) return <Login />;

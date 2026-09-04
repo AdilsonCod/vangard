@@ -953,7 +953,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     };
   }, [monthStr, monthlyBarberStats, gdvEntries, payments, users, systemUnits, transactions, financialCategories, finClassifications]);
 
-  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+  const COLORS = ['var(--theme-500)', 'var(--theme-300)', 'var(--theme-600)', 'var(--theme-200)', 'var(--theme-700)'];
 
   const selectedTransactionAccount = selectedTransaction
     ? financialCategories.find(category => category.name === selectedTransaction.category)
@@ -2439,7 +2439,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                  <button 
                    onClick={handleSaveTransaction}
                    disabled={isSavingTransaction}
-                   className="px-6 py-2.5 bg-[var(--theme-color)] text-white font-black rounded-xl shadow-lg shadow-[var(--theme-color)]/20 hover:bg-[#ff6b42] transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                   className="px-6 py-2.5 bg-[var(--theme-color)] text-white font-black rounded-xl shadow-lg shadow-[var(--theme-color)]/20 hover:bg-[var(--theme-color-strong)] transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                  >
                    {isSavingTransaction ? 'Salvando...' : 'Salvar Lançamentos'}
                  </button>

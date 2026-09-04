@@ -1540,7 +1540,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
             <div className="mt-6 flex justify-end">
               <button
                 onClick={processMappedData}
-                className="px-6 py-2 bg-[var(--theme-color)] text-white font-bold rounded-lg hover:bg-[#ff6b42] transition-colors shadow-lg shadow-[var(--theme-color)]/20"
+                className="px-6 py-2 bg-[var(--theme-color)] text-white font-bold rounded-lg hover:bg-[var(--theme-color-strong)] transition-colors shadow-lg shadow-[var(--theme-color)]/20"
               >
                 Aplicar Mapeamento
               </button>
@@ -1596,7 +1596,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
               <button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="w-full md:w-auto px-6 py-2.5 bg-[var(--theme-color)] text-white font-bold rounded-lg hover:bg-[#ff6b42] transition-colors shadow-lg shadow-[var(--theme-color)]/20 flex items-center justify-center gap-2"
+                className="w-full md:w-auto px-6 py-2.5 bg-[var(--theme-color)] text-white font-bold rounded-lg hover:bg-[var(--theme-color-strong)] transition-colors shadow-lg shadow-[var(--theme-color)]/20 flex items-center justify-center gap-2"
               >
                 {isSaving ? (
                   <RefreshCcw className="w-4 h-4 animate-spin" />
@@ -1941,7 +1941,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
               <button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="w-full md:w-auto px-6 py-2.5 bg-[var(--theme-color)] text-white font-bold rounded-lg hover:bg-[#ff6b42] transition-colors shadow-lg shadow-[var(--theme-color)]/20 flex items-center justify-center gap-2"
+                className="w-full md:w-auto px-6 py-2.5 bg-[var(--theme-color)] text-white font-bold rounded-lg hover:bg-[var(--theme-color-strong)] transition-colors shadow-lg shadow-[var(--theme-color)]/20 flex items-center justify-center gap-2"
               >
                 {isSaving ? (
                   <RefreshCcw className="w-4 h-4 animate-spin" />
@@ -2011,7 +2011,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
               <button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="w-full md:w-auto px-6 py-2.5 bg-[var(--theme-color)] text-white font-bold rounded-lg hover:bg-[#ff6b42] transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full md:w-auto px-6 py-2.5 bg-[var(--theme-color)] text-white font-bold rounded-lg hover:bg-[var(--theme-color-strong)] transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {isSaving ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 Confirmar e Salvar

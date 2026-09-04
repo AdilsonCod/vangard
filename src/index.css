@@ -8,6 +8,13 @@
   --app-header-height: 72px;
   --app-content-width: 1600px;
   --app-radius: 16px;
+  --theme-color: #f97316;
+  --theme-color-strong: #ea580c;
+  --theme-color-soft: #ffedd5;
+  --app-page-bg: #fcfaf8;
+  --app-sidebar-bg: #ffffff;
+  --app-header-bg: rgb(255 255 255 / 0.95);
+  --app-panel-bg: #ffffff;
 }
 
 html.dark {
@@ -117,13 +124,25 @@ html.dark {
   .app-workspace {
     background:
       radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--theme-color) 5%, transparent), transparent 30rem),
-      #fcfaf8;
+      var(--app-page-bg) !important;
   }
 
   .dark .app-workspace {
     background:
       radial-gradient(circle at 35% 6%, color-mix(in srgb, var(--theme-color) 8%, transparent), transparent 34rem),
-      linear-gradient(145deg, #001717 0%, #001414 62%, #001b1b 100%);
+      var(--app-page-bg) !important;
+  }
+
+  .app-sidebar {
+    background-color: var(--app-sidebar-bg) !important;
+  }
+
+  .app-global-header {
+    background-color: var(--app-header-bg) !important;
+  }
+
+  .app-themed-panel {
+    background-color: var(--app-panel-bg) !important;
   }
 
   .app-surface {
@@ -348,6 +367,56 @@ main :where(section, article, div).rounded-2xl.border {
   }
 }
 
+/* A cor selecionada alimenta todas as famílias usadas como destaque visual.
+   Cores semânticas (vermelho de erro e verde de sucesso) permanecem preservadas. */
+@layer base {
+  html.theme-green {
+    --theme-color: #22c55e;
+    --theme-color-strong: #16a34a;
+    --theme-color-soft: #dcfce7;
+    --theme-50: #f0fdf4; --theme-100: #dcfce7; --theme-200: #bbf7d0; --theme-300: #86efac; --theme-400: #4ade80;
+    --theme-500: #22c55e; --theme-600: #16a34a; --theme-700: #15803d; --theme-800: #166534; --theme-900: #14532d; --theme-950: #052e16;
+  }
+
+  html.theme-red {
+    --theme-color: #ef4444;
+    --theme-color-strong: #dc2626;
+    --theme-color-soft: #fee2e2;
+    --theme-50: #fef2f2; --theme-100: #fee2e2; --theme-200: #fecaca; --theme-300: #fca5a5; --theme-400: #f87171;
+    --theme-500: #ef4444; --theme-600: #dc2626; --theme-700: #b91c1c; --theme-800: #991b1b; --theme-900: #7f1d1d; --theme-950: #450a0a;
+  }
+
+  html.theme-blue {
+    --theme-color: #3b82f6;
+    --theme-color-strong: #2563eb;
+    --theme-color-soft: #dbeafe;
+    --theme-50: #eff6ff; --theme-100: #dbeafe; --theme-200: #bfdbfe; --theme-300: #93c5fd; --theme-400: #60a5fa;
+    --theme-500: #3b82f6; --theme-600: #2563eb; --theme-700: #1d4ed8; --theme-800: #1e40af; --theme-900: #1e3a8a; --theme-950: #172554;
+  }
+
+  html.theme-orange {
+    --theme-color: #f97316;
+    --theme-color-strong: #ea580c;
+    --theme-color-soft: #ffedd5;
+    --theme-50: #fff7ed; --theme-100: #ffedd5; --theme-200: #fed7aa; --theme-300: #fdba74; --theme-400: #fb923c;
+    --theme-500: #f97316; --theme-600: #ea580c; --theme-700: #c2410c; --theme-800: #9a3412; --theme-900: #7c2d12; --theme-950: #431407;
+  }
+
+  html.theme-purple {
+    --theme-color: #a855f7;
+    --theme-color-strong: #9333ea;
+    --theme-color-soft: #f3e8ff;
+    --theme-50: #faf5ff; --theme-100: #f3e8ff; --theme-200: #e9d5ff; --theme-300: #d8b4fe; --theme-400: #c084fc;
+    --theme-500: #a855f7; --theme-600: #9333ea; --theme-700: #7e22ce; --theme-800: #6b21a8; --theme-900: #581c87; --theme-950: #3b0764;
+  }
+
+  html[class*="theme-"] {
+    --color-blue-50: var(--theme-50); --color-blue-100: var(--theme-100); --color-blue-200: var(--theme-200); --color-blue-300: var(--theme-300); --color-blue-400: var(--theme-400); --color-blue-500: var(--theme-500); --color-blue-600: var(--theme-600); --color-blue-700: var(--theme-700); --color-blue-800: var(--theme-800); --color-blue-900: var(--theme-900); --color-blue-950: var(--theme-950);
+    --color-indigo-50: var(--theme-50); --color-indigo-100: var(--theme-100); --color-indigo-200: var(--theme-200); --color-indigo-300: var(--theme-300); --color-indigo-400: var(--theme-400); --color-indigo-500: var(--theme-500); --color-indigo-600: var(--theme-600); --color-indigo-700: var(--theme-700); --color-indigo-800: var(--theme-800); --color-indigo-900: var(--theme-900); --color-indigo-950: var(--theme-950);
+    --color-purple-50: var(--theme-50); --color-purple-100: var(--theme-100); --color-purple-200: var(--theme-200); --color-purple-300: var(--theme-300); --color-purple-400: var(--theme-400); --color-purple-500: var(--theme-500); --color-purple-600: var(--theme-600); --color-purple-700: var(--theme-700); --color-purple-800: var(--theme-800); --color-purple-900: var(--theme-900); --color-purple-950: var(--theme-950);
+  }
+}
+
 @media print {
   @page {
     size: landscape;
@@ -436,4 +505,46 @@ html.dark body.theme-dark-pure {
   --color-zinc-800: #27272a;
   --color-zinc-900: #18181b;
   --color-zinc-950: #000000;
+}
+
+body.theme-light-warm {
+  --app-page-bg: #fcfaf8;
+  --app-sidebar-bg: #fffdfb;
+  --app-header-bg: rgb(255 253 251 / 0.95);
+  --app-panel-bg: #ffffff;
+}
+
+body.theme-light-cool {
+  --app-page-bg: #eef3f3;
+  --app-sidebar-bg: #f7fbfb;
+  --app-header-bg: rgb(247 251 251 / 0.95);
+  --app-panel-bg: #ffffff;
+}
+
+body.theme-light-pure {
+  --app-page-bg: #ffffff;
+  --app-sidebar-bg: #ffffff;
+  --app-header-bg: rgb(255 255 255 / 0.96);
+  --app-panel-bg: #ffffff;
+}
+
+html.dark body.theme-dark-cool {
+  --app-page-bg: #001414;
+  --app-sidebar-bg: #061b1b;
+  --app-header-bg: rgb(3 24 24 / 0.95);
+  --app-panel-bg: #062222;
+}
+
+html.dark body.theme-dark-warm {
+  --app-page-bg: #2e1a11;
+  --app-sidebar-bg: #24130d;
+  --app-header-bg: rgb(42 23 15 / 0.95);
+  --app-panel-bg: #3a2015;
+}
+
+html.dark body.theme-dark-pure {
+  --app-page-bg: #000000;
+  --app-sidebar-bg: #080808;
+  --app-header-bg: rgb(5 5 5 / 0.96);
+  --app-panel-bg: #101010;
 }

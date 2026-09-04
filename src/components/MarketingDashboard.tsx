@@ -253,7 +253,7 @@ export function MarketingDashboard() {
                     <button
                       onClick={handleAnalyze}
                       disabled={loading}
-                      className="bg-[var(--theme-color)] hover:bg-[#e05f3a] text-white font-bold py-3 px-6 rounded-xl shadow transition flex items-center justify-center gap-2"
+                      className="bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white font-bold py-3 px-6 rounded-xl shadow transition flex items-center justify-center gap-2"
                     >
                       {loading ? (
                         <><Loader2 className="w-5 h-5 animate-spin" /> Analisando...</>

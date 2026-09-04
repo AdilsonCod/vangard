@@ -430,11 +430,11 @@ export default function BarberDashboard() {
       
       {/* Desktop Sidebar */}
       <aside className={cn(
-        "hidden h-full shrink-0 flex-col overflow-y-auto border-r border-gray-200/80 bg-white transition-[width] duration-300 dark:border-zinc-800 dark:bg-[#061b1b] md:flex app-scrollbar",
+        "app-sidebar hidden h-full shrink-0 flex-col overflow-y-auto border-r border-gray-200/80 bg-white transition-[width] duration-300 dark:border-zinc-800 dark:bg-[#061b1b] md:flex app-scrollbar",
         isSidebarCollapsed ? "w-[76px]" : "w-[248px]",
       )}>
         {/* Sidebar Header */}
-        <div className="sticky top-0 z-10 flex h-[72px] items-center justify-between border-b border-gray-100 bg-white px-4 dark:border-white/5 dark:bg-[#061b1b]">
+        <div className="app-sidebar sticky top-0 z-10 flex h-[72px] items-center justify-between border-b border-gray-100 bg-white px-4 dark:border-white/5 dark:bg-[#061b1b]">
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-2 overflow-hidden w-full">
               <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
@@ -511,9 +511,9 @@ export default function BarberDashboard() {
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
+      <div className="app-workspace flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
 
-        <header className="sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-4 border-b border-gray-200/80 bg-white/95 px-5 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 md:flex xl:px-7">
+        <header className="app-global-header sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-4 border-b border-gray-200/80 bg-white/95 px-5 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 md:flex xl:px-7">
           <div className="min-w-0">
             <p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-gray-400 dark:text-zinc-500">Minha área</p>
             <h1 className="truncate text-base font-black text-gray-950 dark:text-white">{activePage?.label || "Visão Geral"}</h1>
@@ -588,7 +588,7 @@ export default function BarberDashboard() {
         </header>
         
         {/* Mobile Header */}
-        <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 md:hidden">
+        <header className="app-global-header sticky top-0 z-20 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 md:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain" referrerPolicy="no-referrer" />
@@ -667,7 +667,7 @@ export default function BarberDashboard() {
             </div>
           </div>
           {isMobileMenuOpen && (
-            <div className="absolute z-50 max-h-[calc(100dvh-64px)] w-full overflow-y-auto border-t border-gray-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-[#061b1b] app-scrollbar">
+            <div className="app-sidebar absolute z-50 max-h-[calc(100dvh-64px)] w-full overflow-y-auto border-t border-gray-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-[#061b1b] app-scrollbar">
               <div className="px-2 py-2 flex flex-col space-y-1">
                 {navItems.map((item) => {
                   const Icon = item.icon;
@@ -1087,7 +1087,7 @@ export default function BarberDashboard() {
                     <div className="pt-4 flex justify-end">
                       <button
                         type="submit"
-                        className="bg-[var(--theme-color)] hover:bg-[#e05f3a] text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-colors flex items-center gap-2"
+                        className="bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-colors flex items-center gap-2"
                       >
                         <Plus className="w-5 h-5" /> Submeter Dados
                       </button>
@@ -1099,7 +1099,7 @@ export default function BarberDashboard() {
                   <div className="pt-4 flex justify-end">
                     <button
                       type="submit"
-                      className="bg-[var(--theme-color)] hover:bg-[#e05f3a] text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-colors"
+                      className="bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-colors"
                     >
                       Salvar Folga
                     </button>
@@ -1299,7 +1299,7 @@ export default function BarberDashboard() {
                         return (
                           <div
                             key={e.id}
-                            className="flex flex-col cursor-pointer bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-gray-200 dark:border-zinc-800 p-4 space-y-3 border-l-4 border-l-[var(--theme-color)] hover:border-l-[#e05f3a] transition-all font-sans"
+                            className="flex flex-col cursor-pointer bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-gray-200 dark:border-zinc-800 p-4 space-y-3 border-l-4 border-l-[var(--theme-color)] hover:border-l-[var(--theme-color-strong)] transition-all font-sans"
                             onClick={() => toggleEntryExpanded(e.id)}
                           >
                             <div className="flex justify-between items-center pb-2 border-b border-gray-200 dark:border-zinc-800">

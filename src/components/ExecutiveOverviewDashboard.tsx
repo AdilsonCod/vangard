@@ -82,7 +82,7 @@ function DashboardCard({
   }[tone];
 
   return (
-    <article className="group relative min-h-[132px] overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--theme-color)]/30 hover:shadow-lg dark:border-white/[0.08] dark:bg-[#062222]">
+    <article className="app-themed-panel group relative min-h-[132px] overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--theme-color)]/30 hover:shadow-lg dark:border-white/[0.08] dark:bg-[#062222]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-bold text-gray-500 dark:text-zinc-400">{title}</p>
@@ -118,7 +118,7 @@ function PriorityCard({
   }[tone];
 
   return (
-    <button onClick={onClick} className="group flex min-h-[88px] w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--theme-color)]/35 dark:border-white/[0.08] dark:bg-[#062222]">
+    <button onClick={onClick} className="app-themed-panel group flex min-h-[88px] w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--theme-color)]/35 dark:border-white/[0.08] dark:bg-[#062222]">
       <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", tones)}>{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-xs font-bold text-gray-800 dark:text-zinc-100">{title}</span>
@@ -266,7 +266,7 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
+          <section className="app-themed-panel overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-white/[0.06]">
               <div>
                 <h2 className="text-sm font-black text-gray-950 dark:text-white">Fluxo de caixa</h2>
@@ -280,7 +280,7 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" opacity={0.08} />
                   <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#7d9292" }} interval={Math.max(0, Math.floor(chartData.length / 8) - 1)} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#7d9292" }} tickFormatter={value => compactMoney.format(Number(value))} />
-                  <Tooltip formatter={(value: number) => money.format(Math.abs(value))} contentStyle={{ borderRadius: 12, border: "1px solid rgba(125,146,146,.2)", background: "#062222", color: "#fff" }} />
+                  <Tooltip formatter={(value: number) => money.format(Math.abs(value))} contentStyle={{ borderRadius: 12, border: "1px solid color-mix(in srgb, var(--theme-color) 22%, transparent)", background: "var(--app-panel-bg)", color: "#fff" }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Bar dataKey="entradas" name="Entradas" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={14} />
                   <Bar dataKey="saidas" name="Saídas" fill="#ef4444" radius={[0, 0, 4, 4]} maxBarSize={14} />
@@ -291,7 +291,7 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
           </section>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-            <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#062222] lg:col-span-3">
+            <section className="app-themed-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#062222] lg:col-span-3">
               <div className="mb-4">
                 <h2 className="text-sm font-black text-gray-950 dark:text-white">Desempenho financeiro</h2>
                 <p className="text-[10px] text-gray-400 dark:text-zinc-500">Receita realizada nos últimos quatro meses</p>
@@ -310,7 +310,7 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#062222] lg:col-span-2">
+            <section className="app-themed-panel overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#062222] lg:col-span-2">
               <div className="border-b border-gray-100 px-4 py-3 dark:border-white/[0.06]">
                 <h2 className="text-sm font-black text-gray-950 dark:text-white">Atividade recente</h2>
               </div>
@@ -331,7 +331,7 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
         </div>
 
         <aside className="space-y-4 xl:col-span-3">
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
+          <section className="app-themed-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
             <h2 className="mb-3 text-sm font-black text-gray-950 dark:text-white">Atalhos rápidos</h2>
             <div className="space-y-2">
               <QuickAction icon={<PlusCircle className="h-5 w-5" />} title="Novo lançamento" detail="Registrar receita ou despesa" tone="bg-emerald-500/10 text-emerald-500" onClick={() => onNavigate("FINANCE_CAIXA")} />
@@ -340,7 +340,7 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
             </div>
           </section>
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
+          <section className="app-themed-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
             <h2 className="text-sm font-black text-gray-950 dark:text-white">Status das importações</h2>
             <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50/60 p-3 dark:border-white/[0.08] dark:bg-white/[0.025]">
               <p className="text-[10px] text-gray-400 dark:text-zinc-500">Último registro identificado</p>
@@ -355,7 +355,7 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
             </button>
           </section>
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
+          <section className="app-themed-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
             <h2 className="text-sm font-black text-gray-950 dark:text-white">Resumo do mês</h2>
             <dl className="mt-3 divide-y divide-gray-100 text-xs dark:divide-white/[0.06]">
               <div className="flex items-center justify-between py-2"><dt className="text-gray-500 dark:text-zinc-400">Lançamentos</dt><dd className="font-black text-gray-900 dark:text-white">{periodTransactions.length}</dd></div>
@@ -368,7 +368,7 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
             </button>
           </section>
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
+          <section className="app-themed-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
             <div className="flex items-start gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500"><CheckCircle2 className="h-5 w-5" /></span>
               <div>

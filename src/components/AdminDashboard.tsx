@@ -295,11 +295,11 @@ export default function AdminDashboard() {
       
       {/* Desktop Sidebar */}
       <aside className={cn(
-        "hidden h-full shrink-0 flex-col overflow-y-auto border-r border-gray-200/80 bg-white transition-[width] duration-300 dark:border-zinc-800 dark:bg-[#061b1b] md:flex app-scrollbar",
+        "app-sidebar hidden h-full shrink-0 flex-col overflow-y-auto border-r border-gray-200/80 bg-white transition-[width] duration-300 dark:border-zinc-800 dark:bg-[#061b1b] md:flex app-scrollbar",
         isSidebarCollapsed ? "w-[76px]" : "w-[248px]",
       )}>
         {/* Sidebar Header */}
-        <div className="sticky top-0 z-10 flex h-[72px] items-center justify-between border-b border-gray-100 bg-white px-4 dark:border-white/5 dark:bg-[#061b1b]">
+        <div className="app-sidebar sticky top-0 z-10 flex h-[72px] items-center justify-between border-b border-gray-100 bg-white px-4 dark:border-white/5 dark:bg-[#061b1b]">
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-2 overflow-hidden w-full">
               <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
@@ -422,7 +422,7 @@ export default function AdminDashboard() {
       <div className="app-workspace flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
 
         {/* Desktop Global Header */}
-        <header className="sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-3 border-b border-gray-200/80 bg-white/95 px-4 backdrop-blur-xl dark:border-white/[0.07] dark:bg-[#031818]/95 md:flex xl:px-6">
+        <header className="app-global-header sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-3 border-b border-gray-200/80 bg-white/95 px-4 backdrop-blur-xl dark:border-white/[0.07] dark:bg-[#031818]/95 md:flex xl:px-6">
           <AppIconButton
             label={isSidebarCollapsed ? "Expandir menu" : "Recolher menu"}
             onClick={() => setIsSidebarCollapsed(value => !value)}
@@ -595,7 +595,7 @@ export default function AdminDashboard() {
         </header>
         
         {/* Mobile Header */}
-        <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 md:hidden">
+        <header className="app-global-header sticky top-0 z-20 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 md:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain" referrerPolicy="no-referrer" />
@@ -646,7 +646,7 @@ export default function AdminDashboard() {
             </AppIconButton>
           </div>
           {isMobileMenuOpen && (
-            <div className="absolute z-50 max-h-[calc(100dvh-120px)] w-full overflow-y-auto border-t border-gray-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-[#061b1b] app-scrollbar">
+            <div className="app-sidebar absolute z-50 max-h-[calc(100dvh-120px)] w-full overflow-y-auto border-t border-gray-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-[#061b1b] app-scrollbar">
               <div className="flex flex-col space-y-1 px-2 py-2">
                 <div className="relative mb-2 px-2 pt-1">
                   <Search className="pointer-events-none absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-zinc-500" />
@@ -1199,7 +1199,7 @@ function CatalogEditor({
             </button>
             <button
               onClick={handleSave}
-              className="flex items-center gap-2 bg-[var(--theme-color)] hover:bg-[#e05f3a] text-white px-4 py-2 rounded-lg font-semibold shadow transition"
+              className="flex items-center gap-2 bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white px-4 py-2 rounded-lg font-semibold shadow transition"
             >
               Salvar Mudanças
             </button>
@@ -1411,7 +1411,7 @@ function CatalogEditor({
                   <div className="flex gap-2">
                     <button
                       onClick={() => startEdit(item)}
-                      className="p-2 text-gray-400 dark:text-zinc-500 hover:text-[#e05f3a] transition"
+                      className="p-2 text-gray-400 dark:text-zinc-500 hover:text-[var(--theme-color-strong)] transition"
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
@@ -1553,7 +1553,7 @@ function CategoriesTab() {
         </div>
         <button
           type="submit"
-          className="bg-[var(--theme-color)] hover:bg-[#e05f3a] text-white font-semibold py-2.5 px-5 rounded-lg text-sm flex items-center gap-1.5 transition self-stretch md:self-auto justify-center"
+          className="bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white font-semibold py-2.5 px-5 rounded-lg text-sm flex items-center gap-1.5 transition self-stretch md:self-auto justify-center"
         >
           <Plus className="w-4 h-4" /> Adicionar
         </button>
@@ -1616,7 +1616,7 @@ function CategoriesTab() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleStartEdit(cat.id, cat.name, cat.type)}
-                    className="p-1.5 text-gray-400 dark:text-zinc-500 hover:text-[#e05f3a] rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 transition"
+                    className="p-1.5 text-gray-400 dark:text-zinc-500 hover:text-[var(--theme-color-strong)] rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 transition"
                   >
                     <Edit3 className="w-4 h-4" />
                   </button>
@@ -1745,7 +1745,7 @@ function SubcategoriesTab() {
         </div>
         <button
           type="submit"
-          className="bg-[var(--theme-color)] hover:bg-[#e05f3a] text-white font-semibold py-2.5 px-5 rounded-lg text-sm flex items-center justify-center gap-1.5 transition"
+          className="bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white font-semibold py-2.5 px-5 rounded-lg text-sm flex items-center justify-center gap-1.5 transition"
         >
           <Plus className="w-4 h-4" /> Adicionar Subcategoria
         </button>
@@ -1812,7 +1812,7 @@ function SubcategoriesTab() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleStartEdit(sub)}
-                      className="p-1.5 text-gray-400 dark:text-zinc-500 hover:text-[#e05f3a] rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 transition"
+                      className="p-1.5 text-gray-400 dark:text-zinc-500 hover:text-[var(--theme-color-strong)] rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 transition"
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
@@ -2061,7 +2061,7 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
               </button>
               <button
                 onClick={handleSaveProfile}
-                className="px-4 py-2 font-bold text-white bg-[var(--theme-color)] rounded-lg shadow-md hover:bg-[#e05f3a]"
+                className="px-4 py-2 font-bold text-white bg-[var(--theme-color)] rounded-lg shadow-md hover:bg-[var(--theme-color-strong)]"
               >
                 Salvar Perfil
               </button>
@@ -2208,7 +2208,7 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
           }
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
             isEditingTargets
-              ? "bg-[var(--theme-color)] hover:bg-[#e05f3a] text-white shadow"
+              ? "bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white shadow"
               : "bg-white dark:bg-zinc-900 hover:bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 text-gray-700 dark:text-zinc-200 border"
           }`}
         >
@@ -2326,7 +2326,7 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
             </button>
             <button
               onClick={handleSaveTargets}
-              className="bg-[var(--theme-color)] text-white px-6 py-2 rounded-lg font-semibold shadow hover:bg-[#e05f3a]"
+              className="bg-[var(--theme-color)] text-white px-6 py-2 rounded-lg font-semibold shadow hover:bg-[var(--theme-color-strong)]"
             >
               Salvar Objetivos
             </button>

@@ -112,7 +112,7 @@ export function OverviewBarberDashboard() {
 
   }, [entries, currentUser, monthStr, catalog, monthlyBarberStats]);
 
-  const COLORS = ["#FF7852", "#E05F3A", '#94694c', '#7a5339', '#558383', '#002222'];
+  const COLORS = ["var(--theme-500)", "var(--theme-400)", "var(--theme-600)", "var(--theme-300)", "var(--theme-700)", "var(--theme-200)"];
 
   const MONTH_NAMES = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
