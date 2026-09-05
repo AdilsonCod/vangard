@@ -1,0 +1,1 @@
+import{r as a}from"./index-DSY-PgDG.js";import{a1 as o,a2 as t}from"./CartesianChart-DcDojb05.js";var p=["axis"],l=a.forwardRef((r,e)=>a.createElement(o,{chartName:"ComposedChart",defaultTooltipEventType:"axis",validateTooltipEventTypes:p,tooltipPayloadSearcher:t,categoricalChartProps:r,ref:e}));export{l as C};

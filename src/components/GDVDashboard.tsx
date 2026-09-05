@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, TrendingUp, Calendar, AlertCircle, Edit2, X,
 import { GDVEntry, GDVUnitData, GDVSettings } from '../types';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, BarChart, Bar } from 'recharts';
 import { AppPageHeader } from './ui/AppPrimitives';
+import { SVAOverview } from './SVAOverview';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -15,6 +16,9 @@ const WEEKDAY_NAMES = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira
 export function GDVDashboard() {
   const { gdvEntries, users, updateGDVEntry, gdvSettings, updateGDVSettings, systemUnits } = useStore();
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedUnit, setSelectedUnit] = useState('ALL');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
   
   const [editingDay, setEditingDay] = useState<any | null>(null);
   const [editingSettings, setEditingSettings] = useState<GDVSettings | null>(null);
@@ -112,7 +116,7 @@ export function GDVDashboard() {
       });
       dayData.svaTotal = daySva;
       dayData.recorrencia = dayRecorrencia;
-      dayData.faturamentoTotal = dayData.svaTotal + dayData.recorrencia;
+      dayData.faturamentoTotal = dayData.svaTotal;
 
       data[day] = dayData;
     }
@@ -171,14 +175,20 @@ export function GDVDashboard() {
   }, [reportData, units]);
 
   const openSettingsModal = () => {
+    setSaveError('');
     // Clone currentsettings to avoid mutate
     setEditingSettings(JSON.parse(JSON.stringify(currentSettings)));
   };
 
   const handleSaveSettings = async () => {
-    if (!editingSettings) return;
-    await updateGDVSettings(editingSettings);
-    setEditingSettings(null);
+    if (!editingSettings || saving) return;
+    setSaveError('');
+    setSaving(true);
+    try {
+      await updateGDVSettings(editingSettings);
+      setEditingSettings(null);
+    } catch { setSaveError('Não foi possível salvar as metas. Tente novamente.'); }
+    finally { setSaving(false); }
   };
 
   const formatCurrency = (val: number) => {
@@ -186,20 +196,21 @@ export function GDVDashboard() {
   };
 
   const openEditModal = (dayData: any) => {
+    setSaveError('');
     setEditingDay(JSON.parse(JSON.stringify(dayData)));
   };
 
   const handleSaveModal = async () => {
-    if (!editingDay) return;
+    if (!editingDay || saving) return;
     
     const entry: GDVEntry = {
       id: editingDay.date,
       date: editingDay.date,
-      units: {},
+      units: { ...(gdvEntries.find(item => item.id === editingDay.date)?.units || {}) },
       recorrencia: Number(editingDay.recorrencia) || 0
     };
 
-    units.forEach(u => {
+    units.filter(u => selectedUnit === 'ALL' || u === selectedUnit).forEach(u => {
       const sVal = editingDay.units[u].servicos;
       const pVal = editingDay.units[u].produtos;
       const aVal = editingDay.units[u].assinaturas;
@@ -216,529 +227,27 @@ export function GDVDashboard() {
       };
     });
 
-    await updateGDVEntry(entry);
-    setEditingDay(null);
+    if (Object.values(entry.units).some(data => [data.servicos, data.produtos, data.assinaturas].some(value => value !== null && (!Number.isFinite(value) || value < 0)))) {
+      setSaveError('Informe valores válidos e não negativos.');
+      return;
+    }
+    setSaveError('');
+    setSaving(true);
+    try {
+      await updateGDVEntry(entry);
+      setEditingDay(null);
+    } catch { setSaveError('Não foi possível salvar os valores. Tente novamente.'); }
+    finally { setSaving(false); }
   };
 
   return (
     <div className="space-y-6">
-      <AppPageHeader
-        eyebrow="Operação"
-        title="Indicadores SVA"
-        description="Acompanhe a evolução diária, recorrências e objetivos de cada unidade."
-        icon={<TrendingUp className="h-5 w-5" />}
-      />
-    <div className="relative overflow-x-auto rounded-2xl border border-gray-200 bg-white p-5 text-gray-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 sm:p-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 pb-4 border-b border-gray-200 dark:border-zinc-800 gap-4">
-        <div>
-           <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
-             <TrendingUp className="w-6 h-6 text-amber-500" />
-             Gráfico de resultados
-           </h2>
-           <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1">
-             Gráfico de resultados SVA. Preenchimento manual pelo ADM.
-           </p>
-        </div>
-        
-        <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 md:flex md:w-auto md:items-center md:gap-3">
-          <button 
-            onClick={openSettingsModal}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-100 px-4 py-2 font-bold text-gray-600 transition hover:bg-gray-100 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 md:w-auto"
-          >
-            <Settings className="w-4 h-4" />
-            Configurar Objetivos
-          </button>
-          
-          <div className="flex w-full items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-2 py-2 text-gray-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 sm:px-4 md:w-auto md:gap-3">
-             <button onClick={handlePrevMonth} className="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg text-gray-500 dark:text-zinc-400 transition cursor-pointer">
-               <ChevronLeft className="w-5 h-5" />
-             </button>
-             <div className="flex items-center gap-2 min-w-[140px] justify-center">
-               <Calendar className="w-4 h-4 text-gray-500 dark:text-zinc-400" />
-               <span className="font-bold text-gray-700 dark:text-zinc-200 tracking-tight">
-                 {MONTH_NAMES[month].toUpperCase()} {year}
-               </span>
-             </div>
-             <button onClick={handleNextMonth} className="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg text-gray-500 dark:text-zinc-400 transition cursor-pointer">
-               <ChevronRight className="w-5 h-5" />
-             </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Dashboard Chart */}
-      {units.length > 0 && reportData.length > 0 && (
-        <div className="mb-8 bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-800 p-6 shadow-sm overflow-hidden">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 border-b border-gray-100 dark:border-zinc-800 pb-4">
-            <div>
-              <h3 className="text-xl font-black text-gray-900 dark:text-zinc-100 uppercase tracking-wide">Evolução Diária - SVA</h3>
-              <p className="text-sm text-gray-400 dark:text-zinc-500 mt-1">Comparativo de SVA e Recorrências ao longo do mês</p>
-            </div>
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 mt-4 md:mt-0">
-              <button 
-                onClick={() => setShowUnitChartsModal(true)}
-                className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-500 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800/30 rounded-xl font-bold flex items-center gap-2 cursor-pointer transition uppercase text-xs tracking-wider"
-              >
-                <TrendingUp className="w-4 h-4" />
-                Por Unidade
-              </button>
-              <div className="flex items-center gap-2 bg-gray-50 dark:bg-zinc-950 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-zinc-800">
-                 <div className="w-3 h-3 rounded-full bg-amber-600"></div>
-                 <span className="text-xs font-bold text-gray-400 dark:text-zinc-500 uppercase">SVA Total</span>
-              </div>
-              <div className="flex items-center gap-2 bg-gray-50 dark:bg-zinc-950 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-zinc-800">
-                 <div className="w-3 h-3 rounded-full bg-[var(--theme-color)]"></div>
-                 <span className="text-xs font-bold text-gray-400 dark:text-zinc-500 uppercase">Recorrências</span>
-              </div>
-            </div>
-          </div>
-          <div className="w-full h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={reportData.map(d => ({ day: d.date.split('-')[2], SVA: d.svaTotal, Recorrencia: d.recorrencia }))} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorSVA" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--theme-color-strong)" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="var(--theme-color-strong)" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorRec" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--theme-color)" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="var(--theme-color)" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" vertical={false} />
-                <XAxis dataKey="day" stroke="#a1a1aa" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis 
-                  stroke="#a1a1aa" 
-                  fontSize={10} 
-                  tickLine={false} 
-                  axisLine={false} 
-                  tickFormatter={(val) => val >= 1000 ? `R$ ${(val/1000).toFixed(0)}k` : `R$ ${val}`} 
-                  width={55}
-                />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px' }}
-                  itemStyle={{ color: '#e4e4e7', fontWeight: 'bold' }}
-                  labelStyle={{ color: '#a1a1aa', marginBottom: '8px' }}
-                  formatter={(value: number) => [formatCurrency(value), '']} 
-                  labelFormatter={(label) => `Dia ${label}`}
-                />
-                <Area type="monotone" dataKey="SVA" stroke="var(--theme-color-strong)" strokeWidth={3} fillOpacity={1} fill="url(#colorSVA)" />
-                <Area type="monotone" dataKey="Recorrencia" stroke="var(--theme-color)" strokeWidth={3} fillOpacity={1} fill="url(#colorRec)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
-      {/* Objetivo Geral & Gráficos Summary */}
-      {units.length > 0 && (
-        <div className="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-4">
-          
-          {/* Gráfico de Resultados SVA */}
-          <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-800 flex flex-col">
-            <div className="bg-amber-900/40 text-center font-black p-4 text-2xl sm:text-3xl uppercase text-gray-900 dark:text-zinc-100 shadow-sm tracking-tight">
-              Gráfico de Resultados SVA
-            </div>
-            <div className="flex-1 p-0 overflow-x-auto">
-              <table className="w-full text-center border-collapse min-w-[450px] sm:min-w-0">
-                <thead>
-                  <tr className="text-gray-900 dark:text-zinc-100 text-[10px] sm:text-xs bg-gray-50 border-gray-200 dark:bg-zinc-950 border-b border-gray-300 dark:border-zinc-700">
-                     <th className="p-1 sm:p-2 bg-gray-100 dark:bg-zinc-800"></th>
-                     <th className="p-1 sm:p-2 bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 uppercase font-black">SVA (Quinz.)</th>
-                     <th className="p-1 sm:p-2 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 uppercase font-black">Objetivo (Quinz.)</th>
-                     <th className="p-1 sm:p-2 bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 uppercase font-black">SVA (Mensal)</th>
-                     <th className="p-1 sm:p-2 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 uppercase font-black">Objetivo (Mensal)</th>
-                  </tr>
-                </thead>
-                <tbody className="text-gray-900 dark:text-zinc-100 font-mono text-xs sm:text-sm leading-relaxed">
-                  {units.map((unit, idx) => {
-                    const quinzenalSVA = quinzenalTotals.units[unit]?.total || 0;
-                    const mensalSVA = monthlyTotals.units[unit]?.total || 0;
-                    const metaQuinz = currentSettings.units[unit]?.metaQuinzenal || 0;
-                    const metaMensal = currentSettings.units[unit]?.metaMensal || 0;
-                    return (
-                      <tr key={unit} className="border-b border-gray-300 dark:border-zinc-700 hover:bg-gray-500/5">
-                        <td className="p-2 sm:p-4 font-black bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 uppercase font-sans text-[11px] sm:text-sm tracking-wide">{getUnitName(unit)}</td>
-                        <td className="p-2 sm:p-4 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 text-xs sm:text-lg">{formatCurrency(quinzenalSVA)}</td>
-                        <td className="p-2 sm:p-4 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 text-xs sm:text-lg">{formatCurrency(metaQuinz)}</td>
-                        <td className="p-2 sm:p-4 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 text-xs sm:text-lg">{formatCurrency(mensalSVA)}</td>
-                        <td className="p-2 sm:p-4 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 text-xs sm:text-lg">{formatCurrency(metaMensal)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Objetivo Geral (SVA) */}
-          <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-800 flex flex-col">
-            <div className="bg-amber-900/40 text-center font-black p-3 text-xl sm:text-2xl text-gray-900 dark:text-zinc-100 uppercase tracking-wide">
-              Objetivo Geral (SVA)
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-3 text-center border-b border-gray-300 dark:border-zinc-700">
-               <div className="p-3.5 sm:p-4 flex sm:flex-col items-center sm:justify-center justify-between border-b sm:border-b-0 sm:border-r border-gray-200 dark:border-zinc-800 min-h-[50px] sm:min-h-[100px] bg-gray-100 dark:bg-zinc-800">
-                 <span className="text-xs text-gray-900 dark:text-zinc-100 font-extrabold uppercase sm:mb-4">SVA (Total)</span>
-                 <span className="text-gray-900 dark:text-zinc-100 font-mono bg-gray-50 border border-gray-200 dark:border-zinc-950 dark:bg-zinc-950 px-2 py-1.5 sm:py-2 rounded text-sm sm:text-lg">{formatCurrency(monthlyTotals.svaTotal)}</span>
-               </div>
-               <div className="p-3.5 sm:p-4 flex sm:flex-col items-center sm:justify-center justify-between border-b sm:border-b-0 sm:border-r border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950 min-h-[50px] sm:min-h-[100px]">
-                 <span className="text-xs text-gray-900 dark:text-zinc-100 font-extrabold uppercase sm:mb-4">Recorrências (Total)</span>
-                 <span className="text-gray-900 dark:text-zinc-100 font-mono text-sm sm:text-lg">{formatCurrency(monthlyTotals.recorrenciaTotal)}</span>
-               </div>
-               <div className="p-3.5 sm:p-4 flex sm:flex-col items-center sm:justify-center justify-between min-h-[50px] sm:min-h-[100px] bg-gray-100 dark:bg-zinc-800">
-                 <span className="text-xs text-gray-900 dark:text-zinc-100 font-extrabold uppercase sm:mb-4">Objetivo Geral SVA</span>
-                 <span className="text-gray-900 dark:text-zinc-100 font-mono bg-gray-50 border border-gray-200 dark:border-zinc-950 dark:bg-zinc-950 px-2 py-1.5 sm:py-2 rounded text-sm sm:text-lg">{formatCurrency(currentSettings.metaGeral)}</span>
-               </div>
-            </div>
-
-            <div className="bg-amber-900/40 text-center font-black p-2 text-md sm:text-lg text-gray-900 dark:text-zinc-100 italic tracking-wider uppercase">
-               PROGRESSO GERAL
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 text-center flex-1">
-               <div className={`p-4 sm:p-6 flex sm:flex-col items-center sm:justify-center justify-between border-b sm:border-b-0 sm:border-r border-gray-200 dark:border-zinc-800 ${currentSettings.metaGeral - monthlyTotals.svaTotal <= 0 ? 'bg-green-600' : 'bg-[var(--theme-color)]'}`}>
-                 <span className="text-[10px] text-white font-black italic uppercase sm:mb-2 text-shadow-sm">Faturamento Restante</span>
-                 <span className="text-white font-bold text-lg sm:text-2xl md:text-3xl font-mono text-shadow-sm">
-                   {currentSettings.metaGeral - monthlyTotals.svaTotal <= 0 ? 'OBJETIVO BATIDO 🎉' : formatCurrency(currentSettings.metaGeral - monthlyTotals.svaTotal)}
-                 </span>
-               </div>
-               <div className="p-4 sm:p-6 flex sm:flex-col items-center sm:justify-center justify-between bg-gray-50 border-gray-200 dark:bg-zinc-950 min-w-0 sm:min-w-[160px]">
-                 <span className="text-[10px] text-gray-900 dark:text-zinc-100 font-black italic uppercase sm:mb-2 whitespace-nowrap">% Atingido (Objetivo Geral SVA)</span>
-                 <span className="text-gray-900 dark:text-zinc-100 font-bold text-xl sm:text-3xl font-mono">
-                   {currentSettings.metaGeral > 0 
-                     ? ((monthlyTotals.svaTotal / currentSettings.metaGeral) * 100).toFixed(2) 
-                     : "0.00"}%
-                 </span>
-               </div>
-            </div>
-          </div>
-          
-        </div>
-      )}
-
-      {/* Progress Cards per Unit */}
-      {units.length > 0 && (
-        <div className="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-4">
-          
-          {/* QUINZENAL SVA */}
-          <div className="flex flex-col gap-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-800 flex flex-col">
-              <div className="bg-amber-900/40 text-center font-black italic p-3 text-2xl uppercase text-gray-900 dark:text-zinc-100 shadow-sm tracking-wide">
-                QUINZENAL (SVA)
-              </div>
-              <div className="p-0 space-y-4 pt-4 pb-4">
-            {units.map((unit, idx) => {
-              const uMeta = currentSettings.units[unit];
-              const qMeta = uMeta?.metaQuinzenal || 0;
-              const qSVA = quinzenalTotals.units[unit]?.total || 0;
-              
-              // SVA da quinzena - dias restantes = termino da quinzena - dias apurados - dias não úteis.
-              const diasApurados = quinzenalTotals.units[unit]?.diasApurados || 0;
-              const diasNaoUteis = quinzenalTotals.units[unit]?.diasNaoUteis || 0;
-              const daysLeft = Math.max(0, 15 - diasApurados - diasNaoUteis);
-
-              // Use SVA total (mensal) to know faturamento restante da quinzena? The screenshot compares "SVA (Quinzena)"
-              const leftSVA = qMeta - qSVA;
-              const leftPerDay = daysLeft > 0 ? (leftSVA / daysLeft) : 0;
-              const pct = qMeta > 0 ? ((qSVA / qMeta) * 100).toFixed(2) : "0.00";
-
-              return (
-                <div key={unit} className="flex flex-col border-b border-gray-300 dark:border-zinc-700">
-                  <div className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 text-center font-black italic p-2 uppercase text-lg">
-                    {getUnitName(unit)}
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 text-center bg-gray-50 border-gray-200 dark:bg-zinc-950 font-mono text-sm border-t border-gray-200 dark:border-zinc-800">
-                    <div className="flex flex-col border-b md:border-b-0 md:border-r border-gray-200 dark:border-zinc-800">
-                      <div className="p-2 bg-amber-900/40 text-gray-900 dark:text-zinc-100 text-[10px] font-black italic uppercase shadow-sm">DIAS ÚTEIS RESTANTES</div>
-                      <div className="p-4 flex-1 flex items-center justify-center font-bold text-gray-900 dark:text-white text-2xl bg-gray-50 dark:bg-zinc-950">
-                        {daysLeft}
-                      </div>
-                    </div>
-                    <div className="flex flex-col border-b border-l border-gray-200 dark:border-zinc-800 md:border-l-0 md:border-b-0 md:border-r">
-                      <div className="p-2 bg-amber-900/40 text-gray-900 dark:text-zinc-100 text-[10px] font-black italic uppercase shadow-sm">FATURAMENTO RESTANTE</div>
-                      <div className={`p-4 flex-1 flex items-center justify-center font-bold text-white text-xl md:text-2xl min-h-[5rem] ${leftSVA <= 0 ? 'bg-green-600' : 'bg-[var(--theme-color-strong)]'}`}>
-                        {leftSVA <= 0 ? 'OBJETIVO BATIDO 🎉' : formatCurrency(leftSVA)}
-                      </div>
-                    </div>
-                    <div className="flex flex-col border-b md:border-b-0 border-r border-gray-200 dark:border-zinc-800">
-                      <div className="p-2 bg-amber-900/40 text-gray-900 dark:text-zinc-100 text-[10px] font-black italic uppercase shadow-sm">RESTANTE POR DIA</div>
-                      <div className="p-4 flex-1 flex items-center justify-center font-bold text-gray-900 dark:text-white text-xl bg-gray-50 dark:bg-zinc-950">
-                        {leftSVA <= 0 ? '-' : (leftPerDay > 0 ? formatCurrency(leftPerDay) : "R$ 0,00")}
-                      </div>
-                    </div>
-                    <div className="flex flex-col border-b md:border-b-0 border-l border-gray-200 dark:border-zinc-800 md:border-l-0">
-                      <div className="p-2 bg-amber-900/40 text-gray-900 dark:text-zinc-100 text-[10px] font-black italic uppercase shadow-sm">PERCENTUAL ATINGIDO</div>
-                      <div className="p-4 flex-1 flex items-center justify-center font-bold text-gray-900 dark:text-white text-xl bg-gray-50 dark:bg-zinc-950">
-                        {pct}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-              </div>
-              
-              {/* Dia de Apuração Block Quinzenal */}
-              <div className="flex flex-col text-sm border-t border-gray-300 dark:border-zinc-700 font-mono">
-                {units.map((unit, idx) => (
-                  <div key={`apuracao-${unit}`} className="flex border-b border-gray-300 dark:border-zinc-700">
-                    <div className="flex-1 p-2 bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 font-bold uppercase text-right flex items-center justify-end border-r border-[#27272a]">
-                      DIA DE APURAÇÃO {getUnitName(unit)}
-                    </div>
-                    <div className="w-[120px] sm:w-[160px] p-2 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 font-bold text-center flex items-center justify-center text-lg">
-                      {quinzenalTotals.units[unit]?.diasApurados || 0}
-                    </div>
-                  </div>
-                ))}
-                <div className="flex">
-                    <div className="flex-1 p-2 bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 font-bold uppercase text-right flex items-center justify-end border-r border-[#27272a]">
-                      TÉRMINO DA QUINZENA
-                    </div>
-                    <div className="w-[120px] sm:w-[160px] p-2 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 font-bold text-center flex items-center justify-center text-lg">
-                      15
-                    </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Dias Não Úteis Quinzenal */}
-            <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-800 flex flex-col">
-              <div className="bg-gray-100 dark:bg-zinc-800 text-center font-black p-2 text-xl uppercase text-gray-900 dark:text-zinc-100 tracking-wide border-b border-gray-300 dark:border-zinc-700">
-                DIAS NÃO ÚTEIS
-              </div>
-              <div className="flex flex-col text-sm font-mono">
-                {units.map((unit, idx) => (
-                  <div key={`naouteis-${unit}`} className="flex border-b border-gray-300 dark:border-zinc-700">
-                    <div className="flex-1 p-2 bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 font-bold uppercase text-right flex items-center justify-end border-r border-[#27272a]">
-                      DIAS NÃO ÚTEIS {getUnitName(unit)}
-                    </div>
-                    <div className="w-[120px] sm:w-[160px] p-2 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 font-bold text-center flex items-center justify-center text-lg">
-                      {quinzenalTotals.units[unit]?.diasNaoUteis || 0}
-                    </div>
-                  </div>
-                ))}
-                <div className="flex">
-                    <div className="flex-1 p-2 bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 font-bold uppercase text-right flex items-center justify-end border-r border-[#27272a]">
-                      TÉRMINO DA QUINZENA
-                    </div>
-                    <div className="w-[120px] sm:w-[160px] p-2 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 font-bold text-center flex items-center justify-center text-xs">
-                      15/{String(month + 1).padStart(2,'0')}/{year}
-                    </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* MENSAL COLUMN */}
-          <div className="flex flex-col gap-4">
-            {/* MENSAL SVA */}
-            <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-800 flex flex-col">
-              <div className="bg-amber-900/40 text-center font-black italic p-3 text-2xl uppercase text-gray-900 dark:text-zinc-100 shadow-sm tracking-wide">
-                MENSAL (SVA)
-              </div>
-              <div className="p-0 space-y-4 pt-4 pb-4">
-            {units.map((unit, idx) => {
-              const uMeta = currentSettings.units[unit];
-              const mMeta = uMeta?.metaMensal || 0;
-              const mSVA = monthlyTotals.units[unit]?.total || 0;
-              
-              // Va mensal - dias restantes = termino do mês - dias apurados - dias não uteis
-              const diasApurados = monthlyTotals.units[unit]?.diasApurados || 0;
-              const diasNaoUteis = monthlyTotals.units[unit]?.diasNaoUteis || 0;
-              const daysLeft = Math.max(0, daysInMonth - diasApurados - diasNaoUteis);
-
-              const leftSVA = mMeta - mSVA;
-              const leftPerDay = daysLeft > 0 ? (leftSVA / daysLeft) : 0;
-              const pct = mMeta > 0 ? ((mSVA / mMeta) * 100).toFixed(2) : "0.00";
-
-              return (
-                <div key={unit} className="flex flex-col border-b border-gray-300 dark:border-zinc-700">
-                  <div className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 text-center font-black italic p-2 uppercase text-lg">
-                    {getUnitName(unit)}
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 text-center bg-gray-50 border-gray-200 dark:bg-zinc-950 font-mono text-sm border-t border-gray-200 dark:border-zinc-800">
-                    <div className="flex flex-col border-b md:border-b-0 md:border-r border-gray-200 dark:border-zinc-800">
-                      <div className="p-2 bg-amber-900/40 text-gray-900 dark:text-zinc-100 text-[10px] font-black italic uppercase shadow-sm">DIAS ÚTEIS RESTANTES</div>
-                      <div className="p-4 flex-1 flex items-center justify-center font-bold text-gray-900 dark:text-white text-2xl bg-gray-50 dark:bg-zinc-950">
-                        {daysLeft}
-                      </div>
-                    </div>
-                    <div className="flex flex-col border-b border-l border-gray-200 dark:border-zinc-800 md:border-l-0 md:border-b-0 md:border-r">
-                      <div className="p-2 bg-amber-900/40 text-gray-900 dark:text-zinc-100 text-[10px] font-black italic uppercase shadow-sm">FATURAMENTO RESTANTE</div>
-                      <div className={`p-4 flex-1 flex items-center justify-center font-bold text-white text-xl md:text-2xl min-h-[5rem] ${leftSVA <= 0 ? 'bg-green-600' : 'bg-[var(--theme-color-strong)]'}`}>
-                        {leftSVA <= 0 ? 'OBJETIVO BATIDO 🎉' : formatCurrency(leftSVA)}
-                      </div>
-                    </div>
-                    <div className="flex flex-col border-b md:border-b-0 border-r border-gray-200 dark:border-zinc-800">
-                      <div className="p-2 bg-amber-900/40 text-gray-900 dark:text-zinc-100 text-[10px] font-black italic uppercase shadow-sm">RESTANTE POR DIA</div>
-                      <div className="p-4 flex-1 flex items-center justify-center font-bold text-gray-900 dark:text-white text-xl bg-gray-50 dark:bg-zinc-950">
-                        {leftSVA <= 0 ? '-' : (leftPerDay > 0 ? formatCurrency(leftPerDay) : "R$ 0,00")}
-                      </div>
-                    </div>
-                    <div className="flex flex-col border-b md:border-b-0 border-l border-gray-200 dark:border-zinc-800 md:border-l-0">
-                      <div className="p-2 bg-amber-900/40 text-gray-900 dark:text-zinc-100 text-[10px] font-black italic uppercase shadow-sm">PERCENTUAL ATINGIDO</div>
-                      <div className="p-4 flex-1 flex items-center justify-center font-bold text-gray-900 dark:text-white text-xl bg-gray-50 dark:bg-zinc-950">
-                        {pct}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-              </div>
-
-              {/* Dia de Apuração Block Mensal */}
-              <div className="flex flex-col text-sm border-t border-gray-300 dark:border-zinc-700 font-mono">
-                {units.map((unit, idx) => (
-                  <div key={`apuracao-${unit}`} className="flex border-b border-gray-300 dark:border-zinc-700">
-                    <div className="flex-1 p-2 bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 font-bold uppercase text-right flex items-center justify-end border-r border-[#27272a]">
-                      DIA DE APURAÇÃO {getUnitName(unit)}
-                    </div>
-                    <div className="w-[120px] sm:w-[160px] p-2 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 font-bold text-center flex items-center justify-center text-lg">
-                      {monthlyTotals.units[unit]?.diasApurados || 0}
-                    </div>
-                  </div>
-                ))}
-                <div className="flex">
-                    <div className="flex-1 p-2 bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 font-bold uppercase text-right flex items-center justify-end border-r border-[#27272a]">
-                      FINAL DO MÊS
-                    </div>
-                    <div className="w-[120px] sm:w-[160px] p-2 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 font-bold text-center flex items-center justify-center text-lg">
-                      {daysInMonth}
-                    </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Dias Não Úteis Mensal */}
-            <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-800 flex flex-col justify-start flex-1 min-h-[min-content]">
-              <div className="bg-gray-100 dark:bg-zinc-800 text-center font-black p-2 text-xl uppercase text-gray-900 dark:text-zinc-100 tracking-wide border-b border-gray-300 dark:border-zinc-700">
-                DIAS NÃO ÚTEIS
-              </div>
-              <div className="flex flex-col text-sm font-mono h-full">
-                {units.map((unit, idx) => (
-                  <div key={`naouteis-${unit}`} className="flex border-b border-gray-300 dark:border-zinc-700 last:border-b-0 h-full min-h-[46px]">
-                    <div className="flex-1 p-2 bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 font-bold uppercase text-right flex items-center justify-end border-r border-[#27272a]">
-                      DIAS NÃO ÚTEIS {getUnitName(unit)}
-                    </div>
-                    <div className="w-[120px] sm:w-[160px] p-2 bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 font-bold text-center flex items-center justify-center text-lg">
-                      {monthlyTotals.units[unit]?.diasNaoUteis || 0}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {units.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-12 text-gray-400 dark:text-zinc-500 bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 rounded-xl border border-dashed border-gray-300 dark:border-zinc-700">
-           <AlertCircle className="w-10 h-10 mb-2 text-amber-400" />
-           <p>Nenhuma unidade com barbeiros cadastrados no sistema.</p>
-        </div>
-      ) : (
-        <div className="w-full overflow-x-auto pb-4">
-           <table className="w-full text-sm text-left whitespace-nowrap min-w-max">
-             <thead>
-               <tr className="text-gray-900 dark:text-zinc-100 font-sans">
-                 <th colSpan={3} className="p-3 bg-white dark:bg-zinc-900 border-b border-r border-gray-300 dark:border-zinc-700 sticky left-0 z-30 text-center font-black uppercase text-xs tracking-wider">
-                    Data
-                 </th>
-                 {units.map((unit, idx) => (
-                   <th key={unit} colSpan={4} className="p-3 border-b border-r border-gray-300 dark:border-zinc-700 text-center font-black uppercase bg-gray-100 dark:bg-zinc-800 text-xs tracking-wider">
-                     {getUnitName(unit)}
-                   </th>
-                 ))}
-               <th colSpan={2} className="p-3 border-b border-amber-700/50 text-center font-black text-gray-900 dark:text-zinc-100 uppercase bg-amber-900/40 text-xs tracking-wider shadow-sm">
-                   Gerais
-                 </th>
-               </tr>
-               <tr className="text-[10px] uppercase font-black text-gray-400 dark:text-zinc-500 bg-white dark:bg-zinc-900 tracking-wider">
-                 <th className="p-3 border-b border-r border-gray-300 dark:border-zinc-700 sticky left-0 z-30 bg-white dark:bg-zinc-900">Dia</th>
-                 <th className="p-3 border-b border-r border-gray-300 dark:border-zinc-700 sticky left-12 z-30 bg-white dark:bg-zinc-900">Semana</th>
-                 <th className="p-3 border-b border-r border-gray-300 dark:border-zinc-700 sticky left-32 z-30 bg-white dark:bg-zinc-900 text-center">Ação</th>
-                 
-                 {units.map((unit) => (
-                   <React.Fragment key={unit}>
-                     <th className="p-3 border-b border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">Serviços</th>
-                     <th className="p-3 border-b border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">Produtos</th>
-                     <th className="p-3 border-b border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-[var(--theme-color)]">Assin.</th>
-                     <th className="p-3 border-b border-r border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 bg-gray-100 dark:bg-zinc-800">SVA</th>
-                   </React.Fragment>
-                 ))}
-
-                 <th className="p-3 border-b border-r border-amber-700/50 text-gray-900 dark:text-zinc-100 bg-amber-900/40">SVA Total</th>
-                 <th className="p-3 border-b border-amber-700/50 text-gray-900 dark:text-zinc-100 bg-amber-900/40">Recorrências</th>
-               </tr>
-             </thead>
-             <tbody>
-               {reportData.map((dayData, idx) => {
-                 const isWeekend = dayData.weekday === 'Domingo' || dayData.weekday === 'Sábado';
-                 return (
-                 <tr key={idx} className={`border-b border-gray-200 dark:border-zinc-800 transition-colors ${isWeekend ? 'bg-orange-50/40' : 'bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100'} hover:bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300`}>
-                   <td className="p-2.5 px-3 border-r font-medium text-gray-900 dark:text-zinc-100 sticky left-0 z-30 bg-inherit shadow-[1px_0_0_0_#f3f4f6]">
-                     {String(idx + 1).padStart(2, '0')}
-                   </td>
-                   <td className={`p-2.5 px-3 border-r font-medium sticky left-12 z-30 bg-inherit shadow-[1px_0_0_0_#f3f4f6] ${isWeekend ? 'text-orange-600' : 'text-gray-500 dark:text-zinc-400'}`}>
-                     {dayData.weekday}
-                   </td>
-                   <td className="p-1 border-r text-center sticky left-32 z-30 bg-inherit shadow-[1px_0_0_0_#f3f4f6] w-[40px]">
-                     <button
-                       onClick={() => openEditModal(dayData)} 
-                       className="p-1.5 text-gray-400 dark:text-zinc-500 hover:text-amber-500 hover:bg-amber-900/20 rounded transition-colors mx-auto"
-                     >
-                       <Edit2 className="w-4 h-4" />
-                     </button>
-                   </td>
-
-                   {units.map((unit) => {
-                     const uData = dayData.units[unit];
-                     return (
-                       <React.Fragment key={unit}>
-                         <td className="p-2.5 px-3 font-mono text-gray-500 dark:text-zinc-400">{formatCurrency(uData.servicos)}</td>
-                         <td className="p-2.5 px-3 font-mono text-gray-500 dark:text-zinc-400">{formatCurrency(uData.produtos)}</td>
-                         <td className="p-2.5 px-3 font-mono text-gray-500 dark:text-zinc-400">{formatCurrency(uData.assinaturas)}</td>
-                         <td className="p-2.5 px-3 border-r font-mono font-bold text-gray-900 dark:text-zinc-100 bg-gray-50/50 dark:bg-zinc-900/50 text-gray-600 dark:text-zinc-300">{formatCurrency(uData.total)}</td>
-                       </React.Fragment>
-                     );
-                   })}
-
-                   <td className="p-2.5 px-3 font-mono font-bold text-gray-900 dark:text-zinc-100 bg-amber-900/20 border-r border-amber-700/50">{formatCurrency(dayData.svaTotal)}</td>
-                   <td className="p-2.5 px-3 font-mono text-gray-500 dark:text-zinc-400 bg-amber-900/20">{formatCurrency(dayData.recorrencia)}</td>
-                 </tr>
-               )})}
-
-               {/* Sum Row */}
-               <tr className="bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 font-bold sticky bottom-0 z-30 shadow-[0_-1px_0_0_#27272a]">
-                 <td colSpan={3} className="p-3 border-r border-gray-300 dark:border-zinc-700 sticky left-0 z-30 bg-gray-50 border-gray-200 dark:bg-zinc-950">
-                    TOTAL DO MÊS
-                 </td>
-                 {units.map((unit) => {
-                     const uData = monthlyTotals.units[unit];
-                     return (
-                       <React.Fragment key={unit}>
-                         <td className="p-3 font-mono">{formatCurrency(uData.servicos)}</td>
-                         <td className="p-3 font-mono">{formatCurrency(uData.produtos)}</td>
-                         <td className="p-3 font-mono">{formatCurrency(uData.assinaturas)}</td>
-                         <td className="p-3 border-r border-gray-300 dark:border-zinc-700 font-mono text-[var(--theme-color)]">{formatCurrency(uData.total)}</td>
-                       </React.Fragment>
-                     );
-                 })}
-                 <td className="p-3 font-mono text-gray-900 dark:text-zinc-100 font-black text-lg bg-amber-900/40 border-r border-amber-700/50">{formatCurrency(monthlyTotals.svaTotal)}</td>
-                 <td className="p-3 font-mono text-gray-900 dark:text-zinc-100 font-black text-lg bg-amber-900/40">{formatCurrency(monthlyTotals.recorrenciaTotal)}</td>
-               </tr>
-             </tbody>
-           </table>
-        </div>
-      )}
+      <SVAOverview days={reportData} units={units} settings={currentSettings} unit={selectedUnit} setUnit={setSelectedUnit} unitName={getUnitName} date={currentDate} setDate={setCurrentDate} edit={openEditModal} adjust={openSettingsModal} />
 
       {/* Edit Modal */}
       {editingDay && (
         <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="bg-gray-50 border-gray-200 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50 text-gray-600 dark:text-zinc-300">
               <h2 className="text-xl font-bold font-sans text-gray-900 dark:text-zinc-100">
                 Lançamento SVA - {editingDay.date.split('-').reverse().join('/')}
@@ -751,8 +260,9 @@ export function GDVDashboard() {
               </button>
             </div>
             
-            <div className="p-6 max-h-[80vh] overflow-y-auto space-y-8">
-              {units.map((unit, idx) => (
+            <div className="p-4 sm:p-6 min-h-0 overflow-y-auto space-y-8">
+              {saveError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
+              {units.filter(unit => selectedUnit === 'ALL' || unit === selectedUnit).map((unit, idx) => (
                 <div key={unit} className="bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-gray-700 dark:text-zinc-200 text-sm uppercase tracking-wider">{getUnitName(unit)}</h3>
@@ -781,7 +291,7 @@ export function GDVDashboard() {
                         type="number"
                         min="0"
                         step="0.01"
-                        value={editingDay.units[unit].servicos || ''}
+                        value={editingDay.units[unit].servicos ?? ''}
                         onChange={e => {
                           const n = { ...editingDay };
                           n.units[unit].servicos = e.target.value;
@@ -797,7 +307,7 @@ export function GDVDashboard() {
                         type="number"
                         min="0"
                         step="0.01"
-                        value={editingDay.units[unit].produtos || ''}
+                        value={editingDay.units[unit].produtos ?? ''}
                         onChange={e => {
                           const n = { ...editingDay };
                           n.units[unit].produtos = e.target.value;
@@ -813,7 +323,7 @@ export function GDVDashboard() {
                         type="number"
                         min="0"
                         step="0.01"
-                        value={editingDay.units[unit].assinaturas || ''}
+                        value={editingDay.units[unit].assinaturas ?? ''}
                         onChange={e => {
                           const n = { ...editingDay };
                           n.units[unit].assinaturas = e.target.value;
@@ -838,10 +348,11 @@ export function GDVDashboard() {
               </button>
               <button
                 onClick={handleSaveModal}
+                disabled={saving}
                 className="px-6 py-2.5 bg-amber-600 hover:bg-amber-600 text-white font-bold rounded-xl shadow-lg shadow-amber-900/30 active:scale-95 transition-all text-sm flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
-                Salvar Valores
+                {saving ? 'Salvando…' : 'Salvar Valores'}
               </button>
             </div>
           </div>
@@ -866,6 +377,7 @@ export function GDVDashboard() {
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              {saveError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
               <div className="bg-amber-900/20 p-5 rounded-2xl border border-amber-800/40">
                 <label className="block text-sm font-bold text-amber-900 dark:text-amber-100 mb-2 uppercase">Objetivo Geral (Mensal) SVA - R$</label>
                 <input type="number" 
@@ -940,6 +452,7 @@ export function GDVDashboard() {
               </button>
               <button
                 onClick={handleSaveSettings}
+                disabled={saving}
                 className="px-6 py-2.5 bg-amber-600 hover:bg-amber-600 text-white font-bold rounded-xl shadow-lg shadow-amber-900/30 active:scale-95 transition-all text-sm flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
@@ -1027,7 +540,6 @@ export function GDVDashboard() {
         </div>
       )}
 
-    </div>
     </div>
   );
 }
