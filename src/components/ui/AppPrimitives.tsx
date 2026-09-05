@@ -62,7 +62,7 @@ export function AppCard({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-gray-200/90 bg-white shadow-[0_1px_2px_rgba(49,27,18,0.04)] dark:border-zinc-800 dark:bg-zinc-900",
+        "min-w-0 rounded-2xl border border-gray-200/90 bg-white shadow-[0_1px_2px_rgba(49,27,18,0.04)] dark:border-zinc-800 dark:bg-zinc-900",
         className,
       )}
       {...props}
@@ -129,7 +129,7 @@ export function AppPageHeader({
           {description && <p className="mt-1 max-w-3xl text-sm leading-relaxed text-gray-500 dark:text-zinc-400">{description}</p>}
         </div>
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:shrink-0 sm:flex-row sm:flex-wrap sm:items-center [&>button]:w-full [&>select]:w-full sm:[&>button]:w-auto sm:[&>select]:w-auto">{actions}</div>}
     </AppCard>
   );
 }
@@ -156,7 +156,7 @@ export function AppSectionHeader({
           {description && <p className="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{description}</p>}
         </div>
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:shrink-0 sm:flex-row sm:flex-wrap sm:items-center [&>button]:w-full [&>select]:w-full sm:[&>button]:w-auto sm:[&>select]:w-auto">{actions}</div>}
     </div>
   );
 }
@@ -166,7 +166,7 @@ export function AppToolbar({
   className,
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("flex flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 p-3 dark:border-zinc-800 dark:bg-white/[0.025] sm:flex-row sm:flex-wrap sm:items-center", className)}>
+    <div className={cn("flex min-w-0 flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 p-3 dark:border-zinc-800 dark:bg-white/[0.025] sm:flex-row sm:flex-wrap sm:items-center [&>button]:w-full [&>input]:w-full [&>select]:w-full sm:[&>button]:w-auto sm:[&>input]:w-auto sm:[&>select]:w-auto", className)}>
       {children}
     </div>
   );

@@ -10,9 +10,14 @@ import {
   CircleDollarSign,
   Clock3,
   Hourglass,
+  Package,
   PlusCircle,
+  Receipt,
   ReceiptText,
   RefreshCw,
+  Scissors,
+  Trophy,
+  Users,
   Upload,
   UsersRound,
   WalletCards,
@@ -143,8 +148,45 @@ function QuickAction({ icon, title, detail, onClick, tone }: { icon: React.React
   );
 }
 
+type RankingItem = {
+  id: string;
+  name: string;
+  value: string;
+  detail?: string;
+};
+
+function RankingPanel({ title, icon, items, emptyText = "Sem dados no período" }: { title: string; icon: React.ReactNode; items: RankingItem[]; emptyText?: string }) {
+  return (
+    <article className="app-themed-panel overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#062222]">
+      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-white/[0.06]">
+        <span className="text-[var(--theme-color)]">{icon}</span>
+        <h3 className="text-xs font-black text-gray-950 dark:text-white">{title}</h3>
+      </div>
+      {items.length > 0 ? (
+        <ol className="divide-y divide-gray-100 dark:divide-white/[0.06]">
+          {items.map((item, index) => (
+            <li key={item.id} className="flex min-w-0 items-center gap-3 px-4 py-3">
+              <span className={cn(
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-black",
+                index === 0 ? "bg-amber-500/15 text-amber-500" : index === 1 ? "bg-zinc-400/15 text-zinc-500 dark:text-zinc-300" : index === 2 ? "bg-orange-500/15 text-orange-500" : "bg-gray-100 text-gray-500 dark:bg-white/[0.05] dark:text-zinc-400",
+              )}>#{index + 1}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-bold text-gray-900 dark:text-zinc-100">{item.name}</span>
+                {item.detail && <span className="mt-0.5 block truncate text-[9px] text-gray-400 dark:text-zinc-500">{item.detail}</span>}
+              </span>
+              <span className="shrink-0 text-right text-xs font-black text-[var(--theme-color)]">{item.value}</span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <AppEmptyState className="min-h-0 py-8" icon={<Trophy className="h-5 w-5" />} title={emptyText} description="Os dados importados ou lançados aparecerão aqui." />
+      )}
+    </article>
+  );
+}
+
 export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: ExecutiveOverviewDashboardProps) {
-  const { transactions, cashClosings, notifications, systemUnits } = useStore();
+  const { transactions, cashClosings, notifications, systemUnits, users, entries, monthlyBarberStats, catalog } = useStore();
   const now = new Date();
   const [selectedPeriod, setSelectedPeriod] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
   const [periodInitialized, setPeriodInitialized] = useState(false);
@@ -223,6 +265,182 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
   );
   const importNotification = notifications.find(item => `${item.title} ${item.message}`.toLocaleLowerCase("pt-BR").includes("import"));
   const selectedUnitName = selectedUnit === "ALL" ? "Todas as unidades" : systemUnits.find(unit => unit.id === selectedUnit)?.name || selectedUnit;
+
+  const rankingData = useMemo(() => {
+    type BarberAggregate = {
+      barberId: string;
+      revenue: number;
+      productRevenue: number;
+      products: number;
+      extrasRevenue: number;
+      extras: number;
+      clients: number;
+      extraCounts: Record<string, number>;
+      extraValues: Record<string, number>;
+    };
+
+    const aggregates = new Map<string, BarberAggregate>();
+    const getAggregate = (barberId: string) => {
+      const existing = aggregates.get(barberId);
+      if (existing) return existing;
+      const created: BarberAggregate = {
+        barberId,
+        revenue: 0,
+        productRevenue: 0,
+        products: 0,
+        extrasRevenue: 0,
+        extras: 0,
+        clients: 0,
+        extraCounts: {},
+        extraValues: {},
+      };
+      aggregates.set(barberId, created);
+      return created;
+    };
+    const barberInScope = (barberId: string, snapshotUnit?: string | null) => {
+      if (selectedUnit === "ALL") return true;
+      const user = users.find(item => item.id === barberId);
+      return snapshotUnit === selectedUnit || user?.unit === selectedUnit;
+    };
+
+    const periodStats = monthlyBarberStats.filter(stat => stat.month === selectedPeriod && barberInScope(stat.barberId, stat.unitId));
+    const statsBarberIds = new Set(periodStats.map(stat => stat.barberId));
+
+    periodStats.forEach(stat => {
+      const aggregate = getAggregate(stat.barberId);
+      aggregate.revenue += stat.faturamentoTotal || 0;
+      aggregate.productRevenue += stat.vendaProdutosValor || 0;
+      aggregate.products += stat.vendasProdutosQtd || 0;
+      aggregate.clients += stat.clientesAtendidos || 0;
+      Object.entries(stat.extraCounts || {}).forEach(([id, quantity]) => {
+        aggregate.extraCounts[id] = (aggregate.extraCounts[id] || 0) + (quantity || 0);
+        aggregate.extras += quantity || 0;
+      });
+      Object.entries(stat.extraValues || {}).forEach(([id, value]) => {
+        aggregate.extraValues[id] = (aggregate.extraValues[id] || 0) + (value || 0);
+        aggregate.extrasRevenue += value || 0;
+      });
+    });
+
+    entries
+      .filter(entry => entry.date.startsWith(selectedPeriod) && !entry.isDayOff && !statsBarberIds.has(entry.userId) && barberInScope(entry.userId))
+      .forEach(entry => {
+        const aggregate = getAggregate(entry.userId);
+        aggregate.clients += entry.uniqueClientsServed || entry.clientsServed || 0;
+        Object.entries(entry.items || {}).forEach(([itemId, itemEntry]) => {
+          const catalogItem = catalog.find(item => item.id === itemId);
+          if (!catalogItem) return;
+          const revenue = itemEntry.commission || 0;
+          const quantity = itemEntry.amount || 0;
+          const normalizedType = `${catalogItem.type} ${catalogItem.name}`.toLocaleLowerCase("pt-BR");
+          aggregate.revenue += revenue;
+          if (normalizedType.includes("product") || normalizedType.includes("produto")) {
+            aggregate.productRevenue += revenue;
+            aggregate.products += quantity;
+          }
+          if (normalizedType.includes("extra")) {
+            aggregate.extraCounts[itemId] = (aggregate.extraCounts[itemId] || 0) + quantity;
+            aggregate.extraValues[itemId] = (aggregate.extraValues[itemId] || 0) + revenue;
+            aggregate.extras += quantity;
+            aggregate.extrasRevenue += revenue;
+          }
+        });
+      });
+
+    const activeBarbers = [...aggregates.values()]
+      .map(aggregate => ({ ...aggregate, user: users.find(user => user.id === aggregate.barberId) }))
+      .filter(item => item.user?.role === "BARBER");
+    const displayName = (name?: string) => name?.trim() || "Barbeiro";
+    const topFive = <T,>(items: T[], getValue: (item: T) => number) => [...items].filter(item => getValue(item) > 0).sort((a, b) => getValue(b) - getValue(a)).slice(0, 5);
+
+    const revenue = topFive(activeBarbers, item => item.revenue).map(item => ({
+      id: item.barberId,
+      name: displayName(item.user?.name),
+      value: money.format(item.revenue),
+      detail: `${item.clients} clientes atendidos`,
+    }));
+    const products = topFive(activeBarbers, item => item.products).map(item => ({
+      id: item.barberId,
+      name: displayName(item.user?.name),
+      value: `${item.products.toLocaleString("pt-BR")} un`,
+      detail: money.format(item.productRevenue),
+    }));
+    const extras = topFive(activeBarbers, item => item.extras).map(item => ({
+      id: item.barberId,
+      name: displayName(item.user?.name),
+      value: `${item.extras.toLocaleString("pt-BR")} un`,
+      detail: money.format(item.extrasRevenue),
+    }));
+    const clients = topFive(activeBarbers, item => item.clients).map(item => ({
+      id: item.barberId,
+      name: displayName(item.user?.name),
+      value: `${item.clients.toLocaleString("pt-BR")} cli`,
+      detail: "Clientes atendidos",
+    }));
+    const ticket = topFive(activeBarbers, item => item.clients > 0 ? item.revenue / item.clients : 0).map(item => ({
+      id: item.barberId,
+      name: displayName(item.user?.name),
+      value: money.format(item.revenue / item.clients),
+      detail: "Ticket médio",
+    }));
+
+    const serviceTotals = new Map<string, { quantity: number; revenue: number }>();
+    activeBarbers.forEach(barber => {
+      Object.entries(barber.extraCounts).forEach(([id, quantity]) => {
+        const total = serviceTotals.get(id) || { quantity: 0, revenue: 0 };
+        total.quantity += quantity || 0;
+        total.revenue += barber.extraValues[id] || 0;
+        serviceTotals.set(id, total);
+      });
+    });
+    const extraServices = [...serviceTotals.entries()]
+      .filter(([, total]) => total.quantity > 0 || total.revenue > 0)
+      .sort(([, a], [, b]) => b.revenue - a.revenue || b.quantity - a.quantity)
+      .slice(0, 5)
+      .map(([id, total]) => ({
+        id,
+        name: catalog.find(item => item.id === id)?.name || "Serviço extra",
+        value: `${total.quantity.toLocaleString("pt-BR")} un`,
+        detail: money.format(total.revenue),
+      }));
+
+    const selectedMonth = Number(selectedPeriod.slice(5, 7));
+    const selectedYear = Number(selectedPeriod.slice(0, 4));
+    const quarter = Math.ceil(selectedMonth / 3);
+    const quarterStart = (quarter - 1) * 3 + 1;
+    const quarterMonths = new Set(Array.from({ length: 3 }, (_, index) => `${selectedYear}-${String(quarterStart + index).padStart(2, "0")}`));
+    const quarterAggregates = new Map<string, { revenue: number; products: number; clients: number }>();
+    monthlyBarberStats
+      .filter(stat => quarterMonths.has(stat.month) && barberInScope(stat.barberId, stat.unitId))
+      .forEach(stat => {
+        const total = quarterAggregates.get(stat.barberId) || { revenue: 0, products: 0, clients: 0 };
+        total.revenue += stat.faturamentoTotal || 0;
+        total.products += stat.vendaProdutosValor || 0;
+        total.clients += stat.clientesAtendidos || 0;
+        quarterAggregates.set(stat.barberId, total);
+      });
+    const quarterRows = [...quarterAggregates.entries()].filter(([barberId]) => users.find(user => user.id === barberId)?.role === "BARBER");
+    const maxRevenue = Math.max(...quarterRows.map(([, item]) => item.revenue), 1);
+    const maxProducts = Math.max(...quarterRows.map(([, item]) => item.products), 1);
+    const maxTicket = Math.max(...quarterRows.map(([, item]) => item.clients > 0 ? item.revenue / item.clients : 0), 1);
+    const quarterRanking = quarterRows
+      .map(([barberId, item]) => {
+        const averageTicket = item.clients > 0 ? item.revenue / item.clients : 0;
+        const score = (item.revenue / maxRevenue) * 100 + (item.products / maxProducts) * 100 + (averageTicket / maxTicket) * 100;
+        return { barberId, item, averageTicket, score, user: users.find(user => user.id === barberId) };
+      })
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map(item => ({
+        id: item.barberId,
+        name: displayName(item.user?.name),
+        value: `${item.score.toFixed(1).replace(".", ",")} pts`,
+        detail: `${money.format(item.item.revenue)} · TM ${money.format(item.averageTicket)}`,
+      }));
+
+    return { revenue, products, extras, clients, ticket, extraServices, quarterRanking, quarter };
+  }, [catalog, entries, monthlyBarberStats, selectedPeriod, selectedUnit, users]);
 
   return (
     <div className="space-y-4 pb-4">
@@ -382,6 +600,36 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
           </section>
         </aside>
       </div>
+
+      <section aria-labelledby="overview-rankings-title" className="space-y-3 pt-2">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--theme-color)]">Desempenho da equipe</p>
+            <h2 id="overview-rankings-title" className="mt-1 flex items-center gap-2 text-lg font-black text-gray-950 dark:text-white">
+              <Trophy className="h-5 w-5 text-amber-500" /> Rankings do período
+            </h2>
+          </div>
+          <p className="text-[10px] text-gray-400 dark:text-zinc-500">{MONTHS[selectedDate.getMonth()]} de {selectedDate.getFullYear()} · {selectedUnitName}</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <RankingPanel title="Faturamento de barbeiros" icon={<CircleDollarSign className="h-4 w-4" />} items={rankingData.revenue} />
+          <RankingPanel title="Produtos vendidos" icon={<Package className="h-4 w-4" />} items={rankingData.products} />
+          <RankingPanel title="Serviços extras por barbeiro" icon={<Scissors className="h-4 w-4" />} items={rankingData.extras} />
+          <RankingPanel title="Clientes atendidos" icon={<Users className="h-4 w-4" />} items={rankingData.clients} />
+          <RankingPanel title="Ticket médio" icon={<Receipt className="h-4 w-4" />} items={rankingData.ticket} />
+          <RankingPanel title="Serviços extras mais vendidos" icon={<RefreshCw className="h-4 w-4" />} items={rankingData.extraServices} />
+        </div>
+
+        <div className="grid grid-cols-1">
+          <RankingPanel
+            title={`Melhores do ${rankingData.quarter}º trimestre de ${selectedDate.getFullYear()}`}
+            icon={<Trophy className="h-4 w-4" />}
+            items={rankingData.quarterRanking}
+            emptyText="Sem dados consolidados no trimestre"
+          />
+        </div>
+      </section>
     </div>
   );
 }

@@ -295,7 +295,7 @@ export default function AdminDashboard() {
       
       {/* Desktop Sidebar */}
       <aside className={cn(
-        "app-sidebar hidden h-full shrink-0 flex-col overflow-y-auto border-r border-gray-200/80 bg-white transition-[width] duration-300 dark:border-zinc-800 dark:bg-[#061b1b] md:flex app-scrollbar",
+        "app-sidebar hidden h-full shrink-0 flex-col overflow-y-auto border-r border-gray-200/80 bg-white transition-[width] duration-300 dark:border-zinc-800 dark:bg-[#061b1b] xl:flex app-scrollbar",
         isSidebarCollapsed ? "w-[76px]" : "w-[248px]",
       )}>
         {/* Sidebar Header */}
@@ -422,7 +422,7 @@ export default function AdminDashboard() {
       <div className="app-workspace flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
 
         {/* Desktop Global Header */}
-        <header className="app-global-header sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-3 border-b border-gray-200/80 bg-white/95 px-4 backdrop-blur-xl dark:border-white/[0.07] dark:bg-[#031818]/95 md:flex xl:px-6">
+        <header className="app-global-header sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-3 border-b border-gray-200/80 bg-white/95 px-4 backdrop-blur-xl dark:border-white/[0.07] dark:bg-[#031818]/95 xl:flex xl:px-6">
           <AppIconButton
             label={isSidebarCollapsed ? "Expandir menu" : "Recolher menu"}
             onClick={() => setIsSidebarCollapsed(value => !value)}
@@ -443,7 +443,7 @@ export default function AdminDashboard() {
             </select>
           </div>
 
-          <div className="relative ml-auto hidden w-full max-w-xl lg:block">
+          <div className="relative ml-auto hidden w-full max-w-xl xl:block">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-zinc-500" />
             <input
               id="global-app-search"
@@ -567,11 +567,11 @@ export default function AdminDashboard() {
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--theme-color)]/15 text-xs font-black text-[var(--theme-color)] ring-1 ring-[var(--theme-color)]/20">
                 {userInitials}
               </span>
-              <span className="hidden max-w-36 lg:block">
+              <span className="hidden max-w-36 2xl:block">
                 <span className="block truncate text-xs font-black text-gray-950 dark:text-white">{currentUser?.name}</span>
                 <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">{currentUser?.role}</span>
               </span>
-              <ChevronDown className="hidden h-4 w-4 text-gray-400 lg:block" />
+              <ChevronDown className="hidden h-4 w-4 text-gray-400 2xl:block" />
             </button>
             {isProfileOpen && (
               <div className="absolute right-0 top-12 w-64 rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
@@ -595,7 +595,7 @@ export default function AdminDashboard() {
         </header>
         
         {/* Mobile Header */}
-        <header className="app-global-header sticky top-0 z-20 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 md:hidden">
+        <header className="app-global-header sticky top-0 z-40 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 xl:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain" referrerPolicy="no-referrer" />
@@ -739,7 +739,7 @@ export default function AdminDashboard() {
           )}
         </header>
 
-        <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-5 sm:px-5 sm:py-6 lg:px-7 lg:py-7">
+        <main className="app-main-content mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 py-4 sm:px-5 sm:py-6 lg:px-6 xl:px-7 xl:py-7">
         <Suspense fallback={<AppLoadingState />}>
         {activeTab === "OVERVIEW" ? (
           <OverviewDashboard selectedUnit={selectedUnit} onNavigate={navigateTo} />

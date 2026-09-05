@@ -106,7 +106,7 @@ export function SocialMediaBoard() {
           </div>
           <button 
             onClick={() => openForm()}
-            className="flex items-center gap-2 bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white px-4 py-2 rounded-lg font-bold transition shadow-sm"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--theme-color)] px-4 py-2 font-bold text-white shadow-sm transition hover:bg-[var(--theme-color-strong)] sm:w-auto"
           >
             <Plus className="w-4 h-4" /> Nova Pauta
           </button>
@@ -149,7 +149,7 @@ export function SocialMediaBoard() {
 
       <div className="flex-1 overflow-auto bg-gray-50/50 dark:bg-zinc-800/30">
         {activeTab === 'KANBAN' && (
-          <div className="flex-1 overflow-x-auto p-4 custom-scrollbar flex gap-4 min-h-[600px] items-stretch">
+          <div className="flex min-h-[500px] flex-1 items-stretch gap-3 overflow-x-auto p-3 custom-scrollbar sm:min-h-[600px] sm:gap-4 sm:p-4">
             {STATUSES.map(status => {
               const columnPosts = posts.filter(p => p.status === status);
               
@@ -158,7 +158,7 @@ export function SocialMediaBoard() {
                   key={status}
                   onDragOver={handleDragOver}
                   onDrop={(e) => handleDrop(e, status)}
-                  className="w-72 shrink-0 bg-gray-100 dark:bg-zinc-800/80 rounded-xl flex flex-col h-full min-h-[150px] max-h-[800px] border border-gray-200 dark:border-zinc-700/50 shadow-sm overflow-hidden"
+                className="flex h-full min-h-[150px] w-[calc(100vw-4.5rem)] max-w-72 shrink-0 snap-center flex-col overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/80"
                 >
                   <div className="p-3 border-b border-gray-200 dark:border-zinc-700/50 bg-white/50 dark:bg-zinc-900/30 flex justify-between items-center shrink-0">
                     <h3 className="font-bold text-sm tracking-wide text-gray-700 dark:text-zinc-200 uppercase flex items-center gap-2">
@@ -251,7 +251,7 @@ function CalendarView({ posts, getPlatformIcon, onPostClick }: any) {
   const scheduled = posts.filter((p: any) => p.scheduledDate).sort((a: any, b: any) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
   
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="mx-auto max-w-4xl space-y-4 p-3 sm:space-y-6 sm:p-6">
       <h3 className="text-lg font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
         <Calendar className="w-5 h-5 text-[var(--theme-color)]" /> Próximos Lançamentos (Cronograma)
       </h3>
@@ -262,7 +262,7 @@ function CalendarView({ posts, getPlatformIcon, onPostClick }: any) {
       ) : (
         <div className="space-y-4">
           {scheduled.map((post: any) => (
-            <div key={post.id} onClick={() => onPostClick(post)} className="flex items-center gap-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 p-4 rounded-xl shadow-sm cursor-pointer hover:border-[var(--theme-color)] transition">
+            <div key={post.id} onClick={() => onPostClick(post)} className="flex cursor-pointer flex-col items-stretch gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-[var(--theme-color)] dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row sm:items-center sm:gap-4">
               <div className="flex flex-col items-center justify-center bg-gray-50 dark:bg-zinc-800 text-[var(--theme-color)] font-bold p-3 rounded-lg min-w-[70px]">
                 <span className="text-2xl leading-none">{post.scheduledDate.split('-')[2]}</span>
                 <span className="text-xs uppercase">{post.scheduledDate.split('-')[1]}</span>
@@ -278,7 +278,7 @@ function CalendarView({ posts, getPlatformIcon, onPostClick }: any) {
                 </div>
                 <h4 className="font-bold text-gray-900 dark:text-zinc-100 text-sm">{post.title}</h4>
               </div>
-              <div className="text-gray-400 font-bold text-sm">
+              <div className="text-right text-sm font-bold text-gray-400 sm:text-left">
                 {post.scheduledTime || '--:--'}
               </div>
             </div>
@@ -311,16 +311,16 @@ function LibraryView() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 p-6 rounded-2xl shadow-sm">
+    <div className="mx-auto max-w-4xl space-y-4 p-3 sm:space-y-6 sm:p-6">
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
         <h3 className="text-lg font-bold text-gray-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
           <Library className="w-5 h-5 text-[var(--theme-color)]" /> Biblioteca de Referências & Links
         </h3>
         
-        <div className="flex gap-2 mb-6">
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row">
           <input className="flex-1 border p-2.5 rounded-lg text-sm font-medium bg-gray-50 dark:bg-zinc-800 outline-none" placeholder="Nome do link (Ex: Drive da Agência)" value={newLink.title} onChange={e => setNewLink({...newLink, title: e.target.value})} />
           <input className="flex-1 border p-2.5 rounded-lg text-sm font-medium bg-gray-50 dark:bg-zinc-800 outline-none" placeholder="URL" value={newLink.url} onChange={e => setNewLink({...newLink, url: e.target.value})} />
-          <button onClick={save} className="bg-black dark:bg-white text-white dark:text-black px-4 py-2 rounded-lg font-bold">Salvar</button>
+          <button onClick={save} className="rounded-lg bg-black px-4 py-2 font-bold text-white dark:bg-white dark:text-black">Salvar</button>
         </div>
 
         <div className="space-y-2">
@@ -408,7 +408,7 @@ function PostModal({ post, onClose, users }: { post: SocialPost, onClose: () => 
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex flex-col items-center justify-center p-4">
-      <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh]">
+      <div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-zinc-900 sm:max-h-[90vh]">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900">
           <h2 className="text-xl font-bold flex items-center gap-2 text-gray-900 dark:text-white">
             {form.id ? 'Editar Pauta' : 'Nova Pauta de Conteúdo'}
@@ -418,13 +418,13 @@ function PostModal({ post, onClose, users }: { post: SocialPost, onClose: () => 
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
+        <div className="flex-1 space-y-4 overflow-y-auto p-4 custom-scrollbar sm:space-y-6 sm:p-6">
           {!form.id && (
             <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/20 dark:to-indigo-950/20 p-4 rounded-xl border border-purple-100 dark:border-purple-900/30">
               <h3 className="text-sm font-bold text-purple-900 dark:text-purple-300 mb-2 flex items-center gap-2">
                 <Sparkles className="w-4 h-4" /> Gerador de Roteiros com IA
               </h3>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <input 
                   value={aiPrompt}
                   onChange={(e) => setAiPrompt(e.target.value)}
@@ -434,7 +434,7 @@ function PostModal({ post, onClose, users }: { post: SocialPost, onClose: () => 
                 <button 
                   onClick={handleGenerateIdea}
                   disabled={aiGenerating}
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition shadow-sm flex items-center gap-2 whitespace-nowrap"
+                  className="flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-purple-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-purple-700"
                 >
                   {aiGenerating ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando...</> : 'Gerar Magia'}
                 </button>
@@ -453,7 +453,7 @@ function PostModal({ post, onClose, users }: { post: SocialPost, onClose: () => 
               />
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Status na Esteira</label>
                 <select 
@@ -466,7 +466,7 @@ function PostModal({ post, onClose, users }: { post: SocialPost, onClose: () => 
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Plataforma</label>
                 <select 
@@ -489,7 +489,7 @@ function PostModal({ post, onClose, users }: { post: SocialPost, onClose: () => 
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Data Agendada</label>
                 <input 

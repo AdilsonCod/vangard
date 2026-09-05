@@ -454,11 +454,11 @@ export function BarbersAnalysisDashboard() {
            </p>
         </div>
         
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:w-auto lg:flex-wrap lg:items-center">
            <select
              value={selectedUnitId}
              onChange={(e) => setSelectedUnitId(e.target.value)}
-             className={`${appControlClass} cursor-pointer`}
+             className={`${appControlClass} w-full cursor-pointer lg:w-auto`}
            >
              <option value="ALL">Todas as Unidades</option>
              {availableUnits.map(su => (
@@ -469,13 +469,13 @@ export function BarbersAnalysisDashboard() {
            <select
              value={selectedMonthIdx}
              onChange={(e) => setSelectedMonthIdx(Number(e.target.value))}
-             className={`${appControlClass} cursor-pointer`}
+             className={`${appControlClass} w-full cursor-pointer lg:w-auto`}
            >
              {MONTH_NAMES.map((m, idx) => (
                <option key={idx} value={idx}>{m}</option>
              ))}
            </select>
-           <div className="flex items-center bg-gray-50 dark:bg-zinc-800 rounded-lg overflow-hidden border border-gray-200 dark:border-zinc-700">
+           <div className="flex w-full items-center justify-between overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-zinc-700 dark:bg-zinc-800 lg:w-auto">
              <button 
                onClick={() => setSelectedYear(y => y - 1)}
                className="p-2 hover:bg-gray-200 dark:hover:bg-zinc-700 transition"
@@ -493,11 +493,11 @@ export function BarbersAnalysisDashboard() {
              </button>
            </div>
 
-            <div className="relative">
+            <div className="relative w-full lg:w-auto">
               <button
                 disabled={isSimulating}
                 onClick={() => setIsShowingSimulateMenu(!isShowingSimulateMenu)}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-black shadow-sm transition-all active:scale-95 cursor-pointer border select-none ${
+                className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-black shadow-sm transition-all active:scale-95 cursor-pointer select-none lg:w-auto ${
                   isSimulating
                     ? 'bg-zinc-850 text-zinc-500 border-zinc-700 cursor-not-allowed'
                     : 'bg-purple-600 hover:bg-purple-700 text-white border-purple-500'
@@ -508,7 +508,7 @@ export function BarbersAnalysisDashboard() {
               </button>
               
               {isShowingSimulateMenu && (
-                <div className="absolute right-0 mt-2 w-64 bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg z-50 py-2.5 font-sans animate-in fade-in slide-in-from-top-1">
+                <div className="absolute left-0 right-0 z-50 mt-2 rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 font-sans shadow-lg animate-in fade-in slide-in-from-top-1 sm:left-auto sm:w-64">
                   {unitBarbers.length === 0 ? (
                     <div className="px-4 py-3 text-xs text-zinc-400 text-center select-none">
                       Nenhum barbeiro disponível para simular nesta unidade.<br />

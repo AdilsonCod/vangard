@@ -430,7 +430,7 @@ export default function BarberDashboard() {
       
       {/* Desktop Sidebar */}
       <aside className={cn(
-        "app-sidebar hidden h-full shrink-0 flex-col overflow-y-auto border-r border-gray-200/80 bg-white transition-[width] duration-300 dark:border-zinc-800 dark:bg-[#061b1b] md:flex app-scrollbar",
+        "app-sidebar hidden h-full shrink-0 flex-col overflow-y-auto border-r border-gray-200/80 bg-white transition-[width] duration-300 dark:border-zinc-800 dark:bg-[#061b1b] xl:flex app-scrollbar",
         isSidebarCollapsed ? "w-[76px]" : "w-[248px]",
       )}>
         {/* Sidebar Header */}
@@ -513,7 +513,7 @@ export default function BarberDashboard() {
       {/* Main Content Area */}
       <div className="app-workspace flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
 
-        <header className="app-global-header sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-4 border-b border-gray-200/80 bg-white/95 px-5 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 md:flex xl:px-7">
+        <header className="app-global-header sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-4 border-b border-gray-200/80 bg-white/95 px-5 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 xl:flex xl:px-7">
           <div className="min-w-0">
             <p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-gray-400 dark:text-zinc-500">Minha área</p>
             <h1 className="truncate text-base font-black text-gray-950 dark:text-white">{activePage?.label || "Visão Geral"}</h1>
@@ -588,7 +588,7 @@ export default function BarberDashboard() {
         </header>
         
         {/* Mobile Header */}
-        <header className="app-global-header sticky top-0 z-20 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 md:hidden">
+        <header className="app-global-header sticky top-0 z-40 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 xl:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain" referrerPolicy="no-referrer" />
@@ -614,7 +614,7 @@ export default function BarberDashboard() {
                   )}
                 </button>
                 {isNotificationsOpen && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-zinc-800 rounded-xl shadow-xl border border-gray-200 dark:border-zinc-700 z-50 overflow-hidden">
+                  <div className="fixed left-3 right-3 top-16 z-50 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-800 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80">
                     <div className="p-3 border-b border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900 flex justify-between items-center">
                       <h3 className="font-bold text-gray-800 dark:text-zinc-100 text-sm">Notificações</h3>
                       {unreadCount > 0 && (
@@ -707,7 +707,7 @@ export default function BarberDashboard() {
           )}
         </header>
 
-        <main className="mx-auto w-full max-w-[1600px] space-y-8 px-4 py-5 pb-20 sm:px-5 sm:py-6 lg:px-7 lg:py-7">
+        <main className="app-main-content mx-auto w-full max-w-[1600px] min-w-0 space-y-6 px-3 py-4 pb-20 sm:space-y-8 sm:px-5 sm:py-6 lg:px-6 xl:px-7 xl:py-7">
         <Suspense fallback={<AppLoadingState />}>
         {activeTab === "OVERVIEW" ? (
           <OverviewBarberDashboard />

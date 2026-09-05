@@ -104,8 +104,14 @@ html.dark {
     min-width: 320px;
     min-height: 100vh;
     margin: 0;
+    overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    min-width: 320px;
+    min-height: 100dvh;
   }
 
   button,
@@ -547,4 +553,113 @@ html.dark body.theme-dark-pure {
   --app-sidebar-bg: #080808;
   --app-header-bg: rgb(5 5 5 / 0.96);
   --app-panel-bg: #101010;
+}
+
+/* Base responsiva compartilhada por todos os módulos do aplicativo. */
+.app-main-content {
+  overflow-x: clip;
+}
+
+.app-main-content,
+.app-main-content > *,
+.app-main-content :where(section, article, form, fieldset) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app-main-content :where(img, video, canvas, svg) {
+  max-width: 100%;
+}
+
+.app-main-content .recharts-responsive-container,
+.app-main-content .recharts-wrapper,
+.app-main-content .recharts-surface {
+  max-width: 100% !important;
+}
+
+.app-main-content :where(.overflow-x-auto, .overflow-auto) {
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (pointer: coarse) {
+  .app-main-content :where(button, [role="button"], input, select, textarea),
+  .app-global-header :where(button, [role="button"], input, select) {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 1279px) {
+  .app-workspace {
+    width: 100%;
+  }
+
+  .app-main-content {
+    width: 100%;
+  }
+}
+
+@media (max-width: 639px) {
+  :root {
+    --app-radius: 14px;
+  }
+
+  .app-global-header {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .app-main-content {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-main-content > :where(div, section) {
+    min-width: 0;
+  }
+
+  .app-main-content :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+    min-width: 0;
+    max-width: 100%;
+    font-size: 16px;
+  }
+
+  .app-main-content :where(button, a, label, p, h1, h2, h3, h4, span) {
+    overflow-wrap: anywhere;
+  }
+
+  .app-main-content :where(td, th) {
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .app-main-content :where(.overflow-x-auto, .overflow-auto) {
+    scrollbar-width: thin;
+    scroll-snap-type: x proximity;
+  }
+
+  .app-main-content :where(table) {
+    font-size: 0.75rem;
+  }
+
+  .app-main-content :where(th, td) {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .app-main-content :where(.rounded-3xl) {
+    border-radius: 1rem;
+  }
+
+  .app-main-content :where(.gap-8) {
+    gap: 1rem;
+  }
+
+  .fixed.inset-0 {
+    padding: max(0.5rem, env(safe-area-inset-top, 0px)) 0.5rem max(0.5rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .fixed.inset-0 > :where(div, section, article) {
+    max-width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
 }

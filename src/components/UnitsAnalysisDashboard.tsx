@@ -191,6 +191,10 @@ function MiniChart({
     return value.toLocaleString("pt-BR");
   };
 
+  const mobileValues = data.map((item) => Number(item?.[dataKey]) || 0);
+  const mobileMaximum = Math.max(...mobileValues.map((value) => Math.abs(value)), 0);
+  const hasMobileData = mobileMaximum > 0;
+
   const chart = (expanded = false) => (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} margin={expanded ? { top: 18, right: 24, bottom: 12, left: 20 } : undefined}>
@@ -227,7 +231,13 @@ function MiniChart({
             return null;
           }}
         />
-        <Bar dataKey={dataKey} fill={color} radius={expanded ? [7, 7, 0, 0] : [2, 2, 0, 0]} maxBarSize={expanded ? 54 : undefined} />
+        <Bar
+          dataKey={dataKey}
+          fill={color}
+          radius={expanded ? [7, 7, 0, 0] : [2, 2, 0, 0]}
+          maxBarSize={expanded ? 54 : undefined}
+          isAnimationActive={false}
+        />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -255,7 +265,39 @@ function MiniChart({
           <Maximize2 className="h-3.5 w-3.5" />
         </span>
       </div>
-      <div className="w-full h-24">
+      <div className="flex h-28 w-full items-end sm:hidden">
+        {hasMobileData ? (
+          <div className="flex h-full w-full items-end gap-1" role="img" aria-label={`Gráfico mensal de ${name}`}>
+            {data.map((item, index) => {
+              const value = mobileValues[index];
+              const barHeight = value === 0 ? 0 : Math.max(5, Math.round((Math.abs(value) / mobileMaximum) * 100));
+              const monthLabel = String(item?.name || index + 1).slice(0, 1).toUpperCase();
+              return (
+                <span
+                  key={`${String(item?.name || index)}-${index}`}
+                  className="flex h-full min-w-0 flex-1 flex-col justify-end gap-1"
+                  title={`${String(item?.name || `Mês ${index + 1}`)}: ${formatValue(value)}`}
+                  aria-label={`${String(item?.name || `Mês ${index + 1}`)}: ${formatValue(value)}`}
+                >
+                  <span className="flex min-h-0 flex-1 items-end overflow-hidden rounded-t-sm bg-gray-200/55 dark:bg-black/20">
+                    <span
+                      className="block w-full rounded-t-sm"
+                      style={{ height: `${barHeight}%`, backgroundColor: color }}
+                    />
+                  </span>
+                  <span className="block text-center text-[8px] font-bold leading-none text-gray-400 dark:text-zinc-500">{monthLabel}</span>
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 text-center dark:border-zinc-700">
+            <BarChart2 className="mb-1.5 h-5 w-5 text-gray-300 dark:text-zinc-600" />
+            <span className="text-[10px] font-bold text-gray-400 dark:text-zinc-500">Sem dados neste período</span>
+          </div>
+        )}
+      </div>
+      <div className="hidden h-24 w-full sm:block">
         {chart()}
       </div>
     </div>
@@ -849,11 +891,11 @@ export function UnitsAnalysisDashboard() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:w-auto lg:flex-wrap lg:items-center">
           <select
             value={selectedUnitId}
             onChange={(e) => setSelectedUnitId(e.target.value)}
-            className={`${appControlClass} cursor-pointer`}
+            className={`${appControlClass} w-full cursor-pointer lg:w-auto`}
           >
             <option value="ALL">Todas as Unidades</option>
             {availableUnits.map((su) => (
@@ -866,7 +908,7 @@ export function UnitsAnalysisDashboard() {
           <select
             value={selectedMonthIdx}
             onChange={(e) => setSelectedMonthIdx(Number(e.target.value))}
-            className={`${appControlClass} cursor-pointer`}
+            className={`${appControlClass} w-full cursor-pointer lg:w-auto`}
           >
             {MONTH_NAMES.map((m, idx) => (
               <option key={idx} value={idx}>
@@ -875,7 +917,7 @@ export function UnitsAnalysisDashboard() {
             ))}
           </select>
 
-          <div className="flex items-center bg-gray-50 dark:bg-zinc-800 rounded-lg overflow-hidden border border-gray-200 dark:border-zinc-700">
+          <div className="flex w-full items-center justify-between overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-zinc-700 dark:bg-zinc-800 lg:w-auto">
             <button
               onClick={() => setSelectedYear((y) => y - 1)}
               className="p-2 hover:bg-gray-200 dark:hover:bg-zinc-700 transition-colors text-gray-600 dark:text-zinc-300"
@@ -893,11 +935,11 @@ export function UnitsAnalysisDashboard() {
             </button>
           </div>
 
-          <div className="relative">
+          <div className="relative w-full lg:w-auto">
             <button
               disabled={isSimulating}
               onClick={() => setIsShowingSimulateMenu(!isShowingSimulateMenu)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-black shadow-sm transition-all active:scale-95 cursor-pointer border select-none ${
+              className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-black shadow-sm transition-all active:scale-95 cursor-pointer select-none lg:w-auto ${
                 isSimulating
                   ? "bg-zinc-850 text-zinc-500 border-zinc-700 cursor-not-allowed"
                   : "bg-purple-600 hover:bg-purple-700 text-white border-purple-500"
@@ -908,7 +950,7 @@ export function UnitsAnalysisDashboard() {
             </button>
 
             {isShowingSimulateMenu && (
-              <div className="absolute right-0 mt-2 w-64 bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg z-50 py-2.5 font-sans animate-in fade-in slide-in-from-top-1 text-left">
+              <div className="absolute left-0 right-0 z-50 mt-2 rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 text-left font-sans shadow-lg animate-in fade-in slide-in-from-top-1 sm:left-auto sm:w-64">
                 <div className="px-3 py-1.5 border-b border-zinc-800 text-3xs font-bold text-zinc-500 uppercase tracking-widest">
                   Opções de Simulação
                 </div>
@@ -952,7 +994,7 @@ export function UnitsAnalysisDashboard() {
       </div>
 
       {activeTab === "BARBEARIA" ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
           <MiniChart
             data={monthRows}
             dataKey="faturamentoTotal"
@@ -995,7 +1037,7 @@ export function UnitsAnalysisDashboard() {
           />
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
           <MiniChart
             data={monthRows}
             dataKey="faturamentoAssinatura"
@@ -1398,7 +1440,7 @@ export function UnitsAnalysisDashboard() {
 
         {activeTab === "BARBEARIA" ? (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
               <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-gray-200 dark:border-zinc-800/80 shadow-sm">
                 <span className="text-2xs font-extrabold text-gray-400 dark:text-zinc-500 block mb-1 uppercase tracking-wider">
                   Fat. Total Anual
@@ -1518,7 +1560,7 @@ export function UnitsAnalysisDashboard() {
             )}
           </>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
             <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-gray-200 dark:border-zinc-800/80 shadow-sm">
               <span className="text-2xs font-extrabold text-gray-400 dark:text-zinc-500 block mb-1 uppercase tracking-wider">
                 Fat. Assinaturas

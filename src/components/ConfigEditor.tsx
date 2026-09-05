@@ -34,14 +34,14 @@ export function ConfigEditor() {
   ];
 
   return (
-    <div className="space-y-8 relative">
+    <div className="relative space-y-6 sm:space-y-8">
       <AppPageHeader
         eyebrow="Sistema"
         title="Configurações"
         description="Personalize a aparência e os padrões visuais utilizados em todas as áreas do aplicativo."
         icon={<Palette className="h-5 w-5" />}
       />
-      <section className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-xs border border-gray-150 dark:border-zinc-800/80 transition-colors">
+      <section className="rounded-2xl border border-gray-150 bg-white p-4 shadow-xs transition-colors dark:border-zinc-800/80 dark:bg-zinc-900 sm:p-6">
           <div className="flex items-center gap-2 border-b dark:border-zinc-800/80 pb-4 mb-6">
              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
                <Palette className="w-5 h-5" />
@@ -75,7 +75,7 @@ export function ConfigEditor() {
                      <button
                        key={bg.id}
                        onClick={() => setThemeLightBg(bg.id)}
-                       className={`px-4 py-2 rounded-lg border-2 transition-all text-sm font-medium ${themeLightBg === bg.id ? 'border-gray-900 text-gray-900 bg-gray-50' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                       className={`w-full rounded-lg border-2 px-4 py-2 text-sm font-medium transition-all sm:w-auto ${themeLightBg === bg.id ? 'border-gray-900 text-gray-900 bg-gray-50' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
                      >
                        {bg.label}
                      </button>
@@ -90,7 +90,7 @@ export function ConfigEditor() {
                      <button
                        key={bg.id}
                        onClick={() => setThemeDarkBg(bg.id)}
-                       className={`px-4 py-2 rounded-lg border-2 transition-all text-sm font-medium ${themeDarkBg === bg.id ? 'border-white text-white bg-zinc-800' : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'}`}
+                       className={`w-full rounded-lg border-2 px-4 py-2 text-sm font-medium transition-all sm:w-auto ${themeDarkBg === bg.id ? 'border-white text-white bg-zinc-800' : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'}`}
                      >
                        {bg.label}
                      </button>

@@ -45,7 +45,7 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50/40 via-gray-50 to-orange-50/30 p-4">
-          <div className="bg-white dark:bg-zinc-900 max-w-sm w-full p-8 rounded-3xl shadow-xl border border-gray-200/60 text-center">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200/60 bg-white p-5 text-center shadow-xl dark:bg-zinc-900 sm:rounded-3xl sm:p-8">
             <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className="w-8 h-8">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />

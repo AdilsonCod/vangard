@@ -976,12 +976,12 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
         title="Gestão financeira"
         description="Caixa, faturamento, contas, recebimentos e conciliações organizados por período."
         icon={<DollarSign className="h-5 w-5" />}
-        actions={<div className="flex items-center gap-2 overflow-x-auto app-scrollbar">
+        actions={<div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:overflow-x-auto app-scrollbar">
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
             aria-label="Mês financeiro"
-            className={`${appControlClass} shrink-0`}
+            className={`${appControlClass} min-w-0 w-full sm:w-auto sm:shrink-0`}
           >
             {Array.from({ length: 12 }, (_, i) => {
               const m = String(i + 1).padStart(2, "0");
@@ -996,7 +996,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
             aria-label="Ano financeiro"
-            className={`${appControlClass} shrink-0`}
+            className={`${appControlClass} min-w-0 w-full sm:w-auto sm:shrink-0`}
           >
             {[2024, 2025, 2026, 2027].map((y) => (
               <option key={y} value={y.toString()}>

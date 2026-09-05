@@ -316,8 +316,8 @@ export function ReceivablesReconciliation() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800 p-6 flex flex-col h-full">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex h-full flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:rounded-3xl sm:p-6">
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-xl font-black text-gray-900 dark:text-white flex items-center gap-2">
             <DollarSign className="w-6 h-6 text-emerald-500" />
@@ -328,37 +328,37 @@ export function ReceivablesReconciliation() {
           </p>
         </div>
         
-        <div className="flex flex-wrap gap-3 items-center justify-end">
-          <div className="flex items-center rounded-xl border border-gray-200 bg-gray-50 p-1 dark:border-zinc-700 dark:bg-zinc-800">
+        <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-auto lg:flex-wrap lg:items-center lg:justify-end">
+          <div className="flex w-full items-center rounded-xl border border-gray-200 bg-gray-50 p-1 dark:border-zinc-700 dark:bg-zinc-800 sm:col-span-2 lg:w-auto">
             <button
               type="button"
               onClick={() => setViewMode('BY_DATE')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black transition ${viewMode === 'BY_DATE' ? 'bg-white text-emerald-700 shadow-sm dark:bg-zinc-700 dark:text-emerald-300' : 'text-gray-500 dark:text-zinc-400'}`}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black transition ${viewMode === 'BY_DATE' ? 'bg-white text-emerald-700 shadow-sm dark:bg-zinc-700 dark:text-emerald-300' : 'text-gray-500 dark:text-zinc-400'}`}
             >
               <Layers className="h-4 w-4" /> Por data
             </button>
             <button
               type="button"
               onClick={() => setViewMode('DETAILED')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black transition ${viewMode === 'DETAILED' ? 'bg-white text-emerald-700 shadow-sm dark:bg-zinc-700 dark:text-emerald-300' : 'text-gray-500 dark:text-zinc-400'}`}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black transition ${viewMode === 'DETAILED' ? 'bg-white text-emerald-700 shadow-sm dark:bg-zinc-700 dark:text-emerald-300' : 'text-gray-500 dark:text-zinc-400'}`}
             >
               <List className="h-4 w-4" /> Detalhada
             </button>
           </div>
           <button
             onClick={() => setIsImportModalOpen(true)}
-            className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-xl px-4 py-2 text-sm font-bold hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-600 transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40 lg:w-auto"
           >
             <FileSpreadsheet className="w-4 h-4" />
             Importar Relatórios
           </button>
           
-          <div className="flex items-center gap-2 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl px-3 py-2">
+          <div className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800 lg:w-auto">
              <Filter className="w-4 h-4 text-gray-500" />
              <select 
                value={filterMethod}
                onChange={e => setFilterMethod(e.target.value)}
-               className="bg-transparent text-sm font-bold text-gray-700 dark:text-zinc-300 outline-none"
+               className="min-w-0 flex-1 bg-transparent text-sm font-bold text-gray-700 outline-none dark:text-zinc-300"
              >
                 <option value="ALL">Todos os Métodos</option>
                 <option value="PIX">Pix / Transferência</option>
@@ -371,7 +371,7 @@ export function ReceivablesReconciliation() {
           <button
             onClick={() => setIsModalOpen(true)}
             disabled={selectedIds.size === 0}
-            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 shadow-sm"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
           >
             <CheckSquare className="w-4 h-4" />
             Dar baixa nos selecionados ({selectedIds.size})
@@ -381,11 +381,11 @@ export function ReceivablesReconciliation() {
 
       {viewMode === 'BY_DATE' && (
         <div className="flex-1 overflow-auto rounded-xl border border-gray-200 dark:border-zinc-800">
-          <table className="w-full table-fixed text-left border-collapse">
+          <table className="w-full min-w-[900px] table-auto border-collapse text-left">
             <thead>
               <tr className="bg-gray-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700">
                 <th className="w-12 p-3 text-center"></th>
-                <th className="p-3 text-xs font-black text-gray-500 dark:text-zinc-400 uppercase">Data prevista</th>
+                <th className="min-w-32 p-3 text-xs font-black uppercase text-gray-500 dark:text-zinc-400">Data prevista</th>
                 <th className="w-32 p-3 text-center text-xs font-black text-gray-500 dark:text-zinc-400 uppercase">Pendentes</th>
                 <th className="w-48 p-3 text-right text-xs font-black text-gray-500 dark:text-zinc-400 uppercase">Total previsto</th>
                 <th className="w-44 p-3 text-center text-xs font-black text-gray-500 dark:text-zinc-400 uppercase">Situação</th>
@@ -498,7 +498,7 @@ export function ReceivablesReconciliation() {
 
       {viewMode === 'DETAILED' && (
       <div className="flex-1 overflow-auto rounded-xl border border-gray-200 dark:border-zinc-800">
-        <table className="w-full text-left border-collapse">
+        <table className="w-full min-w-[860px] border-collapse text-left">
           <thead>
             <tr className="bg-gray-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700">
               <th className="p-3 w-10 text-center">

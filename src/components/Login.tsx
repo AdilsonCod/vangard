@@ -23,12 +23,12 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-transparent p-4 relative overflow-hidden transition-all duration-500">
+    <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-transparent p-3 transition-all duration-500 sm:p-4">
       <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full bg-[var(--theme-color)]/10 dark:bg-[var(--theme-color)]/5 blur-3xl pointer-events-none" />
       <div className="absolute -bottom-45 -right-45 w-96 h-96 rounded-full bg-gray-600/20 dark:bg-gray-800/20 blur-3xl pointer-events-none" />
 
-      <div className="max-w-md w-full bg-white dark:bg-zinc-900 backdrop-blur-md p-8 rounded-3xl shadow-xl dark:shadow-2xl border border-gray-200 dark:border-zinc-800 relative z-10 transition-all duration-300">
-        <div className="absolute top-6 right-6">
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-xl backdrop-blur-md transition-all duration-300 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-2xl sm:rounded-3xl sm:p-8">
+        <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
             className="p-2.5 rounded-xl bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-600 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 transition-all active:scale-95 cursor-pointer flex items-center justify-center shadow-sm"
@@ -42,8 +42,8 @@ export default function Login() {
           </button>
         </div>
 
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-48 h-48 mb-4 flex items-center justify-center filter drop-shadow-lg transition-transform hover:scale-105 duration-350">
+        <div className="mb-6 flex flex-col items-center sm:mb-8">
+          <div className="mb-2 flex h-32 w-32 items-center justify-center filter drop-shadow-lg transition-transform duration-350 hover:scale-105 sm:mb-4 sm:h-48 sm:w-48">
             <img
               src="/logo-escura.png"
               alt="Logo Van's Management"

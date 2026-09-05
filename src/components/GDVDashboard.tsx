@@ -240,16 +240,16 @@ export function GDVDashboard() {
            </p>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 md:flex md:w-auto md:items-center md:gap-3">
           <button 
             onClick={openSettingsModal}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-700 text-gray-600 dark:text-zinc-300 font-bold rounded-xl transition cursor-pointer"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-100 px-4 py-2 font-bold text-gray-600 transition hover:bg-gray-100 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 md:w-auto"
           >
             <Settings className="w-4 h-4" />
             Configurar Objetivos
           </button>
           
-          <div className="flex items-center gap-3 bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 px-4 py-2 rounded-xl border border-gray-200 dark:border-zinc-800">
+          <div className="flex w-full items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-2 py-2 text-gray-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 sm:px-4 md:w-auto md:gap-3">
              <button onClick={handlePrevMonth} className="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg text-gray-500 dark:text-zinc-400 transition cursor-pointer">
                <ChevronLeft className="w-5 h-5" />
              </button>

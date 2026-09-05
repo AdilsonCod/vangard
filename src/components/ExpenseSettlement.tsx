@@ -222,19 +222,19 @@ export function ExpenseSettlement() {
             </h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-zinc-400">Boletos, compras de insumos, comissões e demais pagamentos agendados.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
+          <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-auto lg:flex-wrap lg:items-center">
+            <label className="flex min-w-0 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
               <Filter className="h-4 w-4 text-gray-400" />
-              <select value={filterUnit} onChange={event => setFilterUnit(event.target.value)} className="bg-transparent text-sm font-bold outline-none">
+              <select value={filterUnit} onChange={event => setFilterUnit(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-bold outline-none">
                 <option value="ALL">Todas as unidades</option>
                 {systemUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
               </select>
             </label>
-            <select value={filterCategory} onChange={event => setFilterCategory(event.target.value)} className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold dark:border-zinc-700 dark:bg-zinc-800">
+            <select value={filterCategory} onChange={event => setFilterCategory(event.target.value)} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold dark:border-zinc-700 dark:bg-zinc-800 lg:w-auto">
               <option value="ALL">Todas as categorias</option>
               {categories.map(category => <option key={category} value={category}>{category}</option>)}
             </select>
-            <button type="button" onClick={() => openSettlement()} disabled={selectedKeys.size === 0} className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-black text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={() => openSettlement()} disabled={selectedKeys.size === 0} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-black text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2 lg:w-auto">
               <CheckSquare className="h-4 w-4" /> Dar baixa ({selectedKeys.size})
             </button>
           </div>
@@ -262,7 +262,69 @@ export function ExpenseSettlement() {
           <h3 className="font-black text-gray-900 dark:text-white">Vencimentos agrupados por data</h3>
           <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">Abra uma data para conferir os detalhes ou faça a baixa do lote inteiro.</p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-gray-100 dark:divide-zinc-800 lg:hidden">
+          {groups.length === 0 ? (
+            <p className="px-5 py-12 text-center text-sm text-gray-500">Nenhuma despesa pendente ou agendada.</p>
+          ) : groups.map(group => {
+            const expanded = expandedDates.has(group.date);
+            const allSelected = group.items.every(item => selectedKeys.has(item.key));
+            const overdue = group.date < today;
+            return (
+              <article key={group.date} className="p-4">
+                <button type="button" onClick={() => toggleExpansion(group.date)} className="block w-full rounded-xl text-left" aria-expanded={expanded}>
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block whitespace-nowrap text-sm font-black text-gray-900 dark:text-white">{formatDate(group.date)}</span>
+                      <span className="mt-1 block text-xs text-gray-500">{group.items.length} {group.items.length === 1 ? 'despesa' : 'despesas'} neste lote</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${overdue ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'}`}>
+                        {overdue ? 'Vencido' : 'Programado'}
+                      </span>
+                      <ChevronDown className={`h-5 w-5 text-gray-400 transition ${expanded ? 'rotate-180' : ''}`} />
+                    </span>
+                  </span>
+                  <span className="mt-4 flex items-end justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2.5 dark:bg-zinc-800/60">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">Total do lote</span>
+                    <span className="whitespace-nowrap text-lg font-black text-red-600 dark:text-red-400">{formatCurrency(group.total)}</span>
+                  </span>
+                </button>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => toggleGroup(group.items)} className={`min-w-0 rounded-xl border px-3 py-2.5 text-xs font-black ${allSelected ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300' : 'border-gray-200 text-gray-600 dark:border-zinc-700 dark:text-zinc-300'}`}>
+                    {allSelected ? 'Selecionado' : 'Selecionar lote'}
+                  </button>
+                  <button type="button" onClick={() => openSettlement(group.items)} className="min-w-0 rounded-xl bg-red-600 px-3 py-2.5 text-xs font-black text-white hover:bg-red-700">Dar baixa</button>
+                </div>
+
+                {expanded && (
+                  <div className="mt-3 space-y-2 border-t border-gray-100 pt-3 dark:border-zinc-800">
+                    {group.items.map(expense => {
+                      const selected = selectedKeys.has(expense.key);
+                      const unitName = expense.unitId === 'ALL' ? 'Todas as unidades' : systemUnits.find(unit => unit.id === expense.unitId)?.name || expense.unitId;
+                      return (
+                        <button key={expense.key} type="button" onClick={() => toggleExpense(expense.key)} className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition ${selected ? 'border-red-300 bg-red-50/70 dark:border-red-900 dark:bg-red-950/20' : 'border-gray-100 bg-gray-50/60 dark:border-zinc-800 dark:bg-zinc-950/30'}`}>
+                          {selected ? <CheckSquare className="mt-0.5 h-4 w-4 shrink-0 text-red-500" /> : <Square className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />}
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-start gap-2 text-sm font-bold text-gray-900 dark:text-white">
+                              {expense.source === 'COMMISSION' ? <Scissors className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" /> : <ReceiptText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />}
+                              <span className="min-w-0 break-words">{expense.description}</span>
+                            </span>
+                            <span className="mt-1 block break-words text-[11px] text-gray-500">{expense.category}{expense.supplier ? ` · ${expense.supplier}` : ''}</span>
+                            <span className="mt-1 block break-words text-[11px] font-semibold text-gray-500 dark:text-zinc-400">{unitName}</span>
+                          </span>
+                          <span className="shrink-0 whitespace-nowrap text-sm font-black text-red-600 dark:text-red-400">{formatCurrency(expense.amount)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="hidden overflow-x-auto lg:block">
           <table className="w-full min-w-[760px] table-fixed text-left">
             <thead className="bg-gray-50 text-[10px] font-black uppercase tracking-wider text-gray-500 dark:bg-zinc-800/60 dark:text-zinc-400">
               <tr>
@@ -366,9 +428,9 @@ export function ExpenseSettlement() {
               </div>
               <p className="flex items-start gap-2 text-xs text-gray-500 dark:text-zinc-400"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" /> As despesas serão marcadas como pagas e registradas no Caixa na data informada.</p>
             </div>
-            <div className="flex gap-3 border-t border-gray-200 bg-gray-50/50 p-5 dark:border-zinc-800 dark:bg-zinc-800/30">
-              <button type="button" onClick={() => setIsSettlementOpen(false)} className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold dark:border-zinc-700">Cancelar</button>
-              <button type="button" onClick={handleSettlement} disabled={isSaving} className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-black text-white hover:bg-red-700 disabled:opacity-50">{isSaving ? 'Salvando...' : 'Confirmar baixa'}</button>
+            <div className="flex flex-col-reverse gap-3 border-t border-gray-200 bg-gray-50/50 p-5 dark:border-zinc-800 dark:bg-zinc-800/30 sm:flex-row">
+              <button type="button" onClick={() => setIsSettlementOpen(false)} className="w-full flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold dark:border-zinc-700">Cancelar</button>
+              <button type="button" onClick={handleSettlement} disabled={isSaving} className="w-full flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-black text-white hover:bg-red-700 disabled:opacity-50">{isSaving ? 'Salvando...' : 'Confirmar baixa'}</button>
             </div>
           </div>
         </div>

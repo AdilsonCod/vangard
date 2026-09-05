@@ -257,17 +257,17 @@ export function BankReconciliation() {
   };
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-gray-100 dark:border-zinc-800 p-6 flex flex-col h-full">
-      <div className="flex justify-between items-center mb-6">
+    <div className="flex h-full flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:rounded-3xl sm:p-6">
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-xl font-black text-gray-900 dark:text-white">Conciliação Bancária</h2>
           <p className="text-sm text-gray-500 dark:text-zinc-400">Importe arquivos .OFX ou .CSV do seu banco</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-auto lg:items-center lg:gap-3">
           <select 
             value={selectedAccount}
             onChange={e => setSelectedAccount(e.target.value)}
-            className="border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white rounded-xl p-2.5 text-sm font-bold shadow-sm"
+            className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-sm font-bold text-gray-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-white sm:col-span-2 lg:w-auto"
           >
             <option value="">-- Selecione a Conta de Destino --</option>
             {financialCategories.map(c => (
@@ -285,7 +285,7 @@ export function BankReconciliation() {
           {parsedTransactions.length > 0 && Array.from(importedIds).length < parsedTransactions.length && (
             <button 
               onClick={handleAutoConciliate}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 shadow-sm"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 lg:w-auto"
               title="Conciliar Automaticamente correspondências exatas"
             >
               <Wand2 className="w-4 h-4" />
@@ -294,7 +294,7 @@ export function BankReconciliation() {
           )}
           <button 
             onClick={() => fileInputRef.current?.click()}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 shadow-sm"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 lg:w-auto"
           >
             <UploadCloud className="w-4 h-4" />
             Subir Arquivo
@@ -322,7 +322,7 @@ export function BankReconciliation() {
         </div>
       ) : (
         <div className="flex-1 overflow-auto rounded-xl border border-gray-200 dark:border-zinc-800">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full min-w-[680px] border-collapse text-left">
             <thead>
               <tr className="bg-gray-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700">
                 <th className="p-3 text-xs font-black text-gray-500 dark:text-zinc-400 uppercase">Data</th>

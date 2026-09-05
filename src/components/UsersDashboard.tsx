@@ -249,7 +249,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
       />
       {/* Dynamic Animated Toast */}
       {toast && (
-        <div className="fixed top-24 right-6 z-50 flex items-center gap-3 bg-white dark:bg-zinc-800 border border-gray-150 dark:border-zinc-700/80 p-4 rounded-xl shadow-xl max-w-sm transition-all duration-300 transform translate-x-0 animate-bounce">
+        <div className="fixed left-3 right-3 top-20 z-50 flex max-w-sm items-center gap-3 rounded-xl border border-gray-150 bg-white p-4 shadow-xl transition-all duration-300 animate-bounce dark:border-zinc-700/80 dark:bg-zinc-800 sm:left-auto sm:right-6 sm:top-24">
           <CheckCircle2 className={`w-5 h-5 ${toast.type === 'error' ? 'text-red-500' : toast.type === 'info' ? 'text-[var(--theme-color)]' : 'text-emerald-500'}`} />
           <span className="text-sm font-semibold text-gray-800 dark:text-zinc-100">{toast.message}</span>
         </div>
@@ -295,7 +295,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
       
 
       {subTab === 'UNITS' && (
-        <section className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-xs border border-gray-150 dark:border-zinc-800/80 transition-colors animate-in fade-in duration-200">
+        <section className="rounded-2xl border border-gray-150 bg-white p-4 shadow-xs transition-colors animate-in fade-in duration-200 dark:border-zinc-800/80 dark:bg-zinc-900 sm:p-6">
           <div className="flex items-center justify-between border-b dark:border-zinc-800/80 pb-4 mb-6">
              <div className="flex items-center gap-2">
                <Building className="w-5 h-5 text-gray-500 dark:text-zinc-400" />
@@ -335,7 +335,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
 
           <div className="border border-gray-200 dark:border-zinc-800 rounded-xl overflow-hidden mt-6">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
+              <table className="w-full min-w-[520px] text-left text-sm">
                  <thead className="bg-gray-50 dark:bg-zinc-850 border-b dark:border-zinc-800 text-gray-600 dark:text-zinc-400">
                     <tr>
                       <th className="px-4 py-3 font-semibold">ID</th>
@@ -377,7 +377,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
       )}
 
       {(subTab === 'BARBERS' || subTab === 'MANAGERS') && (
-        <section className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-xs border border-gray-150 dark:border-zinc-800/80 transition-colors animate-in fade-in duration-200">
+        <section className="rounded-2xl border border-gray-150 bg-white p-4 shadow-xs transition-colors animate-in fade-in duration-200 dark:border-zinc-800/80 dark:bg-zinc-900 sm:p-6">
           <div className="flex items-center justify-between border-b dark:border-zinc-800/80 pb-4 mb-6">
              <div className="flex items-center gap-2">
                <UserPlus className="w-5 h-5 text-gray-500 dark:text-zinc-400" />

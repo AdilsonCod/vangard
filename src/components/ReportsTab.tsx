@@ -739,9 +739,9 @@ export function ReportsTab() {
         title="Relatórios financeiros"
         description="Faturamento por serviços, produtos e assinaturas, com visualização consolidada ou semanal."
         icon={<FileText className="h-5 w-5" />}
-        actions={<div className="flex w-full flex-wrap items-center gap-2 xl:w-auto">
+        actions={<div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:flex xl:w-auto xl:flex-wrap xl:items-center">
           {/* Monthly navigation */}
-          <div className="flex items-center justify-between bg-gray-50 dark:bg-zinc-800 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700 h-[42px] min-w-[210px] sm:min-w-0">
+          <div className="flex h-[42px] w-full min-w-0 items-center justify-between overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-zinc-700 dark:bg-zinc-800 xl:w-auto xl:min-w-[210px]">
             <button onClick={handlePrevMonth} className="px-3 h-full hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
               <ChevronLeft className="w-4 h-4 text-gray-600 dark:text-zinc-300" />
             </button>
@@ -754,7 +754,7 @@ export function ReportsTab() {
           </div>
 
           {/* Unit selection */}
-          <div className="relative min-w-[150px]">
+          <div className="relative w-full min-w-0 xl:w-auto xl:min-w-[150px]">
             <select 
               value={selectedUnit}
               onChange={(e) => {
@@ -785,7 +785,7 @@ export function ReportsTab() {
                 }
               }}
               disabled={isSaving}
-              className={`h-[42px] px-4 rounded-xl text-xs font-extrabold shadow-sm transition flex items-center gap-2 cursor-pointer ${
+              className={`flex h-[42px] w-full items-center justify-center gap-2 rounded-xl px-4 text-xs font-extrabold shadow-sm transition cursor-pointer xl:w-auto ${
                 isEditing 
                   ? "bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse" 
                   : "bg-orange-500 hover:bg-orange-600 text-white"
@@ -815,7 +815,7 @@ export function ReportsTab() {
                 setFormClientsServed(weekOver.clientsServed || 0);
                 setFormCourtesy(weekOver.courtesyCommissionTotal || 0);
               }}
-              className="h-[42px] px-3 bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 rounded-xl text-xs font-extrabold flex items-center gap-1 transition"
+              className="flex h-[42px] w-full items-center justify-center gap-1 rounded-xl bg-gray-100 px-3 text-xs font-extrabold text-gray-700 transition hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 xl:w-auto"
             >
               <X className="w-4 h-4" /> Cancelar
             </button>
@@ -825,7 +825,7 @@ export function ReportsTab() {
           <button
             onClick={handleDownloadPDF}
             disabled={isGeneratingPdf || isEditing}
-            className={`h-[42px] px-4 rounded-xl text-xs font-extrabold shadow-sm transition flex items-center gap-2 cursor-pointer border ${
+            className={`flex h-[42px] w-full items-center justify-center gap-2 rounded-xl border px-4 text-xs font-extrabold shadow-sm transition cursor-pointer xl:w-auto ${
               isGeneratingPdf 
                 ? "bg-zinc-100 dark:bg-zinc-800 text-gray-400 border-zinc-200 dark:border-zinc-700" 
                 : "bg-gray-800 hover:bg-gray-700 dark:bg-zinc-800 dark:hover:bg-zinc-750 text-gray-900 dark:text-zinc-100 border-zinc-700 dark:border-zinc-600"
