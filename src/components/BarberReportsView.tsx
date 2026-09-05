@@ -63,7 +63,7 @@ export function BarberReportsView() {
 
   return (
     <div className="space-y-6 animate-in fade-in">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+      <div className="app-themed-panel flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-4 sm:p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
         <div>
            <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
              <FileSearch className="w-6 h-6 text-indigo-500" />
@@ -88,7 +88,7 @@ export function BarberReportsView() {
       </div>
 
       {!currentStats ? (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 p-12 flex flex-col items-center justify-center text-center shadow-sm">
+        <div className="app-themed-panel bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 p-6 sm:p-12 flex flex-col items-center justify-center text-center shadow-sm">
            <div className="w-16 h-16 bg-gray-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-4 text-gray-400 dark:text-zinc-500">
              <HelpCircle className="w-8 h-8" />
            </div>
@@ -98,7 +98,7 @@ export function BarberReportsView() {
            </p>
         </div>
       ) : (
-        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+        <div className="app-themed-panel bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
           {(() => {
             const fatAssinatura = currentStats.faturamentoAssinatura || 0;
             const fatAvulso = currentStats.faturamentoAvulso !== undefined

@@ -121,7 +121,7 @@ export function BarberAnnouncementsView() {
   return (
     <div className="space-y-6 animate-in fade-in duration-305">
       {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+      <div className="app-themed-panel flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-xl">
             <Megaphone className="w-6 h-6 animate-bounce" />
@@ -148,7 +148,7 @@ export function BarberAnnouncementsView() {
       </div>
 
       {/* FILTER & SEARCH CONTROLS */}
-      <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row gap-3 items-center">
+      <div className="app-themed-panel bg-white dark:bg-zinc-900 p-4 rounded-xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row gap-3 items-center">
         {/* Search Input */}
         <div className="relative w-full sm:flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-zinc-500" />

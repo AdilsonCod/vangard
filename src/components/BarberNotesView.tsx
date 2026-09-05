@@ -31,7 +31,7 @@ export function BarberNotesView() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex justify-between items-center bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800">
+      <div className="app-themed-panel flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 bg-[var(--theme-color)]/10 rounded-xl flex items-center justify-center">
             <Edit3 className="w-6 h-6 text-[var(--theme-color)]" />
@@ -64,7 +64,7 @@ export function BarberNotesView() {
         </button>
       </div>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 p-6">
+      <div className="app-themed-panel bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 p-4 sm:p-6">
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}

@@ -13,21 +13,22 @@ export function BarberPaymentsView() {
 
   return (
     <div className="space-y-6">
-       <div className="flex items-center gap-2 mb-6">
-          <DollarSign className="w-6 h-6 text-green-600" />
-          <h2 className="text-xl font-bold text-gray-900">Meus Pagamentos</h2>
+       <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--theme-color)]">Resultados</p>
+          <h1 className="mt-1 flex items-center gap-2 text-2xl font-black tracking-tight text-gray-950 dark:text-white"><DollarSign className="h-5 w-5 text-emerald-500" /> Meus pagamentos</h1>
+          <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">Consulte comissões, descontos e o histórico dos seus pagamentos.</p>
        </div>
 
        {myPayments.length === 0 ? (
-          <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-gray-100 p-8 text-center text-gray-500">
+          <div className="app-themed-panel bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 p-8 text-center text-gray-500">
              Nenhum pagamento registrado no seu histórico.
           </div>
        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
              {myPayments.map(p => (
-                <div key={p.id} className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+                <div key={p.id} className="app-themed-panel bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 overflow-hidden flex flex-col">
                    <div className="bg-gray-50 dark:bg-zinc-800 p-4 border-b dark:border-zinc-800 flex justify-between items-center">
-                      <div className="font-bold text-gray-900 flex items-center gap-2">
+                      <div className="font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-gray-500"/> {p.date}
                       </div>
                       <div>
@@ -77,7 +78,7 @@ export function BarberPaymentsView() {
                             <div className="grid grid-cols-2 gap-2">
                               {p.potData.map(pot => (pot.quantity > 0 || pot.tokens > 0) && (
                                  <div key={pot.id} className="text-xs">
-                                    <span className="text-gray-500">{pot.name}:</span> <span className="font-bold text-gray-800">{pot.quantity} un.</span>
+                                    <span className="text-gray-500 dark:text-zinc-400">{pot.name}:</span> <span className="font-bold text-gray-800 dark:text-zinc-100">{pot.quantity} un.</span>
                                     {pot.tokens > 0 && <span className="text-gray-400 ml-1">({pot.tokens} fichas)</span>}
                                  </div>
                               ))}
@@ -87,8 +88,8 @@ export function BarberPaymentsView() {
                    </div>
                    
                    <div className="bg-blue-50 dark:bg-zinc-800 border-t dark:border-zinc-700 p-4 flex justify-between items-center rounded-b-2xl">
-                      <span className="text-blue-900 font-bold uppercase text-xs">Total a Receber</span> 
-                      <b className="text-blue-700 text-lg">R$ {p.amountToBePaid.toFixed(2)}</b>
+                      <span className="text-gray-700 dark:text-zinc-300 font-bold uppercase text-xs">Total a Receber</span>
+                      <b className="text-[var(--theme-color)] text-lg">R$ {p.amountToBePaid.toFixed(2)}</b>
                    </div>
                 </div>
              ))}

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { Target, TrendingUp, Calendar, ChevronLeft, ChevronRight, Award, CircleDollarSign, Megaphone, Percent, ShoppingBag, Sparkles, Smile } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, YAxis, Cell } from 'recharts';
+import { appControlClass, cn } from './ui/AppPrimitives';
 
 export function OverviewBarberDashboard() {
   const { currentUser, entries, catalog, monthlyBarberStats, announcements, targets } = useStore();
@@ -163,6 +164,25 @@ export function OverviewBarberDashboard() {
 
   return (
     <div className="space-y-6 animate-in fade-in">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--theme-color)]">Painel profissional</p>
+          <h1 className="mt-1 text-2xl font-black tracking-tight text-gray-950 dark:text-white">Meu desempenho</h1>
+          <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">Acompanhe resultados, objetivos e oportunidades do seu período.</p>
+        </div>
+        <div className={cn(appControlClass, "flex items-center overflow-hidden p-0")}>
+          <button onClick={handlePrevMonth} aria-label="Mês anterior" className="px-3 py-2.5 transition hover:bg-gray-200 dark:hover:bg-zinc-700">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <div className="min-w-[150px] px-3 py-2 text-center text-sm font-black">
+            {MONTH_NAMES[parseInt(selectedMonth) - 1]} {selectedYear}
+          </div>
+          <button onClick={handleNextMonth} aria-label="Próximo mês" className="px-3 py-2.5 transition hover:bg-gray-200 dark:hover:bg-zinc-700">
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+
       {/* 📢 QUADRO DE AVISOS DO MURAL DO ADMINISTRADOR */}
       {relevantAnnouncements.length > 0 && (
         <div className="bg-amber-50 dark:bg-amber-955/20 border border-amber-200 dark:border-amber-800/30 p-5 rounded-2xl relative overflow-hidden shadow-xs">
@@ -206,56 +226,32 @@ export function OverviewBarberDashboard() {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
-        <div>
-           <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
-             <Target className="w-6 h-6 text-[var(--theme-color)]" />
-             Seu Desempenho
-           </h2>
-           <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1">
-             Resumo do seu faturamento e serviços no período selecionado.
-           </p>
-        </div>
-        
-        <div className="flex items-center bg-gray-50 dark:bg-zinc-800 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700">
-           <button onClick={handlePrevMonth} className="px-3 py-2 hover:bg-gray-200 dark:hover:bg-zinc-700 transition">
-             <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-zinc-300" />
-           </button>
-           <div className="px-4 py-2 font-bold text-gray-800 dark:text-zinc-100 min-w-[140px] text-center select-none">
-             {MONTH_NAMES[parseInt(selectedMonth) - 1]} / {selectedYear}
-           </div>
-           <button onClick={handleNextMonth} className="px-3 py-2 hover:bg-gray-200 dark:hover:bg-zinc-700 transition">
-             <ChevronRight className="w-5 h-5 text-gray-600 dark:text-zinc-300" />
-           </button>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+        <div className="app-themed-panel min-h-[120px] bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
            <span className="block text-2xs font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-1">Fat. Total (Avulso + Assin.)</span>
            <span className="text-2xl font-black text-gray-800 dark:text-zinc-100 font-mono">
              {(currentStats?.faturamentoTotal || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
            </span>
         </div>
-        <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+        <div className="app-themed-panel min-h-[120px] bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
            <span className="block text-2xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">Fat. Avulso</span>
            <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
              {(currentStats?.faturamentoAvulso || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
            </span>
         </div>
-        <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+        <div className="app-themed-panel min-h-[120px] bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
            <span className="block text-2xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-1">Fat. Assinaturas</span>
            <span className="text-2xl font-black text-purple-600 dark:text-purple-400 font-mono">
              {(currentStats?.faturamentoAssinatura || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
            </span>
         </div>
-        <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+        <div className="app-themed-panel min-h-[120px] bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
            <span className="block text-2xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-1">Clientes Atendidos</span>
            <span className="text-2xl font-black text-blue-600 dark:text-blue-400 font-mono">
              {currentStats?.clientesAtendidos || 0} un
            </span>
         </div>
-        <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+        <div className="app-themed-panel min-h-[120px] bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
            <span className="block text-2xs font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider mb-1">Produtos (Qtd)</span>
            <span className="text-2xl font-black text-orange-600 dark:text-orange-400 font-mono">
              {currentStats?.vendasProdutosQtd || 0} un
@@ -264,7 +260,7 @@ export function OverviewBarberDashboard() {
       </div>
 
       {/* SEÇÃO DE AUTOGESTÃO: INDICADORES INTELECTUAIS E DE DESEMPENHO */}
-      <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm animate-in fade-in duration-300">
+      <div className="app-themed-panel bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm animate-in fade-in duration-300">
          <div className="flex items-center gap-2 mb-5">
             <Sparkles className="w-5 h-5 text-amber-500" />
             <span className="text-xs font-extrabold uppercase tracking-widest text-gray-500 dark:text-zinc-400">📊 Suas Métricas de Autogestão (Foco em Alta Performance)</span>
@@ -318,7 +314,7 @@ export function OverviewBarberDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-         <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col min-h-[350px]">
+         <div className="app-themed-panel bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col min-h-[320px]">
            <h3 className="text-sm font-bold uppercase text-gray-500 dark:text-zinc-400 flex items-center gap-2 mb-6">
              <CircleDollarSign className="w-5 h-5 text-green-500" />
              Raio-x do Faturamento
@@ -330,7 +326,7 @@ export function OverviewBarberDashboard() {
                     <XAxis dataKey="name" tick={{fontSize: 12, fill: '#888'}} axisLine={false} tickLine={false} />
                     <YAxis tickFormatter={(v) => `R$ ${v}`} tick={{fontSize: 11, fill: '#888'}} axisLine={false} tickLine={false} />
                     <Tooltip cursor={{fill: 'rgba(0,0,0,0.05)'}} formatter={(v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48}>
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48} isAnimationActive={false}>
                        {totalsData.map((entry, index) => (
                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                        ))}
@@ -341,7 +337,7 @@ export function OverviewBarberDashboard() {
            ) : <div className="text-center py-6 text-gray-400 dark:text-zinc-500 text-sm flex-1 flex items-center justify-center">Sem faturamento no período</div>}
          </div>
 
-         <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col min-h-[350px]">
+         <div className="app-themed-panel bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col min-h-[320px]">
            <h3 className="text-sm font-bold uppercase text-gray-500 dark:text-zinc-400 flex items-center gap-2 mb-6">
              <Award className="w-5 h-5 text-amber-500" />
              Top Serviços Extras
@@ -353,7 +349,7 @@ export function OverviewBarberDashboard() {
                     <XAxis type="number" hide />
                     <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#888'}} />
                     <Tooltip cursor={{fill: 'rgba(0,0,0,0.05)'}} formatter={(v: number) => [v + ' unid.', 'Qtd']} />
-                    <Bar dataKey="quantity" radius={[0, 4, 4, 0]} maxBarSize={32}>
+                    <Bar dataKey="quantity" radius={[0, 4, 4, 0]} maxBarSize={32} isAnimationActive={false}>
                        {extraServicesData.map((entry, index) => (
                          <Cell key={`cell-${index}`} fill={COLORS[(index + 2) % COLORS.length]} />
                        ))}

@@ -268,7 +268,7 @@ export function BarberRankingsView() {
     const hasData = data.length > 0;
 
     return (
-      <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+      <div className="app-themed-panel bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-6 shadow-sm flex flex-col justify-between">
         <div>
           <div className="flex items-center gap-2 mb-6 border-b pb-4 border-gray-100 dark:border-zinc-800">
             <div
@@ -400,7 +400,7 @@ export function BarberRankingsView() {
   return (
     <div className="space-y-6">
       {/* Month Selection Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-center bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-800 gap-4 shadow-sm">
+      <div className="app-themed-panel flex flex-col sm:flex-row justify-between items-center bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-800 gap-4 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="bg-amber-500/10 text-amber-500 p-2.5 rounded-xl">
             <Trophy className="w-5 h-5" />

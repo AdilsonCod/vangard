@@ -35,7 +35,7 @@ export function BarberSettingsView() {
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Configurações</h2>
       </div>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-800 overflow-hidden">
+      <div className="app-themed-panel bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-800 overflow-hidden">
         <div className="p-4 border-b border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 flex items-center gap-2 font-bold text-gray-700 dark:text-gray-300">
           <User className="w-4 h-4" /> Perfil
         </div>
@@ -63,7 +63,7 @@ export function BarberSettingsView() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-800 overflow-hidden">
+      <div className="app-themed-panel bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-800 overflow-hidden">
         <div className="p-4 border-b border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 flex items-center gap-2 font-bold text-gray-700 dark:text-gray-300">
           <Palette className="w-4 h-4" /> Personalização
         </div>

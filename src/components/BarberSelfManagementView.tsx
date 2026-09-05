@@ -287,21 +287,21 @@ export function BarberSelfManagementView() {
   return (
     <div className="space-y-8 animate-in fade-in duration-300 pb-12">
       {/* TOP CONTROLS & NAVIGATOR BAR */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-950/90 border border-zinc-800/80 p-4 rounded-2xl shadow-xl backdrop-blur-md">
+      <div className="app-themed-panel flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 p-4 rounded-2xl shadow-sm backdrop-blur-md">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-amber-500/10 text-amber-500 rounded-xl border border-amber-500/20">
             <Target className="w-6 h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black text-white uppercase tracking-wider">
+              <h2 className="text-lg font-black text-gray-950 dark:text-white uppercase tracking-wider">
                 Autogestão & Performance Estratégica
               </h2>
               <span className="px-2 py-0.5 text-[10px] font-black uppercase rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
                 PROJEÇÃO INTELIGENTE
               </span>
             </div>
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-gray-500 dark:text-zinc-400">
               Planejamento e metas do profissional • {months[parseInt(selectedMonth) - 1]} de {selectedYear}
             </p>
           </div>
@@ -309,20 +309,20 @@ export function BarberSelfManagementView() {
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Month Selector */}
-          <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 p-1 rounded-xl">
+          <div className="flex items-center gap-2 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 p-1 rounded-xl">
             <button
               onClick={handlePrevMonth}
-              className="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors"
+              className="p-1.5 hover:bg-gray-200 dark:hover:bg-zinc-700 rounded-lg text-gray-500 dark:text-zinc-400 hover:text-gray-950 dark:hover:text-white transition-colors"
               title="Mês anterior"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-xs font-bold text-zinc-200 min-w-[110px] text-center capitalize">
+            <span className="text-xs font-bold text-gray-800 dark:text-zinc-200 min-w-[110px] text-center capitalize">
               {months[parseInt(selectedMonth) - 1]} {selectedYear}
             </span>
             <button
               onClick={handleNextMonth}
-              className="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors"
+              className="p-1.5 hover:bg-gray-200 dark:hover:bg-zinc-700 rounded-lg text-gray-500 dark:text-zinc-400 hover:text-gray-950 dark:hover:text-white transition-colors"
               title="Próximo mês"
             >
               <ChevronRight className="w-4 h-4" />
@@ -332,7 +332,7 @@ export function BarberSelfManagementView() {
           {/* Quick Target Config Toggle */}
           <button
             onClick={() => setShowGoalConfig(!showGoalConfig)}
-            className="flex items-center gap-2 px-3 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-xs font-bold text-zinc-200 rounded-xl transition-all shadow-sm"
+            className="flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700 text-xs font-bold text-gray-700 dark:text-zinc-200 rounded-xl transition-all shadow-sm"
           >
             <SlidersHorizontal className="w-4 h-4 text-amber-400" />
             <span>Ajustar Meta</span>

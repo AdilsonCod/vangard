@@ -151,6 +151,15 @@ html.dark {
     background-color: var(--app-panel-bg) !important;
   }
 
+  /* Mantém as telas legadas da área profissional sincronizadas com o tema global. */
+  html.dark .professional-main-content [class~="dark:bg-zinc-900"] {
+    background-color: var(--app-panel-bg) !important;
+  }
+
+  html.dark .professional-main-content [class~="dark:bg-zinc-800"] {
+    background-color: color-mix(in srgb, var(--app-panel-bg) 96%, white 4%) !important;
+  }
+
   .app-surface {
     border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
     border-radius: var(--app-radius);
