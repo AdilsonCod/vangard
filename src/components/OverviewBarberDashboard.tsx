@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { useStore } from '../store';
-import { Target, TrendingUp, Calendar, ChevronLeft, ChevronRight, Award, CircleDollarSign, Megaphone, Percent, ShoppingBag, Sparkles, Smile } from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, YAxis, Cell } from 'recharts';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { appControlClass, cn } from './ui/AppPrimitives';
+import { useProfessionalGoal } from './useProfessionalGoal';
 
-export function OverviewBarberDashboard() {
-  const { currentUser, entries, catalog, monthlyBarberStats, announcements, targets } = useStore();
+export function OverviewBarberDashboard({ onNavigate }: { onNavigate: (page: 'AUTOGESTAO' | 'PAGAMENTOS' | 'METAS' | 'AVISOS') => void }) {
+  const { currentUser, entries, catalog, monthlyBarberStats, announcements, payments } = useStore();
+  const [goal] = useProfessionalGoal(currentUser?.id);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1).padStart(2, '0'));
   
@@ -113,7 +114,6 @@ export function OverviewBarberDashboard() {
 
   }, [entries, currentUser, monthStr, catalog, monthlyBarberStats]);
 
-  const COLORS = ["var(--theme-500)", "var(--theme-400)", "var(--theme-600)", "var(--theme-300)", "var(--theme-700)", "var(--theme-200)"];
 
   const MONTH_NAMES = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -162,205 +162,132 @@ export function OverviewBarberDashboard() {
     }).sort((a, b) => b.quantity - a.quantity).slice(0, 5); // top 5
   }, [currentStats, extrasCatalog]);
 
+  const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const periodEntries = entries.filter(entry => entry.userId === currentUser?.id && entry.date.startsWith(monthStr));
+  const periodStats = monthlyBarberStats?.find(stat => stat.barberId === currentUser?.id && stat.month === monthStr);
+  const hasProduction = periodEntries.length > 0 || Boolean(periodStats);
+  const myPayments = payments.filter(payment => payment.userId === currentUser?.id);
+  const periodPayments = myPayments.filter(payment => payment.date.startsWith(monthStr));
+  const isPaid = (payment: typeof myPayments[number]) => payment.status === 'PAGO' || (!payment.status && payment.isPaid);
+  const nextPayment = myPayments.filter(payment => !isPaid(payment)).sort((a, b) => a.date.localeCompare(b.date))[0];
+  const commission = periodPayments.length
+    ? periodPayments.reduce((sum, payment) => sum + (payment.commissionAvulso || 0) + (payment.commissionProductGeneral || 0) + (payment.commissionProductAvant || 0) + (payment.commissionSubscriptions || 0), 0)
+    : periodStats?.comissao;
+  const remaining = Math.max(0, goal - (commission ?? 0));
+  const progress = goal > 0 && commission !== undefined ? Math.max(0, Math.min(100, commission / goal * 100)) : 0;
+  const today = new Date();
+  const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const calendarDays = monthStr < currentPeriod ? 0 : new Date(selectedYear, Number(selectedMonth), 0).getDate() - (monthStr === currentPeriod ? today.getDate() - 1 : 0);
+  const [plannedDays, setPlannedDays] = useState<Record<string, number>>({});
+  const daysLeft = plannedDays[monthStr] ?? calendarDays;
+  const panel = 'app-themed-panel min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 dark:border-zinc-800 dark:bg-zinc-900';
+  const dateLabel = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date) ? date.split('-').reverse().join('/') : 'Data não informada';
+
   return (
-    <div className="space-y-6 animate-in fade-in">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="space-y-5 text-gray-900 dark:text-zinc-100">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--theme-color)]">Painel profissional</p>
-          <h1 className="mt-1 text-2xl font-black tracking-tight text-gray-950 dark:text-white">Meu desempenho</h1>
-          <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">Acompanhe resultados, objetivos e oportunidades do seu período.</p>
+          <p className="text-xs font-bold text-[var(--theme-color)]">Painel profissional</p>
+          <h1 className="text-2xl font-black">Meu desempenho</h1>
+          <p className="mt-1 text-sm text-gray-600 dark:text-zinc-400">Produção, pagamentos e próximos passos.</p>
         </div>
-        <div className={cn(appControlClass, "flex items-center overflow-hidden p-0")}>
-          <button onClick={handlePrevMonth} aria-label="Mês anterior" className="px-3 py-2.5 transition hover:bg-gray-200 dark:hover:bg-zinc-700">
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <div className="min-w-[150px] px-3 py-2 text-center text-sm font-black">
-            {MONTH_NAMES[parseInt(selectedMonth) - 1]} {selectedYear}
-          </div>
-          <button onClick={handleNextMonth} aria-label="Próximo mês" className="px-3 py-2.5 transition hover:bg-gray-200 dark:hover:bg-zinc-700">
-            <ChevronRight className="h-5 w-5" />
-          </button>
+        <div className={cn(appControlClass, 'flex items-center justify-between p-0')}>
+          <button onClick={handlePrevMonth} aria-label="Mês anterior" className="p-3"><ChevronLeft size={20} /></button>
+          <span className="text-sm font-bold">{MONTH_NAMES[Number(selectedMonth) - 1]} {selectedYear}</span>
+          <button onClick={handleNextMonth} aria-label="Próximo mês" className="p-3"><ChevronRight size={20} /></button>
         </div>
       </div>
 
-      {/* 📢 QUADRO DE AVISOS DO MURAL DO ADMINISTRADOR */}
-      {relevantAnnouncements.length > 0 && (
-        <div className="bg-amber-50 dark:bg-amber-955/20 border border-amber-200 dark:border-amber-800/30 p-5 rounded-2xl relative overflow-hidden shadow-xs">
-          <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 opacity-5 pointer-events-none">
-            <Megaphone className="w-48 h-48 -rotate-12 text-amber-500" />
-          </div>
-          <div className="flex items-center gap-2 text-amber-850 dark:text-amber-400 font-bold mb-3 border-b border-amber-100 dark:border-amber-850/30 pb-2">
-            <Megaphone className="w-5 h-5 text-amber-600 dark:text-amber-550 animate-bounce" />
-            <span className="text-xs uppercase tracking-wider font-extrabold text-amber-800 dark:text-amber-400">Canal de Comunicados & Mural de Avisos da Barbearia</span>
-          </div>
-          <div className="space-y-3 max-h-[180px] overflow-y-auto pr-2 custom-scrollbar">
-            {relevantAnnouncements.map((announcement) => {
-              const badgeColors = {
-                IMPORTANT: 'bg-orange-100 text-orange-950 border-orange-200 dark:bg-orange-950/50 dark:text-orange-400 dark:border-orange-900/50',
-                ALERT: 'bg-red-100 text-red-950 border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-900/50',
-                INFO: 'bg-blue-105 text-blue-950 border-blue-200 dark:bg-blue-950/50 dark:text-blue-400 dark:border-blue-900/50',
-                CELEBRATION: 'bg-emerald-100 text-emerald-950 border-emerald-250 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-900/50'
-              };
-              const emoji = {
-                IMPORTANT: '⚠️',
-                ALERT: '🚨',
-                CELEBRATION: '🎉',
-                INFO: '💡'
-              };
-              return (
-                <div key={announcement.id} className="p-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800/60 rounded-xl hover:border-gray-300 dark:hover:border-zinc-700 transition">
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${badgeColors[announcement.type as keyof typeof badgeColors] || badgeColors.INFO}`}>
-                      {emoji[announcement.type as keyof typeof emoji] || '💡'} {announcement.type === 'IMPORTANT' ? 'Importante' : announcement.type === 'ALERT' ? 'Urgente' : announcement.type === 'CELEBRATION' ? 'Celebração' : 'Aviso'}
-                    </span>
-                    <span className="text-[9px] text-gray-400 dark:text-zinc-500 font-semibold uppercase tracking-wider">
-                      {new Date(announcement.createdAt).toLocaleDateString('pt-BR')}
-                    </span>
-                  </div>
-                  <h4 className="text-xs font-bold text-gray-800 dark:text-zinc-150 mb-1">{announcement.title}</h4>
-                  <p className="text-xs text-gray-600 dark:text-zinc-400 leading-relaxed whitespace-pre-wrap">{announcement.content}</p>
-                </div>
-              );
-            })}
-          </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={panel}>
+          <p className="text-sm text-gray-600 dark:text-zinc-400">Faturamento do período</p>
+          <p className="mt-2 break-words text-2xl font-black">{hasProduction ? money(currentStats.faturamentoTotal) : 'Sem dados'}</p>
+          <p className="mt-2 text-xs text-gray-600 dark:text-zinc-400">{hasProduction ? 'Avulso + assinaturas registrados' : 'Aguardando lançamentos ou importação'}</p>
         </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="app-themed-panel min-h-[120px] bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
-           <span className="block text-2xs font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-1">Fat. Total (Avulso + Assin.)</span>
-           <span className="text-2xl font-black text-gray-800 dark:text-zinc-100 font-mono">
-             {(currentStats?.faturamentoTotal || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-           </span>
-        </div>
-        <div className="app-themed-panel min-h-[120px] bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
-           <span className="block text-2xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">Fat. Avulso</span>
-           <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-             {(currentStats?.faturamentoAvulso || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-           </span>
-        </div>
-        <div className="app-themed-panel min-h-[120px] bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
-           <span className="block text-2xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-1">Fat. Assinaturas</span>
-           <span className="text-2xl font-black text-purple-600 dark:text-purple-400 font-mono">
-             {(currentStats?.faturamentoAssinatura || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-           </span>
-        </div>
-        <div className="app-themed-panel min-h-[120px] bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
-           <span className="block text-2xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-1">Clientes Atendidos</span>
-           <span className="text-2xl font-black text-blue-600 dark:text-blue-400 font-mono">
-             {currentStats?.clientesAtendidos || 0} un
-           </span>
-        </div>
-        <div className="app-themed-panel min-h-[120px] bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
-           <span className="block text-2xs font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider mb-1">Produtos (Qtd)</span>
-           <span className="text-2xl font-black text-orange-600 dark:text-orange-400 font-mono">
-             {currentStats?.vendasProdutosQtd || 0} un
-           </span>
-        </div>
+        <button onClick={() => onNavigate('PAGAMENTOS')} className={cn(panel, 'text-left transition hover:border-[var(--theme-color)]')}>
+          <p className="text-sm text-gray-600 dark:text-zinc-400">Comissão prevista · bruta</p>
+          <p className="mt-2 break-words text-2xl font-black text-emerald-700 dark:text-emerald-400">{commission !== undefined ? money(commission) : 'Ainda não informada'}</p>
+          <p className="mt-2 text-xs text-gray-600 dark:text-zinc-400">Antes de descontos · conferir pagamentos →</p>
+        </button>
+        <button onClick={() => onNavigate('PAGAMENTOS')} className={cn(panel, 'text-left transition hover:border-[var(--theme-color)]')}>
+          <p className="text-sm text-gray-600 dark:text-zinc-400">Próximo pagamento em aberto</p>
+          <p className="mt-2 break-words text-2xl font-black">{nextPayment ? money(nextPayment.amountToBePaid) : 'Nenhum previsto'}</p>
+          <p className="mt-2 text-xs text-gray-600 dark:text-zinc-400">{nextPayment ? `${dateLabel(nextPayment.date)} · valor líquido` : 'Considera todos os períodos'}</p>
+        </button>
+        <button onClick={() => onNavigate('AUTOGESTAO')} className={cn(panel, 'text-left transition hover:border-[var(--theme-color)]')}>
+          <p className="text-sm text-gray-600 dark:text-zinc-400">Progresso da meta de comissão</p>
+          <p className="mt-2 text-2xl font-black">{commission !== undefined && goal > 0 ? `${progress.toFixed(0)}%` : 'A definir'}</p>
+          <progress aria-label="Progresso da meta de comissão" value={progress} max={100} className="mt-2 h-2 w-full accent-[var(--theme-color)]" />
+          <p className="mt-2 text-xs text-gray-600 dark:text-zinc-400">Meta pessoal: {money(goal)} · ajustar →</p>
+        </button>
       </div>
 
-      {/* SEÇÃO DE AUTOGESTÃO: INDICADORES INTELECTUAIS E DE DESEMPENHO */}
-      <div className="app-themed-panel bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm animate-in fade-in duration-300">
-         <div className="flex items-center gap-2 mb-5">
-            <Sparkles className="w-5 h-5 text-amber-500" />
-            <span className="text-xs font-extrabold uppercase tracking-widest text-gray-500 dark:text-zinc-400">📊 Suas Métricas de Autogestão (Foco em Alta Performance)</span>
-         </div>
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Ticket Médio */}
-            <div className="bg-zinc-50 dark:bg-zinc-805/40 border border-gray-150 dark:border-zinc-800 p-4 rounded-xl flex flex-col justify-between">
-              <div>
-                <span className="block text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-1">Ticket Médio por Cliente</span>
-                <span className="text-2xl font-black text-gray-900 dark:text-zinc-50 font-mono">
-                  {currentStats.ticketMedio.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-400 dark:text-zinc-500 mt-3 leading-relaxed">
-                Faturamento médio trazido por atendimento. Aumente oferecendo combos e combos com produtos finalizadores!
-              </p>
-            </div>
+      <section className={panel}>
+        <h2 className="text-lg font-bold">Seu próximo passo</h2>
+        <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <p className="text-sm">{commission === undefined ? 'A comissão do período ainda não foi informada.' : remaining === 0 ? 'Meta de comissão atingida neste período!' : `Faltam ${money(remaining)} para atingir sua meta.`}</p>
+            {commission !== undefined && remaining > 0 && <p className="font-bold text-[var(--theme-color)]">{daysLeft > 0 ? `Objetivo diário: ${money(remaining / daysLeft)} de comissão em ${daysLeft} dias planejados.` : 'Período encerrado ou sem dias planejados.'}</p>}
+            <label className="flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-zinc-400">
+              Dias de trabalho restantes
+              <input aria-label="Dias de trabalho restantes" type="number" min="0" max={calendarDays} value={daysLeft} onChange={event => setPlannedDays(previous => ({ ...previous, [monthStr]: Math.min(calendarDays, Math.max(0, Math.trunc(Number(event.target.value) || 0))) }))} className={cn(appControlClass, 'w-20')} />
+            </label>
+            <p className="text-xs text-gray-600 dark:text-zinc-400">Inicialmente considera os dias corridos restantes, incluindo hoje. Ajuste às suas folgas.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => onNavigate('METAS')} className={cn(appControlClass, 'min-h-11')}>Registrar produção</button>
+            <button onClick={() => onNavigate('AUTOGESTAO')} className={cn(appControlClass, 'min-h-11')}>Planejar minhas metas</button>
+          </div>
+        </div>
+      </section>
 
-            {/* Penetração de Produtos */}
-            <div className="bg-zinc-50 dark:bg-zinc-805/40 border border-gray-150 dark:border-zinc-800 p-4 rounded-xl flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Conversão de Vendas (Produtos)</span>
-                  <span className="text-xs font-bold text-emerald-605 font-mono">{currentStats.penetrationProdutos.toFixed(1)}%</span>
-                </div>
-                <div className="w-full bg-gray-250 dark:bg-zinc-850 h-2 rounded-full overflow-hidden">
-                  <div className="bg-emerald-500 h-full rounded-full transition-all duration-300" style={{ width: `${Math.min(100, currentStats.penetrationProdutos)}%` }}></div>
-                </div>
-              </div>
-              <p className="text-[11px] text-gray-400 dark:text-zinc-500 mt-2 leading-relaxed">
-                Porcentagem de dias ativos com comercialização de itens do catálogo de produtos. Almeje sempre superar 35%!
-              </p>
-            </div>
+      <details className={panel}>
+        <summary className="cursor-pointer py-1 text-sm font-bold">Comunicados ({relevantAnnouncements.length}) · {relevantAnnouncements[0]?.title || 'Nenhum aviso disponível'}</summary>
+        <div className="mt-4 space-y-3">
+          {relevantAnnouncements.slice(0, 3).map(announcement => <article key={announcement.id} className="rounded-xl border border-gray-200 p-3 dark:border-zinc-700">
+            <p className="font-bold">{announcement.title}</p>
+            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-600 dark:text-zinc-300">{announcement.content}</p>
+          </article>)}
+          <button onClick={() => onNavigate('AVISOS')} className={appControlClass}>Ver todos os comunicados</button>
+        </div>
+      </details>
 
-            {/* Penetração de Extras */}
-            <div className="bg-zinc-50 dark:bg-zinc-805/40 border border-gray-150 dark:border-zinc-800 p-4 rounded-xl flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="block text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider">Aproveitamento de Serviços Extras</span>
-                  <span className="text-xs font-bold text-orange-605 font-mono">{currentStats.penetrationExtras.toFixed(1)}%</span>
-                </div>
-                <div className="w-full bg-gray-250 dark:bg-zinc-850 h-2 rounded-full overflow-hidden">
-                  <div className="bg-orange-500 h-full rounded-full transition-all duration-300" style={{ width: `${Math.min(100, currentStats.penetrationExtras)}%` }}></div>
-                </div>
-              </div>
-              <p className="text-[11px] text-gray-400 dark:text-zinc-500 mt-2 leading-relaxed">
-                Porcentagem de expedientes com serviços complementares adicionados (ex: sobrancelhas, barboterapia, pigmentações).
-              </p>
-            </div>
-         </div>
+      <section className={panel}>
+        <h2 className="text-lg font-bold">Indicadores da rotina</h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          {[
+            ['Ticket médio', currentStats.clientesAtendidos > 0 ? money(currentStats.ticketMedio) : 'Sem base de clientes', 'Faturamento registrado dividido pelos clientes atendidos.'],
+            ['Dias com venda de produtos', currentStats.workedDaysCount > 0 ? `${currentStats.penetrationProdutos.toFixed(1)}%` : 'Sem registros diários', 'Dias com produtos ÷ dias registrados de trabalho.'],
+            ['Dias com serviços extras', currentStats.workedDaysCount > 0 ? `${currentStats.penetrationExtras.toFixed(1)}%` : 'Sem registros diários', 'Dias com extras ÷ dias registrados de trabalho.'],
+          ].map(([label, value, explanation]) => <div key={label} className="rounded-xl bg-gray-50 p-4 dark:bg-zinc-800">
+            <p className="text-sm font-semibold">{label}</p><p className="mt-2 text-xl font-black">{value}</p>
+            <p className="mt-2 text-sm text-gray-600 dark:text-zinc-300">{explanation}</p>
+          </div>)}
+        </div>
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {[
+          { title: 'Faturamento registrado', rows: totalsData.map(row => ({ name: row.name, value: row.value, label: money(row.value) })) },
+          { title: 'Serviços extras mais realizados', rows: extraServicesData.map(row => ({ name: row.name, value: row.quantity, label: `${row.quantity} un.` })) },
+        ].map(chart => <section key={chart.title} className={panel}>
+          <h2 className="text-lg font-bold">{chart.title}</h2>
+          {!hasProduction ? <p className="mt-4 text-sm text-gray-600 dark:text-zinc-400">Ainda não há dados registrados no período.</p> : chart.rows.length === 0 ? <p className="mt-4 text-sm text-gray-600 dark:text-zinc-400">Nenhum serviço extra informado.</p> : <ul className="mt-4 space-y-4">{chart.rows.map(row => <li key={row.name}>
+            <div className="mb-1 flex flex-wrap justify-between gap-2 text-sm"><span>{row.name}</span><strong>{row.label}</strong></div>
+            <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-zinc-800"><div className="h-full rounded-full bg-[var(--theme-color)]" style={{ width: `${Math.max(0, row.value) / Math.max(1, ...chart.rows.map(item => item.value)) * 100}%` }} /></div>
+          </li>)}</ul>}
+        </section>)}
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-         <div className="app-themed-panel bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col min-h-[320px]">
-           <h3 className="text-sm font-bold uppercase text-gray-500 dark:text-zinc-400 flex items-center gap-2 mb-6">
-             <CircleDollarSign className="w-5 h-5 text-green-500" />
-             Raio-x do Faturamento
-           </h3>
-           {currentStats && currentStats.faturamentoTotal > 0 ? (
-             <div className="flex-1 max-h-[250px]">
-               <ResponsiveContainer width="100%" height="100%">
-                 <BarChart data={totalsData} margin={{ top: 0, right: 0, left: 10, bottom: 0 }}>
-                    <XAxis dataKey="name" tick={{fontSize: 12, fill: '#888'}} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={(v) => `R$ ${v}`} tick={{fontSize: 11, fill: '#888'}} axisLine={false} tickLine={false} />
-                    <Tooltip cursor={{fill: 'rgba(0,0,0,0.05)'}} formatter={(v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48} isAnimationActive={false}>
-                       {totalsData.map((entry, index) => (
-                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                       ))}
-                    </Bar>
-                 </BarChart>
-               </ResponsiveContainer>
-             </div>
-           ) : <div className="text-center py-6 text-gray-400 dark:text-zinc-500 text-sm flex-1 flex items-center justify-center">Sem faturamento no período</div>}
-         </div>
-
-         <div className="app-themed-panel bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col min-h-[320px]">
-           <h3 className="text-sm font-bold uppercase text-gray-500 dark:text-zinc-400 flex items-center gap-2 mb-6">
-             <Award className="w-5 h-5 text-amber-500" />
-             Top Serviços Extras
-           </h3>
-           {extraServicesData.length > 0 ? (
-             <div className="flex-1 max-h-[250px]">
-               <ResponsiveContainer width="100%" height="100%">
-                 <BarChart data={extraServicesData} layout="vertical" margin={{ top: 0, right: 30, left: 30, bottom: 0 }}>
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#888'}} />
-                    <Tooltip cursor={{fill: 'rgba(0,0,0,0.05)'}} formatter={(v: number) => [v + ' unid.', 'Qtd']} />
-                    <Bar dataKey="quantity" radius={[0, 4, 4, 0]} maxBarSize={32} isAnimationActive={false}>
-                       {extraServicesData.map((entry, index) => (
-                         <Cell key={`cell-${index}`} fill={COLORS[(index + 2) % COLORS.length]} />
-                       ))}
-                    </Bar>
-                 </BarChart>
-               </ResponsiveContainer>
-             </div>
-           ) : <div className="text-center py-6 text-gray-400 dark:text-zinc-500 text-sm flex-1 flex items-center justify-center">Nenhum serviço extra registrado</div>}
-         </div>
-      </div>
-      
+      <details className={panel}>
+        <summary className="cursor-pointer py-1 text-sm font-bold">Como estes números são calculados?</summary>
+        <div className="mt-3 space-y-2 text-sm leading-relaxed text-gray-600 dark:text-zinc-300">
+          <p>Produção: soma dos lançamentos diários e do consolidado mensal do profissional. Registros que representem a mesma produção nas duas fontes precisam ser conferidos pela gerência.</p>
+          <p>Comissão: soma bruta das comissões nos pagamentos datados no mês; quando não há pagamentos, usa a comissão do consolidado mensal. Não corresponde ao valor líquido após descontos.</p>
+          <p>Próximo pagamento: primeiro registro em aberto por data, inclusive atrasados, considerando todos os meses. A data é a registrada pela gerência.</p>
+          <p>Meta: preferência pessoal salva neste navegador. Projeção diária = comissão que falta ÷ dias planejados. É uma estimativa, não um pagamento confirmado.</p>
+          <p>Fontes neste período: {periodEntries.length} lançamentos diários, {periodStats ? 1 : 0} consolidado mensal e {periodPayments.length} pagamentos. “Sem dados” significa ausência de registros; zero só é exibido quando existe uma base registrada.</p>
+        </div>
+      </details>
     </div>
   );
 }

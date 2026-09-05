@@ -72,6 +72,8 @@ export const DEFAULT_TARGETS: Record<string, Target> = {
 };
 
 interface AppState {
+  quarterlyRankingVisible: boolean | null;
+  setQuarterlyRankingVisible: (visible: boolean) => Promise<void>;
   users: User[];
   entries: DailyEntry[];
   gdvEntries: GDVEntry[];
@@ -162,6 +164,13 @@ const withDocumentId = <T,>(snapshot: { id: string; data: () => unknown }): T =>
 
 export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [quarterlyRankingVisible, setQuarterlyRankingVisibility] = useState<boolean | null>(null);
+
+  const setQuarterlyRankingVisible = async (visible: boolean) => {
+    if (currentUser?.role !== 'ADMIN') throw new Error('Somente a gerência pode alterar a visibilidade do ranking.');
+    await setDoc(doc(db, 'appSettings', 'rankings'), { quarterlyRankingVisible: visible }, { merge: true });
+    setQuarterlyRankingVisibility(visible);
+  };
   const [isInitializing, setIsInitializing] = useState(true);
   const [hasLoadedUsers, setHasLoadedUsers] = useState(false);
 
@@ -250,6 +259,13 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (isInitializing || !currentUser) return;
 
+    const unsubRankingSettings = onSnapshot(doc(db, 'appSettings', 'rankings'), snapshot => {
+      setQuarterlyRankingVisibility(snapshot.data()?.quarterlyRankingVisible !== false);
+    }, error => {
+      console.error('Erro ao carregar visibilidade do ranking:', error);
+      setQuarterlyRankingVisibility(null);
+    });
+
     const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
       const nextUsers = snap.docs.map(d => withDocumentId<User>(d));
       setUsers(nextUsers);
@@ -323,6 +339,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => {
+      unsubRankingSettings();
+      setQuarterlyRankingVisibility(null);
       unsubUsers();
       unsubCatalog();
       unsubEntries();
@@ -782,6 +800,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <StoreContext.Provider value={{ 
+      quarterlyRankingVisible, setQuarterlyRankingVisible,
       financialCategories, suppliers, finClassifications, finSubclassifications, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
       login, logout, addUser, updateUser, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
       updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, markNotificationAsRead, deleteNotification, addAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,

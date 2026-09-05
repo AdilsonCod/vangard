@@ -43,7 +43,6 @@ import {
   Bell,
   Search,
   Building2,
-  Command,
   UserCircle2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -94,7 +93,6 @@ export default function AdminDashboard() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
   const [globalSearch, setGlobalSearch] = useState("");
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
@@ -125,17 +123,6 @@ export default function AdminDashboard() {
     }
   }, [availableUnits, selectedUnit]);
 
-  useEffect(() => {
-    const handleQuickSearch = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setIsSearchOpen(true);
-        document.getElementById("global-app-search")?.focus();
-      }
-    };
-    document.addEventListener("keydown", handleQuickSearch);
-    return () => document.removeEventListener("keydown", handleQuickSearch);
-  }, []);
 
   const barbers = users.filter(
     (u) =>
@@ -258,13 +245,6 @@ export default function AdminDashboard() {
     [navItems],
   );
 
-  const searchResults = useMemo(() => {
-    const term = globalSearch.trim().toLocaleLowerCase("pt-BR");
-    if (!term) return searchableNavigation.slice(0, 6);
-    return searchableNavigation
-      .filter(item => `${item.label} ${item.group}`.toLocaleLowerCase("pt-BR").includes(term))
-      .slice(0, 8);
-  }, [globalSearch, searchableNavigation]);
 
   const activeNavigation = searchableNavigation.find(item => item.id === activeTab);
   const activeTitle = activeNavigation?.label || "Van's Management";
@@ -286,7 +266,6 @@ export default function AdminDashboard() {
   const navigateTo = (tabId: string) => {
     setActiveTab(tabId);
     setGlobalSearch("");
-    setIsSearchOpen(false);
     setIsMobileMenuOpen(false);
   };
 
@@ -397,14 +376,6 @@ export default function AdminDashboard() {
 
         {/* Sidebar Footer */}
         <div className="flex flex-col gap-1 border-t border-gray-200 p-3 dark:border-white/5">
-          <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-semibold text-sm text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-100 ${isSidebarCollapsed ? 'justify-center' : ''}`}
-            title={isDarkMode ? "Modo Claro" : "Modo Escuro"}
-          >
-            {isDarkMode ? <Sun className="w-5 h-5 shrink-0" /> : <Moon className="w-5 h-5 shrink-0" />}
-            {!isSidebarCollapsed && <span>{isDarkMode ? 'Modo Claro' : 'Modo Escuro'}</span>}
-          </button>
           
           <button
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -423,67 +394,7 @@ export default function AdminDashboard() {
 
         {/* Desktop Global Header */}
         <header className="app-global-header sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-3 border-b border-gray-200/80 bg-white/95 px-4 backdrop-blur-xl dark:border-white/[0.07] dark:bg-[#031818]/95 xl:flex xl:px-6">
-          <AppIconButton
-            label={isSidebarCollapsed ? "Expandir menu" : "Recolher menu"}
-            onClick={() => setIsSidebarCollapsed(value => !value)}
-          >
-            <Menu className="h-[18px] w-[18px]" />
-          </AppIconButton>
-
-          <div className="relative min-w-[168px]">
-            <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-zinc-500" />
-            <select
-              value={selectedUnit}
-              onChange={event => setSelectedUnit(event.target.value)}
-              aria-label="Unidade ativa"
-              className={cn(appControlClass, "w-full appearance-none pl-9 pr-8")}
-            >
-              <option value="ALL">Todas as unidades</option>
-              {availableUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
-            </select>
-          </div>
-
-          <div className="relative ml-auto hidden w-full max-w-xl xl:block">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-zinc-500" />
-            <input
-              id="global-app-search"
-              value={globalSearch}
-              onFocus={() => setIsSearchOpen(true)}
-              onChange={event => {
-                setGlobalSearch(event.target.value);
-                setIsSearchOpen(true);
-              }}
-              onKeyDown={event => {
-                if (event.key === "Escape") setIsSearchOpen(false);
-                if (event.key === "Enter" && searchResults[0]) navigateTo(searchResults[0].id);
-              }}
-              aria-label="Buscar páginas do sistema"
-              placeholder="Buscar páginas e módulos..."
-              className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50/80 pl-10 pr-16 text-sm font-medium text-gray-900 outline-none transition placeholder:text-gray-400 hover:border-gray-300 focus:border-[var(--theme-color)] focus:bg-white focus:ring-2 focus:ring-[var(--theme-color)]/10 dark:border-zinc-800 dark:bg-white/[0.035] dark:text-white dark:placeholder:text-zinc-600 dark:hover:border-zinc-700 dark:focus:bg-zinc-900"
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-[10px] font-bold text-gray-400 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500 xl:flex">
-              <Command className="h-3 w-3" /> K
-            </span>
-            {isSearchOpen && (
-              <div className="absolute left-0 right-0 top-12 overflow-hidden rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
-                <p className="px-3 pb-2 pt-1 text-[10px] font-black uppercase tracking-[0.16em] text-gray-400 dark:text-zinc-500">
-                  Navegação rápida
-                </p>
-                {searchResults.length > 0 ? searchResults.map(result => (
-                  <button
-                    key={result.id}
-                    onClick={() => navigateTo(result.id)}
-                    className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition hover:bg-gray-100 dark:hover:bg-zinc-800"
-                  >
-                    <span className="text-sm font-bold text-gray-800 dark:text-zinc-100">{result.label}</span>
-                    <span className="text-xs text-gray-400 dark:text-zinc-500">{result.group}</span>
-                  </button>
-                )) : (
-                  <p className="px-3 py-5 text-center text-sm text-gray-500 dark:text-zinc-400">Nenhuma página encontrada.</p>
-                )}
-              </div>
-            )}
-          </div>
+          <div className="ml-auto" />
 
           <div className="relative">
             <AppIconButton

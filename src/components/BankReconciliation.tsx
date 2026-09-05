@@ -13,7 +13,9 @@ interface ParsedTransaction {
 }
 
 export function BankReconciliation() {
-  const { financialCategories, suppliers, finClassifications, finSubclassifications, transactions, addTransaction, updateTransaction } = useStore();
+  const { financialCategories, suppliers, finClassifications, finSubclassifications, transactions, addTransaction, updateTransaction, systemUnits } = useStore();
+  const [selectedUnit, setSelectedUnit] = useState('ALL');
+  const unitTransactions = transactions.filter(transaction => selectedUnit === 'ALL' || transaction.unitId === selectedUnit);
   const [matchingTx, setMatchingTx] = useState<ParsedTransaction | null>(null);
   const [parsedTransactions, setParsedTransactions] = useState<ParsedTransaction[]>([]);
   const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
@@ -176,7 +178,7 @@ export function BankReconciliation() {
       amount: tx.amount,
       date: tx.date,
       dueDate: tx.date,
-      unitId: 'ALL',
+      unitId: selectedUnit,
       status: 'PAGO',
       recurrence: 'NONE'
     };
@@ -186,7 +188,7 @@ export function BankReconciliation() {
   };
 
   const handleMatch = async (parsed: ParsedTransaction, systemTxId: string) => {
-    const existing = transactions.find(t => t.id === systemTxId);
+    const existing = unitTransactions.find(t => t.id === systemTxId);
     if (!existing) return;
     
     // Update the existing transaction
@@ -213,7 +215,7 @@ export function BankReconciliation() {
 
       const parsedDate = new Date(parsed.date).getTime();
       
-      const candidates = transactions.filter(t => 
+      const candidates = unitTransactions.filter(t =>
         t.type === parsed.type &&
         (t.status === 'PENDENTE' || t.status === 'AGENDADO') &&
         Math.abs(t.amount - parsed.amount) < 0.05
@@ -263,7 +265,22 @@ export function BankReconciliation() {
           <h2 className="text-xl font-black text-gray-900 dark:text-white">Conciliação Bancária</h2>
           <p className="text-sm text-gray-500 dark:text-zinc-400">Importe arquivos .OFX ou .CSV do seu banco</p>
         </div>
-        <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-auto lg:items-center lg:gap-3">
+        <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-auto lg:flex-wrap lg:items-center lg:justify-end lg:gap-3">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-gray-500 dark:text-zinc-400">
+            Unidade
+            <select
+              aria-label="Unidade da conciliação OFX"
+              value={selectedUnit}
+              onChange={event => {
+                setSelectedUnit(event.target.value);
+                setMatchingTx(null);
+              }}
+              className="w-full min-w-0 rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-sm font-bold text-gray-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+            >
+              <option value="ALL">Todas as unidades</option>
+              {(systemUnits || []).map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+            </select>
+          </label>
           <select 
             value={selectedAccount}
             onChange={e => setSelectedAccount(e.target.value)}
@@ -417,7 +434,7 @@ export function BankReconciliation() {
               </div>
               <div className="p-6 overflow-y-auto">
                  {(() => {
-                    const candidates = transactions.filter(t => 
+                    const candidates = unitTransactions.filter(t =>
                       t.type === matchingTx.type && 
                       (t.status === 'PENDENTE' || t.status === 'AGENDADO')
                     );

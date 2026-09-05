@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { QuarterlyRanking } from './QuarterlyRanking';
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -404,42 +405,8 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
         detail: money.format(total.revenue),
       }));
 
-    const selectedMonth = Number(selectedPeriod.slice(5, 7));
-    const selectedYear = Number(selectedPeriod.slice(0, 4));
-    const quarter = Math.ceil(selectedMonth / 3);
-    const quarterStart = (quarter - 1) * 3 + 1;
-    const quarterMonths = new Set(Array.from({ length: 3 }, (_, index) => `${selectedYear}-${String(quarterStart + index).padStart(2, "0")}`));
-    const quarterAggregates = new Map<string, { revenue: number; products: number; clients: number }>();
-    monthlyBarberStats
-      .filter(stat => quarterMonths.has(stat.month) && barberInScope(stat.barberId, stat.unitId))
-      .forEach(stat => {
-        const total = quarterAggregates.get(stat.barberId) || { revenue: 0, products: 0, clients: 0 };
-        total.revenue += stat.faturamentoTotal || 0;
-        total.products += stat.vendaProdutosValor || 0;
-        total.clients += stat.clientesAtendidos || 0;
-        quarterAggregates.set(stat.barberId, total);
-      });
-    const quarterRows = [...quarterAggregates.entries()].filter(([barberId]) => users.find(user => user.id === barberId)?.role === "BARBER");
-    const maxRevenue = Math.max(...quarterRows.map(([, item]) => item.revenue), 1);
-    const maxProducts = Math.max(...quarterRows.map(([, item]) => item.products), 1);
-    const maxTicket = Math.max(...quarterRows.map(([, item]) => item.clients > 0 ? item.revenue / item.clients : 0), 1);
-    const quarterRanking = quarterRows
-      .map(([barberId, item]) => {
-        const averageTicket = item.clients > 0 ? item.revenue / item.clients : 0;
-        const score = (item.revenue / maxRevenue) * 100 + (item.products / maxProducts) * 100 + (averageTicket / maxTicket) * 100;
-        return { barberId, item, averageTicket, score, user: users.find(user => user.id === barberId) };
-      })
-      .filter(item => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5)
-      .map(item => ({
-        id: item.barberId,
-        name: displayName(item.user?.name),
-        value: `${item.score.toFixed(1).replace(".", ",")} pts`,
-        detail: `${money.format(item.item.revenue)} · TM ${money.format(item.averageTicket)}`,
-      }));
 
-    return { revenue, products, extras, clients, ticket, extraServices, quarterRanking, quarter };
+    return { revenue, products, extras, clients, ticket, extraServices };
   }, [catalog, entries, monthlyBarberStats, selectedPeriod, selectedUnit, users]);
 
   return (
@@ -622,12 +589,7 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onNavigate }: Executi
         </div>
 
         <div className="grid grid-cols-1">
-          <RankingPanel
-            title={`Melhores do ${rankingData.quarter}º trimestre de ${selectedDate.getFullYear()}`}
-            icon={<Trophy className="h-4 w-4" />}
-            items={rankingData.quarterRanking}
-            emptyText="Sem dados consolidados no trimestre"
-          />
+          <QuarterlyRanking year={selectedDate.getFullYear()} month={selectedDate.getMonth() + 1} unit={selectedUnit} management />
         </div>
       </section>
     </div>

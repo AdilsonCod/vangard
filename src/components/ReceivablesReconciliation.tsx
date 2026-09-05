@@ -6,7 +6,8 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
 export function ReceivablesReconciliation() {
-  const { transactions, updateTransaction } = useStore();
+  const { transactions, updateTransaction, systemUnits } = useStore();
+  const [filterUnit, setFilterUnit] = useState('ALL');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filterMethod, setFilterMethod] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'BY_DATE' | 'DETAILED'>('BY_DATE');
@@ -28,9 +29,9 @@ export function ReceivablesReconciliation() {
 
   const receivables = useMemo(() => {
     return transactions
-      .filter(t => t.type === 'INCOME' && (t.status === 'PENDENTE' || t.status === 'AGENDADO'))
+      .filter(t => t.type === 'INCOME' && (t.status === 'PENDENTE' || t.status === 'AGENDADO') && (filterUnit === 'ALL' || t.unitId === filterUnit))
       .sort((a, b) => new Date(a.dueDate || a.date).getTime() - new Date(b.dueDate || b.date).getTime());
-  }, [transactions]);
+  }, [transactions, filterUnit]);
 
   const filteredReceivables = useMemo(() => {
     if (filterMethod === 'ALL') return receivables;
@@ -329,6 +330,23 @@ export function ReceivablesReconciliation() {
         </div>
         
         <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-auto lg:flex-wrap lg:items-center lg:justify-end">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-gray-500 dark:text-zinc-400">
+            Unidade
+            <select
+              aria-label="Filtrar recebimentos por unidade"
+              value={filterUnit}
+              onChange={event => {
+                setFilterUnit(event.target.value);
+                setSelectedIds(new Set());
+                setMatchedImportData({});
+                setExpandedDates(new Set());
+              }}
+              className="w-full min-w-0 rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-sm font-bold text-gray-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+            >
+              <option value="ALL">Todas as unidades</option>
+              {(systemUnits || []).map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+            </select>
+          </label>
           <div className="flex w-full items-center rounded-xl border border-gray-200 bg-gray-50 p-1 dark:border-zinc-700 dark:bg-zinc-800 sm:col-span-2 lg:w-auto">
             <button
               type="button"
@@ -357,7 +375,11 @@ export function ReceivablesReconciliation() {
              <Filter className="w-4 h-4 text-gray-500" />
              <select 
                value={filterMethod}
-               onChange={e => setFilterMethod(e.target.value)}
+               onChange={e => {
+                 setFilterMethod(e.target.value);
+                 setSelectedIds(new Set());
+                 setMatchedImportData({});
+               }}
                className="min-w-0 flex-1 bg-transparent text-sm font-bold text-gray-700 outline-none dark:text-zinc-300"
              >
                 <option value="ALL">Todos os Métodos</option>

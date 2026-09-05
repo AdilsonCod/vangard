@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
-import { Settings, Save, Moon, Sun, Palette, User, Lock } from 'lucide-react';
+import { Settings, Save, Palette, User } from 'lucide-react';
 
 export function BarberSettingsView() {
-  const { currentUser, updateUser, themeColor, setThemeColor, isDarkMode, setIsDarkMode, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg } = useStore();
+  const { currentUser, updateUser, themeColor, setThemeColor, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg } = useStore();
   
   const [name, setName] = useState(currentUser?.name || '');
   const [saved, setSaved] = useState(false);
@@ -70,26 +70,8 @@ export function BarberSettingsView() {
         
         <div className="p-6 space-y-6">
           
-          {/* Light/Dark Mode */}
-          <div>
-             <label className="block text-sm font-bold text-gray-900 dark:text-zinc-100 mb-3">Modo Escuro (Dark Mode)</label>
-             <div className="flex bg-gray-100 dark:bg-zinc-900 p-1 rounded-xl border border-gray-200/50 dark:border-zinc-800">
-               <button
-                  onClick={() => setIsDarkMode(false)}
-                  className={`flex-1 py-2 px-4 text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-all ${!isDarkMode ? "bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 shadow-sm" : "text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300"}`}
-               >
-                 <Sun className="w-4 h-4" /> Claro
-               </button>
-               <button
-                  onClick={() => setIsDarkMode(true)}
-                  className={`flex-1 py-2 px-4 text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-all ${isDarkMode ? "bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 shadow-sm" : "text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300"}`}
-               >
-                 <Moon className="w-4 h-4" /> Escuro
-               </button>
-             </div>
-          </div>
 
-          <div className="border-t border-gray-200 dark:border-zinc-800 pt-6">
+          <div>
             <label className="block text-sm font-bold text-gray-900 dark:text-zinc-100 mb-3">Cor de Destaque Primária</label>
             <div className="flex flex-wrap gap-3">
               {themeColors.map(c => (

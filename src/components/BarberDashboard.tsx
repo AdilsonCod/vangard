@@ -31,9 +31,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   DollarSign,
-  Building2,
-  Search,
-  Command,
   UserCircle2
 } from "lucide-react";
 import { AppIconButton, AppLoadingState, cn } from "./ui/AppPrimitives";
@@ -213,22 +210,9 @@ export default function BarberDashboard() {
   const { isDarkMode, setIsDarkMode } = useStore();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [globalSearch, setGlobalSearch] = useState("");
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    const handleQuickSearch = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setIsSearchOpen(true);
-        document.getElementById("professional-global-search")?.focus();
-      }
-    };
-    document.addEventListener("keydown", handleQuickSearch);
-    return () => document.removeEventListener("keydown", handleQuickSearch);
-  }, []);
 
   const userNotifications = useMemo(() => {
     return (notifications || []).filter(n => n.userId === currentUser!.id).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
@@ -425,18 +409,17 @@ export default function BarberDashboard() {
   };
 
   const navItems = [
-    { id: "OVERVIEW", label: "Visão Geral", section: "Principal", icon: LayoutDashboard },
-    { id: "AVISOS", label: "Quadro de Avisos", section: "Rotina", icon: Megaphone },
-    { id: "AUTOGESTAO", label: "Autogestão", section: "Rotina", icon: TrendingUp },
-    { id: "METAS", label: "Lançamentos e Objetivos", section: "Rotina", icon: TargetIcon },
-    { id: "PAGAMENTOS", label: "Meus Pagamentos", section: "Resultados", icon: DollarSign },
-    { id: "RELATORIOS", label: "Meus Relatórios", section: "Resultados", icon: FileText },
-    { id: "RANKINGS", label: "Rankings", section: "Resultados", icon: Trophy },
+    { id: "OVERVIEW", label: "Meu desempenho", section: "Principal", icon: LayoutDashboard },
+    { id: "AUTOGESTAO", label: "Minhas metas", section: "Principal", icon: TrendingUp },
+    { id: "PAGAMENTOS", label: "Meus pagamentos", section: "Principal", icon: DollarSign },
+    { id: "RANKINGS", label: "Rankings", section: "Principal", icon: Trophy },
+    { id: "AVISOS", label: "Comunicados", section: "Principal", icon: Megaphone },
+    { id: "METAS", label: "Registrar produção", section: "Ferramentas", icon: TargetIcon },
+    { id: "RELATORIOS", label: "Meus relatórios", section: "Ferramentas", icon: FileText },
     { id: "ANOTACOES", label: "Anotações", section: "Pessoal", icon: Edit3 },
     { id: "CONFIGURACOES", label: "Configurações", section: "Pessoal", icon: Settings },
   ] as const;
   const navSections = Array.from(new Set(navItems.map(item => item.section)));
-  const searchResults = navItems.filter(item => `${item.label} ${item.section}`.toLocaleLowerCase("pt-BR").includes(globalSearch.trim().toLocaleLowerCase("pt-BR"))).slice(0, 7);
   const activePage = navItems.find(item => item.id === activeTab);
   const currentUnitName = systemUnits?.find(unit => unit.id === currentUser!.unit)?.name || currentUser!.unit || "Sem unidade";
   const userInitials = currentUser!.name
@@ -447,8 +430,6 @@ export default function BarberDashboard() {
     .toUpperCase();
   const navigateTo = (tabId: typeof navItems[number]["id"]) => {
     setActiveTab(tabId);
-    setGlobalSearch("");
-    setIsSearchOpen(false);
     setIsMobileMenuOpen(false);
     setIsProfileOpen(false);
   };
@@ -513,14 +494,6 @@ export default function BarberDashboard() {
 
         {/* Sidebar Footer */}
         <div className="flex flex-col gap-1 border-t border-gray-200 p-3 dark:border-white/5">
-          <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-semibold text-sm text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-100 ${isSidebarCollapsed ? 'justify-center' : ''}`}
-            title={isDarkMode ? "Modo Claro" : "Modo Escuro"}
-          >
-            {isDarkMode ? <Sun className="w-5 h-5 shrink-0" /> : <Moon className="w-5 h-5 shrink-0" />}
-            {!isSidebarCollapsed && <span>{isDarkMode ? 'Modo Claro' : 'Modo Escuro'}</span>}
-          </button>
           
           <button
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -546,44 +519,7 @@ export default function BarberDashboard() {
       <div className="app-workspace flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
 
         <header className="app-global-header sticky top-0 z-30 hidden h-[72px] shrink-0 items-center gap-4 border-b border-gray-200/80 bg-white/95 px-5 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 xl:flex xl:px-7">
-          <AppIconButton label={isSidebarCollapsed ? "Expandir menu" : "Recolher menu"} onClick={() => setIsSidebarCollapsed(value => !value)}>
-            <Menu className="h-[18px] w-[18px]" />
-          </AppIconButton>
-          <div className="flex min-w-[180px] items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-zinc-800 dark:bg-white/[0.035]">
-            <Building2 className="h-4 w-4 shrink-0 text-gray-400 dark:text-zinc-500" />
-            <span className="min-w-0 truncate text-xs font-bold text-gray-900 dark:text-zinc-100">{currentUnitName}</span>
-          </div>
-
-          <div className="relative ml-auto w-full max-w-xl">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-zinc-500" />
-            <input
-              id="professional-global-search"
-              value={globalSearch}
-              onFocus={() => setIsSearchOpen(true)}
-              onChange={event => { setGlobalSearch(event.target.value); setIsSearchOpen(true); }}
-              onKeyDown={event => {
-                if (event.key === "Escape") setIsSearchOpen(false);
-                if (event.key === "Enter" && searchResults[0]) navigateTo(searchResults[0].id);
-              }}
-              aria-label="Buscar páginas da área profissional"
-              placeholder="Buscar páginas e módulos..."
-              className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50/80 pl-10 pr-16 text-sm font-medium text-gray-900 outline-none transition placeholder:text-gray-400 hover:border-gray-300 focus:border-[var(--theme-color)] focus:bg-white focus:ring-2 focus:ring-[var(--theme-color)]/10 dark:border-zinc-800 dark:bg-white/[0.035] dark:text-white dark:placeholder:text-zinc-600 dark:hover:border-zinc-700 dark:focus:bg-zinc-900"
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-[10px] font-bold text-gray-400 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500">
-              <Command className="h-3 w-3" /> K
-            </span>
-            {isSearchOpen && (
-              <div className="absolute left-0 right-0 top-12 overflow-hidden rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
-                <p className="px-3 pb-2 pt-1 text-[10px] font-black uppercase tracking-[0.16em] text-gray-400 dark:text-zinc-500">Navegação rápida</p>
-                {searchResults.length > 0 ? searchResults.map(result => (
-                  <button key={result.id} onClick={() => navigateTo(result.id)} className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition hover:bg-gray-100 dark:hover:bg-zinc-800">
-                    <span className="text-sm font-bold text-gray-800 dark:text-zinc-100">{result.label}</span>
-                    <span className="text-xs text-gray-400 dark:text-zinc-500">{result.section}</span>
-                  </button>
-                )) : <p className="px-3 py-5 text-center text-sm text-gray-500 dark:text-zinc-400">Nenhuma página encontrada.</p>}
-              </div>
-            )}
-          </div>
+          <div className="ml-auto" />
 
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -750,47 +686,6 @@ export default function BarberDashboard() {
               </button>
             </div>
           </div>
-          <div className="flex gap-2 px-4 pb-3">
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-zinc-800 dark:bg-white/[0.035]">
-              <Building2 className="h-4 w-4 shrink-0 text-gray-400 dark:text-zinc-500" />
-              <span className="truncate text-xs font-bold text-gray-900 dark:text-zinc-100">{currentUnitName}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => { setIsSearchOpen(open => !open); setIsMobileMenuOpen(false); }}
-              aria-label="Buscar páginas"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-gray-500 dark:border-zinc-800 dark:bg-white/[0.035] dark:text-zinc-400"
-            >
-              <Search className="h-5 w-5" />
-            </button>
-          </div>
-          {isSearchOpen && (
-            <div className="absolute left-3 right-3 top-[112px] z-50 rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
-                  autoFocus
-                  value={globalSearch}
-                  onChange={event => setGlobalSearch(event.target.value)}
-                  onKeyDown={event => {
-                    if (event.key === "Escape") setIsSearchOpen(false);
-                    if (event.key === "Enter" && searchResults[0]) navigateTo(searchResults[0].id);
-                  }}
-                  placeholder="Buscar páginas e módulos..."
-                  className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 text-sm font-medium outline-none focus:border-[var(--theme-color)] dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
-                />
-              </div>
-              <div className="mt-2 max-h-72 overflow-y-auto app-scrollbar">
-                {searchResults.map(result => (
-                  <button key={result.id} onClick={() => navigateTo(result.id)} className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left hover:bg-gray-100 dark:hover:bg-zinc-800">
-                    <span className="text-sm font-bold text-gray-800 dark:text-zinc-100">{result.label}</span>
-                    <span className="text-[10px] text-gray-400 dark:text-zinc-500">{result.section}</span>
-                  </button>
-                ))}
-                {searchResults.length === 0 && <p className="px-3 py-5 text-center text-sm text-gray-500 dark:text-zinc-400">Nenhuma página encontrada.</p>}
-              </div>
-            </div>
-          )}
           {isMobileMenuOpen && (
             <div className="app-sidebar absolute z-50 max-h-[calc(100dvh-64px)] w-full overflow-y-auto border-t border-gray-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-[#061b1b] app-scrollbar">
               <div className="flex flex-col px-2 py-2">
@@ -839,7 +734,7 @@ export default function BarberDashboard() {
         <main className="app-main-content professional-main-content mx-auto w-full max-w-[1600px] min-w-0 space-y-6 px-3 py-4 pb-20 sm:space-y-8 sm:px-5 sm:py-6 lg:px-6 xl:px-7 xl:py-7">
         <Suspense fallback={<AppLoadingState />}>
         {activeTab === "OVERVIEW" ? (
-          <OverviewBarberDashboard />
+          <OverviewBarberDashboard onNavigate={navigateTo} />
         ) : activeTab === "AVISOS" ? (
           <BarberAnnouncementsView />
         ) : activeTab === "AUTOGESTAO" ? (

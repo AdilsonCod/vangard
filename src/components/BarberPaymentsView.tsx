@@ -1,100 +1,88 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useStore } from '../store';
-import { DollarSign, Check, Clock, Calendar } from 'lucide-react';
+import { appControlClass, cn } from './ui/AppPrimitives';
 
 export function BarberPaymentsView() {
   const { currentUser, payments } = useStore();
-  
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [period, setPeriod] = useState('');
+  const money = (value: number = 0) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const dateLabel = (date: string) => date?.split('-').reverse().join('/') || 'Data não informada';
+  const statusOf = (payment: typeof payments[number]) => payment.status || (payment.isPaid ? 'PAGO' : 'PENDENTE');
+  const mine = payments.filter(payment => payment.userId === currentUser?.id);
+  const filtered = mine.filter(payment => (!period || payment.date.startsWith(period)) && (statusFilter === 'ALL' || statusOf(payment) === statusFilter))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const total = (status: 'open' | 'paid') => filtered.filter(payment => status === 'paid' ? statusOf(payment) === 'PAGO' : statusOf(payment) !== 'PAGO').reduce((sum, payment) => sum + (payment.amountToBePaid || 0), 0);
+  const panel = 'app-themed-panel rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 dark:border-zinc-800 dark:bg-zinc-900';
+
   if (!currentUser) return null;
-
-  const myPayments = payments
-     .filter(p => p.userId === currentUser.id)
-     .sort((a, b) => b.date.localeCompare(a.date));
-
   return (
-    <div className="space-y-6">
-       <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--theme-color)]">Resultados</p>
-          <h1 className="mt-1 flex items-center gap-2 text-2xl font-black tracking-tight text-gray-950 dark:text-white"><DollarSign className="h-5 w-5 text-emerald-500" /> Meus pagamentos</h1>
-          <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">Consulte comissões, descontos e o histórico dos seus pagamentos.</p>
-       </div>
-
-       {myPayments.length === 0 ? (
-          <div className="app-themed-panel bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 p-8 text-center text-gray-500">
-             Nenhum pagamento registrado no seu histórico.
-          </div>
-       ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-             {myPayments.map(p => (
-                <div key={p.id} className="app-themed-panel bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 overflow-hidden flex flex-col">
-                   <div className="bg-gray-50 dark:bg-zinc-800 p-4 border-b dark:border-zinc-800 flex justify-between items-center">
-                      <div className="font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-500"/> {p.date}
-                      </div>
-                      <div>
-                         {p.status === 'PAGO' || (p.isPaid && !p.status) ? (
-                           <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-bold uppercase flex items-center gap-1"><Check className="w-3 h-3"/> Pago</span>
-                         ) : p.status === 'AGENDADO' ? (
-                           <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-bold uppercase flex items-center gap-1"><Clock className="w-3 h-3"/> Agendado</span>
-                         ) : (
-                           <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-xs font-bold uppercase flex items-center gap-1"><Clock className="w-3 h-3"/> Pendente</span>
-                         )}
-                      </div>
-                   </div>
-                   
-                   <div className="p-4 flex-1 space-y-4">
-                      <div>
-                         <p className="text-[10px] uppercase font-bold text-gray-500 mb-2">Comissões Recebidas</p>
-                         <p className="text-sm flex justify-between"><span className="text-gray-600">Avulso</span> <b>R$ {p.commissionAvulso.toFixed(2)}</b></p>
-                         <p className="text-sm flex justify-between"><span className="text-gray-600">Prod. Geral</span> <b>R$ {p.commissionProductGeneral.toFixed(2)}</b></p>
-                         <p className="text-sm flex justify-between"><span className="text-gray-600">Prod. Avant</span> <b>R$ {p.commissionProductAvant.toFixed(2)}</b></p>
-                         <p className="text-sm flex justify-between"><span className="text-gray-600">Assinaturas</span> <b>R$ {p.commissionSubscriptions.toFixed(2)}</b></p>
-                      </div>
-
-                      {p.discounts && p.discounts.length > 0 ? (
-                        <div className="pt-3 border-t">
-                          <p className="text-[10px] uppercase font-bold text-gray-500 mb-2">Abatimentos</p>
-                          {p.discounts.map((d, i) => d.value > 0 && (
-                            <p key={i} className="text-sm flex justify-between text-red-600 mb-1">
-                              <span>Desc. ({d.description || 'S/N'})</span>
-                              <b>- R$ {d.value.toFixed(2)}</b>
-                            </p>
-                          ))}
-                        </div>
-                      ) : p.discount > 0 ? (
-                        <p className="text-sm flex justify-between pt-3 border-t"><span className="text-red-600">Desc. ({p.discountDescription})</span> <b className="text-red-600">- R$ {p.discount.toFixed(2)}</b></p>
-                      ) : null}
-                      
-                      {p.potData && p.potData.length > 0 && (
-                         <div className="pt-3 border-t">
-                            <div className="flex justify-between items-center mb-2">
-                               <p className="text-[10px] uppercase font-bold text-gray-500">Dados do Pote</p>
-                               {p.potPercentage !== undefined && p.potPercentage > 0 && (
-                                  <span className="text-xs font-bold text-[var(--theme-color)] bg-orange-50 dark:bg-orange-950/20 px-2 py-0.5 rounded-md">
-                                     {p.potPercentage}% do Pote
-                                  </span>
-                                )}
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              {p.potData.map(pot => (pot.quantity > 0 || pot.tokens > 0) && (
-                                 <div key={pot.id} className="text-xs">
-                                    <span className="text-gray-500 dark:text-zinc-400">{pot.name}:</span> <span className="font-bold text-gray-800 dark:text-zinc-100">{pot.quantity} un.</span>
-                                    {pot.tokens > 0 && <span className="text-gray-400 ml-1">({pot.tokens} fichas)</span>}
-                                 </div>
-                              ))}
-                            </div>
-                         </div>
-                      )}
-                   </div>
-                   
-                   <div className="bg-blue-50 dark:bg-zinc-800 border-t dark:border-zinc-700 p-4 flex justify-between items-center rounded-b-2xl">
-                      <span className="text-gray-700 dark:text-zinc-300 font-bold uppercase text-xs">Total a Receber</span>
-                      <b className="text-[var(--theme-color)] text-lg">R$ {p.amountToBePaid.toFixed(2)}</b>
-                   </div>
-                </div>
-             ))}
-          </div>
-       )}
+    <div className="space-y-5 text-gray-900 dark:text-zinc-100">
+      <header>
+        <p className="text-xs font-bold text-[var(--theme-color)]">Resultados</p>
+        <h1 className="text-2xl font-black">Meus pagamentos</h1>
+        <p className="mt-1 text-sm text-gray-600 dark:text-zinc-400">Confira valores líquidos, comissões e descontos. Abra um pagamento para ver a composição.</p>
+      </header>
+      <div className={cn(panel, 'flex flex-wrap items-end gap-3')}>
+        <label className="flex min-w-0 flex-col gap-1 text-sm font-semibold">Período
+          <input type="month" value={period} onChange={event => setPeriod(event.target.value)} className={cn(appControlClass, 'max-w-full')} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm font-semibold">Situação
+          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className={appControlClass}>
+            <option value="ALL">Todos</option><option value="PENDENTE">Pendentes</option><option value="AGENDADO">Agendados</option><option value="PAGO">Pagos</option>
+          </select>
+        </label>
+        <button onClick={() => { setPeriod(''); setStatusFilter('ALL'); }} className={appControlClass}>Limpar filtros</button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className={panel}><p className="text-sm text-gray-600 dark:text-zinc-400">Líquido em aberto · filtro atual</p><p className="mt-2 text-2xl font-black">{money(total('open'))}</p></div>
+        <div className={panel}><p className="text-sm text-gray-600 dark:text-zinc-400">Líquido pago · filtro atual</p><p className="mt-2 text-2xl font-black text-emerald-700 dark:text-emerald-400">{money(total('paid'))}</p></div>
+      </div>
+      {filtered.length === 0 && <p className={panel}>{mine.length ? 'Nenhum pagamento corresponde aos filtros.' : 'A gerência ainda não registrou pagamentos para você.'}</p>}
+      <div className="space-y-3">
+        {filtered.map(payment => {
+          const status = statusOf(payment);
+          const discounts = payment.discounts?.length ? payment.discounts : payment.discount > 0 ? [{ description: payment.discountDescription || 'Desconto', value: payment.discount }] : [];
+          const commissions = [
+            ['Serviços avulsos', payment.commissionAvulso || 0],
+            ['Produtos gerais', payment.commissionProductGeneral || 0],
+            ['Produtos Avant', payment.commissionProductAvant || 0],
+            ['Assinaturas', payment.commissionSubscriptions || 0],
+          ] as const;
+          const gross = commissions.reduce((sum, [, value]) => sum + value, 0);
+          const discountTotal = discounts.reduce((sum, discount) => sum + discount.value, 0);
+          return <details key={payment.id} className={cn(panel, 'group')}>
+            <summary className="cursor-pointer rounded-lg py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--theme-color)]">
+              <span className="ml-1 inline-flex max-w-full flex-wrap items-center gap-x-5 gap-y-2 align-middle">
+                <span className="text-sm font-bold">{status === 'PAGO' ? 'Pago' : 'Previsão'} · {dateLabel(payment.date)}</span>
+                <span className={cn('rounded-full px-3 py-1 text-xs font-bold', status === 'PAGO' ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300')}>{status === 'PAGO' ? 'Pago' : status === 'AGENDADO' ? 'Agendado' : 'Pendente'}</span>
+                <strong className="text-xl">{money(payment.amountToBePaid)}</strong>
+                <span className="text-xs text-gray-600 dark:text-zinc-400">Líquido · ver detalhes</span>
+              </span>
+            </summary>
+            <div className="mt-4 grid gap-5 border-t border-gray-200 pt-4 dark:border-zinc-700 md:grid-cols-2">
+              <section>
+                <h2 className="mb-3 font-bold">Composição das comissões</h2>
+                <dl className="space-y-2 text-sm">{commissions.map(([name, value]) => <div key={name} className="flex flex-wrap justify-between gap-2"><dt>{name}</dt><dd className="font-semibold">{money(value)}</dd></div>)}</dl>
+                <p className="mt-3 flex flex-wrap justify-between gap-2 border-t border-gray-200 pt-3 font-bold dark:border-zinc-700"><span>Comissão bruta</span><span>{money(gross)}</span></p>
+              </section>
+              <section>
+                <h2 className="mb-3 font-bold">Descontos e vales registrados</h2>
+                {discounts.length ? <ul className="space-y-2 text-sm">{discounts.map((discount, index) => <li key={index} className="flex justify-between gap-3"><span className="min-w-0 break-words">{discount.description || 'Sem descrição'}</span><strong className="shrink-0 text-red-700 dark:text-red-400">− {money(discount.value)}</strong></li>)}</ul> : <p className="text-sm text-gray-600 dark:text-zinc-400">Nenhum desconto informado.</p>}
+                <p className="mt-3 text-sm">Total de descontos: <strong>{money(discountTotal)}</strong></p>
+                <p className="mt-2 text-sm">Valor líquido registrado: <strong>{money(payment.amountToBePaid)}</strong></p>
+                {Math.abs(gross - discountTotal - payment.amountToBePaid) > 0.01 && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">A composição difere do líquido registrado. Solicite à gerência a conferência dos ajustes.</p>}
+              </section>
+              <section className="min-w-0 md:col-span-2">
+                <h2 className="font-bold">Participação nas assinaturas</h2>
+                <p className="mt-2 text-sm">Participação no faturamento: {payment.potPercentage !== undefined ? `${payment.potPercentage}%` : 'Não informada'}</p>
+                {payment.potData?.length ? <ul className="mt-3 grid gap-2 sm:grid-cols-2">{payment.potData.map(item => <li key={item.id} className="rounded-xl bg-gray-50 p-3 text-sm dark:bg-zinc-800"><strong>{item.name}</strong><p>{item.quantity} serviços · {item.tokens} fichas</p></li>)}</ul> : <p className="mt-2 text-sm text-gray-600 dark:text-zinc-400">Sem detalhamento de serviços e fichas neste pagamento.</p>}
+              </section>
+              <p className="text-xs leading-relaxed text-gray-600 dark:text-zinc-400 md:col-span-2">Valores e datas informados pela gerência. Comissão bruta = serviços + produtos + assinaturas; líquido calculado = comissão bruta − descontos. O valor a receber exibido é o líquido registrado no pagamento.</p>
+            </div>
+          </details>;
+        })}
+      </div>
     </div>
   );
 }

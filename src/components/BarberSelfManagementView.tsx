@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useStore } from "../store";
+import { useProfessionalGoal } from './useProfessionalGoal';
 import {
   Users,
   Scissors,
@@ -28,7 +29,7 @@ export function BarberSelfManagementView() {
   );
 
   // Goal & Days Worked Configuration
-  const [targetCommission, setTargetCommission] = useState<number>(10000);
+  const [targetCommission, setTargetCommission] = useProfessionalGoal(currentUser?.id);
   const [diasBase, setDiasBase] = useState<number>(22);
   const [rateServicosCommission, setRateServicosCommission] = useState<number>(0.39);
   const [rateCosmeticosCommission, setRateCosmeticosCommission] = useState<number>(0.15);
@@ -229,6 +230,7 @@ export function BarberSelfManagementView() {
     const dailyCosmetics = (m3_cosmClientes / effectiveDays).toFixed(1).replace(".", ",");
 
     return {
+      hasRealData,
       currentClients,
       currentTicketCorteBarba,
       currentExtrasQtd,
@@ -295,14 +297,14 @@ export function BarberSelfManagementView() {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-black text-gray-950 dark:text-white uppercase tracking-wider">
-                Autogestão & Performance Estratégica
+                Minhas metas
               </h2>
-              <span className="px-2 py-0.5 text-[10px] font-black uppercase rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <span className="px-2 py-0.5 text-xs font-black uppercase rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
                 PROJEÇÃO INTELIGENTE
               </span>
             </div>
             <p className="text-xs text-gray-500 dark:text-zinc-400">
-              Planejamento e metas do profissional • {months[parseInt(selectedMonth) - 1]} de {selectedYear}
+              Simulações de produção e comissão • {months[parseInt(selectedMonth) - 1]} de {selectedYear}
             </p>
           </div>
         </div>
@@ -342,7 +344,7 @@ export function BarberSelfManagementView() {
 
       {/* EXPANDABLE GOAL SETTINGS DRAWER */}
       {showGoalConfig && (
-        <div className="bg-zinc-900/95 border border-amber-500/30 p-5 rounded-2xl space-y-4 animate-in slide-in-from-top-2 duration-200 shadow-2xl">
+        <div className="bg-zinc-900/95 border border-amber-500/30 p-5 rounded-2xl space-y-4 animate-in slide-in-from-top-2 duration-200 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800 pb-3">
             <div>
               <h4 className="text-sm font-bold text-white flex items-center gap-2">
@@ -376,7 +378,7 @@ export function BarberSelfManagementView() {
                 Meta Mensal (R$)
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-bold text-sm">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400 font-bold text-sm">
                   R$
                 </span>
                 <input
@@ -419,7 +421,7 @@ export function BarberSelfManagementView() {
                   onChange={(e) => setRateServicosCommission(Math.max(0.01, Math.min(1, parseInt(e.target.value) / 100 || 0)))}
                   className="w-full pl-4 pr-8 py-2 bg-zinc-950 border border-zinc-700 rounded-xl text-white font-mono font-bold focus:border-amber-500 outline-none"
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 font-bold text-sm">
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400 font-bold text-sm">
                   %
                 </span>
               </div>
@@ -438,7 +440,7 @@ export function BarberSelfManagementView() {
                   onChange={(e) => setRateCosmeticosCommission(Math.max(0.01, Math.min(1, parseInt(e.target.value) / 100 || 0)))}
                   className="w-full pl-4 pr-8 py-2 bg-zinc-950 border border-zinc-700 rounded-xl text-white font-mono font-bold focus:border-amber-500 outline-none"
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 font-bold text-sm">
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400 font-bold text-sm">
                   %
                 </span>
               </div>
@@ -453,15 +455,16 @@ export function BarberSelfManagementView() {
           className="flex items-center gap-3 justify-center group cursor-text"
           title="Clique no valor para editar sua meta mensal"
         >
-          <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tight uppercase flex items-center gap-2">
+          <h1 className="text-3xl sm:text-5xl font-black text-gray-950 dark:text-white tracking-tight uppercase flex flex-wrap justify-center items-center gap-2">
             PLANO 
             <div className="relative inline-flex items-center">
-              <span className="text-white/40 font-black text-3xl sm:text-4xl mr-1">R$</span>
+              <span className="text-gray-600 dark:text-zinc-400 font-black text-3xl sm:text-4xl mr-1">R$</span>
               <input
                 type="number"
+                aria-label="Meta mensal de comissão"
                 value={targetCommission}
                 onChange={(e) => setTargetCommission(Math.max(0, parseInt(e.target.value) || 0))}
-                className="w-40 sm:w-56 bg-transparent border-b-4 border-amber-500/30 group-hover:border-amber-500 text-4xl sm:text-5xl font-black text-white outline-none text-center hover:bg-white/5 focus:bg-white/10 transition-all rounded-t-xl"
+                className="w-32 sm:w-56 bg-transparent border-b-4 border-amber-500/30 group-hover:border-amber-500 text-4xl sm:text-5xl font-black text-gray-950 dark:text-white outline-none text-center hover:bg-black/5 focus:bg-black/10 dark:hover:bg-white/5 dark:focus:bg-white/10 transition-all rounded-t-xl"
               />
               <button 
                 onClick={() => setShowGoalConfig(true)}
@@ -473,22 +476,34 @@ export function BarberSelfManagementView() {
             </div>
           </h1>
         </div>
-        <p className="text-sm sm:text-base font-semibold text-zinc-400">
+        <p className="text-sm sm:text-base font-semibold text-gray-600 dark:text-zinc-400">
           Objetivo ajustável: {targetCommission.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} de comissão por mês
         </p>
       </div>
+
+      <details className="app-themed-panel rounded-2xl border border-gray-200 bg-white p-4 text-gray-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+        <summary className="cursor-pointer py-1 font-bold">Como usar este planejamento</summary>
+        <p className="mt-3 text-sm leading-relaxed">Defina a comissão desejada, os dias de trabalho e as taxas em “Ajustar Meta”. Os cenários usam sua produção registrada e médias de referência quando não há histórico. São estimativas; consulte “Meus pagamentos” para valores registrados pela gerência.</p>
+        <p className="mt-2 text-sm">A meta de comissão é compartilhada com “Meu desempenho” e fica salva neste navegador para o seu perfil.</p>
+      </details>
+
+      {!stats.hasRealData && (
+        <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          Sem produção registrada neste período. Os valores abaixo são referências de simulação, não resultados seus nem pagamentos previstos.
+        </p>
+      )}
 
       {/* TOP SECTION: 3 PANELS */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         
         {/* PANEL 1: ONDE ESTAMOS HOJE */}
-        <div className="lg:col-span-4 bg-[#0a0d14] border border-zinc-800/90 rounded-3xl p-6 shadow-2xl flex flex-col justify-between relative overflow-hidden">
+        <div className="lg:col-span-4 bg-[#0a0d14] border border-zinc-800/90 rounded-3xl p-6 shadow-sm flex flex-col justify-between relative overflow-hidden">
           <div className="space-y-5">
             <div className="text-center pb-3 border-b border-zinc-800/80">
               <h3 className="text-sm font-black text-white tracking-widest uppercase">
-                ONDE ESTAMOS HOJE
+                {stats.hasRealData ? 'BASE DO PLANEJAMENTO' : 'EXEMPLO DE REFERÊNCIA'}
               </h3>
-              <span className="text-[11px] font-semibold text-zinc-400">
+              <span className="text-xs font-semibold text-zinc-400">
                 Performance atual
               </span>
             </div>
@@ -524,7 +539,7 @@ export function BarberSelfManagementView() {
                   <span className="font-mono font-black text-white text-sm">
                     {stats.currentExtrasQtd}
                   </span>
-                  <span className="text-[10px] text-zinc-400 font-semibold">
+                  <span className="text-xs text-zinc-400 font-semibold">
                     ({stats.currentExtrasTicket.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })} por cliente)
                   </span>
                 </div>
@@ -539,7 +554,7 @@ export function BarberSelfManagementView() {
                   <span className="font-mono font-bold text-white text-xs">
                     {stats.currentCosmeticsClients} clientes
                   </span>
-                  <span className="text-[10px] text-zinc-400 font-semibold">
+                  <span className="text-xs text-zinc-400 font-semibold">
                     ({stats.currentCosmeticsValor.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })} vendidos)
                   </span>
                 </div>
@@ -553,10 +568,10 @@ export function BarberSelfManagementView() {
               <span className="font-black text-zinc-400 uppercase tracking-wider block">
                 PRODUÇÃO TOTAL
               </span>
-              <p className="text-zinc-500 text-[10px] leading-tight">
+              <p className="text-zinc-500 dark:text-zinc-400 text-xs leading-tight">
                 • Serviços (corte + barba + extras)
               </p>
-              <p className="text-zinc-400 text-[10px]">
+              <p className="text-zinc-400 text-xs">
                 • Cosméticos: <span className="font-mono font-bold text-zinc-300">{stats.currentCosmeticsValor.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}</span>
               </p>
             </div>
@@ -568,10 +583,10 @@ export function BarberSelfManagementView() {
               <span className="font-mono font-black text-white text-xs block">
                 {stats.comissaoTotalAtual.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </span>
-              <p className="text-zinc-500 text-[10px]">
+              <p className="text-zinc-500 dark:text-zinc-400 text-xs">
                 • Serviços (39%): {stats.comissaoServicosAtual.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </p>
-              <p className="text-zinc-500 text-[10px]">
+              <p className="text-zinc-500 dark:text-zinc-400 text-xs">
                 • Cosméticos (15%): {stats.comissaoCosmeticosAtual.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </p>
             </div>
@@ -579,13 +594,13 @@ export function BarberSelfManagementView() {
         </div>
 
         {/* PANEL 2: PARA CHEGAR AOS 10K (HIGHLIGHT CENTER) */}
-        <div className="lg:col-span-4 bg-gradient-to-b from-[#111724] to-[#0d121c] border-2 border-emerald-500/30 rounded-3xl p-6 shadow-2xl flex flex-col justify-between relative overflow-hidden text-center">
+        <div className="lg:col-span-4 bg-gradient-to-b from-[#111724] to-[#0d121c] border-2 border-emerald-500/30 rounded-3xl p-6 shadow-sm flex flex-col justify-between relative overflow-hidden text-center">
           <div className="space-y-4">
             <div>
               <h3 className="text-sm font-black text-white tracking-widest uppercase">
                 PARA CHEGAR AOS {targetCommission >= 1000 ? `${targetCommission / 1000}K` : targetCommission}
               </h3>
-              <span className="text-[11px] font-semibold text-zinc-400">
+              <span className="text-xs font-semibold text-zinc-400">
                 Precisamos de:
               </span>
             </div>
@@ -608,7 +623,7 @@ export function BarberSelfManagementView() {
               <span className="text-3xl font-black text-white font-mono block">
                 {stats.producaoNecessariaMeta.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
               </span>
-              <span className="text-[11px] text-zinc-500 font-semibold block">
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 font-semibold block">
                 (comissão de 39% em serviços)
               </span>
             </div>
@@ -617,7 +632,7 @@ export function BarberSelfManagementView() {
           {/* Falta Produzir & Falta em Comissão Pills */}
           <div className="grid grid-cols-2 gap-3 mt-6 pt-4 border-t border-zinc-800">
             <div className="bg-amber-950/20 border border-amber-500/20 rounded-2xl p-2.5 flex flex-col items-center justify-center">
-              <div className="flex items-center gap-1.5 text-amber-400 text-[10px] font-bold uppercase tracking-wider mb-0.5">
+              <div className="flex items-center gap-1.5 text-amber-400 text-xs font-bold uppercase tracking-wider mb-0.5">
                 <TrendingUp className="w-3.5 h-3.5" />
                 <span>FALTA PRODUZIR</span>
               </div>
@@ -627,7 +642,7 @@ export function BarberSelfManagementView() {
             </div>
 
             <div className="bg-amber-950/20 border border-amber-500/20 rounded-2xl p-2.5 flex flex-col items-center justify-center">
-              <div className="flex items-center gap-1.5 text-amber-400 text-[10px] font-bold uppercase tracking-wider mb-0.5">
+              <div className="flex items-center gap-1.5 text-amber-400 text-xs font-bold uppercase tracking-wider mb-0.5">
                 <Coins className="w-3.5 h-3.5" />
                 <span>FALTA EM COMISSÃO</span>
               </div>
@@ -639,13 +654,13 @@ export function BarberSelfManagementView() {
         </div>
 
         {/* PANEL 3: REFERÊNCIAS ATUAIS */}
-        <div className="lg:col-span-4 bg-[#0a0d14] border border-zinc-800/90 rounded-3xl p-6 shadow-2xl flex flex-col justify-between relative overflow-hidden">
+        <div className="lg:col-span-4 bg-[#0a0d14] border border-zinc-800/90 rounded-3xl p-6 shadow-sm flex flex-col justify-between relative overflow-hidden">
           <div className="space-y-5">
             <div className="text-center pb-3 border-b border-zinc-800/80">
               <h3 className="text-sm font-black text-white tracking-widest uppercase">
                 REFERÊNCIAS ATUAIS
               </h3>
-              <span className="text-[11px] font-semibold text-zinc-400">
+              <span className="text-xs font-semibold text-zinc-400">
                 Médias por cliente
               </span>
             </div>
@@ -719,7 +734,7 @@ export function BarberSelfManagementView() {
       {/* MIDDLE SECTION: 3 CAMINHOS PARA ALCANÇAR R$ 10.000 */}
       <div className="space-y-6 pt-4">
         <div className="text-center">
-          <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wider">
+          <h2 className="text-xl sm:text-2xl font-black text-gray-950 dark:text-white uppercase tracking-wider">
             3 CAMINHOS PARA ALCANÇAR {targetCommission.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })} DE COMISSÃO
           </h2>
         </div>
@@ -728,17 +743,17 @@ export function BarberSelfManagementView() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
           {/* MODELO 1: MAIS CLIENTES (BLUE) */}
-          <div className="bg-[#FAF9F5] dark:bg-zinc-800 text-zinc-900 rounded-3xl p-6 shadow-2xl flex flex-col justify-between border border-blue-200">
+          <div className="bg-[#FAF9F5] dark:bg-zinc-800 text-zinc-900 rounded-3xl p-6 shadow-sm flex flex-col justify-between border border-blue-200">
             <div className="space-y-5">
               {/* Header Badge & Title */}
               <div className="flex flex-col items-center text-center space-y-1.5 pb-2">
                 <span className="px-3.5 py-1 rounded-full bg-[#1E3A8A] text-white text-xs font-black uppercase tracking-wider">
                   MODELO 1
                 </span>
-                <h3 className="text-lg font-black text-[#1E3A8A] uppercase">
+                <h3 className="text-lg font-black text-[#1E3A8A] dark:text-blue-300 uppercase">
                   MAIS CLIENTES
                 </h3>
-                <p className="text-xs text-zinc-600 font-medium">
+                <p className="text-xs text-zinc-600 dark:text-zinc-300 font-medium">
                   Manter performance atual e aumentar volume
                 </p>
               </div>
@@ -752,11 +767,11 @@ export function BarberSelfManagementView() {
                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-100 block font-mono">
                       {stats.m1_clientes}
                     </span>
-                    <span className="text-[10px] font-bold text-zinc-600 uppercase block">
+                    <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase block">
                       clientes
                     </span>
                   </div>
-                  <div className="mt-2 text-[9px] font-bold text-blue-700 leading-tight">
+                  <div className="mt-2 text-xs font-bold text-blue-700 leading-tight">
                     +{stats.m1_diffClients} clientes<br />
                     ({stats.m1_diffPct}% a mais)
                   </div>
@@ -769,11 +784,11 @@ export function BarberSelfManagementView() {
                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-100 block font-mono">
                       {stats.m1_extras}
                     </span>
-                    <span className="text-[10px] font-bold text-zinc-600 uppercase block">
+                    <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase block">
                       extras
                     </span>
                   </div>
-                  <div className="mt-2 text-[9px] font-bold text-zinc-600 leading-tight">
+                  <div className="mt-2 text-xs font-bold text-zinc-600 dark:text-zinc-300 leading-tight">
                     {stats.pctClientsWithExtras}% dos clientes com extras
                   </div>
                 </div>
@@ -785,20 +800,20 @@ export function BarberSelfManagementView() {
                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-100 block font-mono">
                       {stats.m1_cosmClientes}
                     </span>
-                    <span className="text-[10px] font-bold text-zinc-600 uppercase block">
+                    <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase block">
                       clientes
                     </span>
                   </div>
-                  <div className="mt-2 text-[9px] font-bold text-zinc-600 leading-tight">
+                  <div className="mt-2 text-xs font-bold text-zinc-600 dark:text-zinc-300 leading-tight">
                     {stats.pctClientsWithCosmetics}% dos clientes com cosméticos
                   </div>
                 </div>
               </div>
 
               {/* 2x2 Mini Financial Table */}
-              <div className="grid grid-cols-2 gap-2 text-2xs pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
                 <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <span className="text-[9px] text-zinc-500 font-bold uppercase block">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase block">
                     PRODUÇÃO TOTAL
                   </span>
                   <span className="font-mono font-black text-zinc-900 dark:text-zinc-100 text-xs">
@@ -806,7 +821,7 @@ export function BarberSelfManagementView() {
                   </span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-right">
-                  <span className="text-[9px] text-zinc-500 font-bold uppercase block">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase block">
                     COMISSÃO SERVIÇOS (39%)
                   </span>
                   <span className="font-mono font-black text-zinc-900 dark:text-zinc-100 text-xs">
@@ -814,7 +829,7 @@ export function BarberSelfManagementView() {
                   </span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <span className="text-[9px] text-zinc-500 font-bold uppercase block">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase block">
                     COMISSÃO COSMÉTICOS (15%)
                   </span>
                   <span className="font-mono font-black text-zinc-900 dark:text-zinc-100 text-xs">
@@ -822,7 +837,7 @@ export function BarberSelfManagementView() {
                   </span>
                 </div>
                 <div className="bg-[#1E3A8A] text-white p-2 rounded-xl text-right shadow-sm">
-                  <span className="text-[9px] text-blue-200 font-bold uppercase block">
+                  <span className="text-xs text-blue-200 font-bold uppercase block">
                     COMISSÃO TOTAL ESTIMADA
                   </span>
                   <span className="font-mono font-black text-sm">
@@ -833,24 +848,24 @@ export function BarberSelfManagementView() {
             </div>
 
             {/* Bottom Footer Banner */}
-            <div className="mt-5 bg-[#0F172A] text-white py-2.5 px-3 rounded-2xl flex items-center justify-center gap-2 text-[11px] font-bold text-center">
+            <div className="mt-5 bg-[#0F172A] text-white py-2.5 px-3 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold text-center">
               <Calendar className="w-3.5 h-3.5 text-blue-400 shrink-0" />
               <span>FOCO: ATRAIR MAIS CLIENTES E MANTER A CONSISTÊNCIA</span>
             </div>
           </div>
 
           {/* MODELO 2: MAIS VENDA POR CLIENTE (GREEN) */}
-          <div className="bg-[#FAF9F5] dark:bg-zinc-800 text-zinc-900 rounded-3xl p-6 shadow-2xl flex flex-col justify-between border border-emerald-200">
+          <div className="bg-[#FAF9F5] dark:bg-zinc-800 text-zinc-900 rounded-3xl p-6 shadow-sm flex flex-col justify-between border border-emerald-200">
             <div className="space-y-5">
               {/* Header Badge & Title */}
               <div className="flex flex-col items-center text-center space-y-1.5 pb-2">
                 <span className="px-3.5 py-1 rounded-full bg-[#065F46] text-white text-xs font-black uppercase tracking-wider">
                   MODELO 2
                 </span>
-                <h3 className="text-lg font-black text-[#065F46] uppercase">
+                <h3 className="text-lg font-black text-[#065F46] dark:text-emerald-300 uppercase">
                   MAIS VENDA POR CLIENTE
                 </h3>
-                <p className="text-xs text-zinc-600 font-medium">
+                <p className="text-xs text-zinc-600 dark:text-zinc-300 font-medium">
                   Menos dependência de volume, mais eficiência
                 </p>
               </div>
@@ -864,11 +879,11 @@ export function BarberSelfManagementView() {
                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-100 block font-mono">
                       {stats.m2_clientes}
                     </span>
-                    <span className="text-[10px] font-bold text-zinc-600 uppercase block">
+                    <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase block">
                       clientes
                     </span>
                   </div>
-                  <div className="mt-2 text-[9px] font-bold text-emerald-700 leading-tight">
+                  <div className="mt-2 text-xs font-bold text-emerald-700 leading-tight">
                     +{stats.m2_diffClients} clientes<br />
                     ({stats.m2_diffPct}% a mais)
                   </div>
@@ -881,11 +896,11 @@ export function BarberSelfManagementView() {
                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-100 block font-mono">
                       {stats.m2_extras}
                     </span>
-                    <span className="text-[10px] font-bold text-zinc-600 uppercase block">
+                    <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase block">
                       extras
                     </span>
                   </div>
-                  <div className="mt-2 text-[9px] font-bold text-zinc-600 leading-tight">
+                  <div className="mt-2 text-xs font-bold text-zinc-600 dark:text-zinc-300 leading-tight">
                     56% dos clientes com extras
                   </div>
                 </div>
@@ -897,20 +912,20 @@ export function BarberSelfManagementView() {
                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-100 block font-mono">
                       {stats.m2_cosmClientes}
                     </span>
-                    <span className="text-[10px] font-bold text-zinc-600 uppercase block">
+                    <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase block">
                       clientes
                     </span>
                   </div>
-                  <div className="mt-2 text-[9px] font-bold text-zinc-600 leading-tight">
+                  <div className="mt-2 text-xs font-bold text-zinc-600 dark:text-zinc-300 leading-tight">
                     14% dos clientes com cosméticos
                   </div>
                 </div>
               </div>
 
               {/* 2x2 Mini Financial Table */}
-              <div className="grid grid-cols-2 gap-2 text-2xs pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
                 <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <span className="text-[9px] text-zinc-500 font-bold uppercase block">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase block">
                     PRODUÇÃO TOTAL
                   </span>
                   <span className="font-mono font-black text-zinc-900 dark:text-zinc-100 text-xs">
@@ -918,7 +933,7 @@ export function BarberSelfManagementView() {
                   </span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-right">
-                  <span className="text-[9px] text-zinc-500 font-bold uppercase block">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase block">
                     COMISSÃO SERVIÇOS (39%)
                   </span>
                   <span className="font-mono font-black text-zinc-900 dark:text-zinc-100 text-xs">
@@ -926,7 +941,7 @@ export function BarberSelfManagementView() {
                   </span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <span className="text-[9px] text-zinc-500 font-bold uppercase block">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase block">
                     COMISSÃO COSMÉTICOS (15%)
                   </span>
                   <span className="font-mono font-black text-zinc-900 dark:text-zinc-100 text-xs">
@@ -934,7 +949,7 @@ export function BarberSelfManagementView() {
                   </span>
                 </div>
                 <div className="bg-[#065F46] text-white p-2 rounded-xl text-right shadow-sm">
-                  <span className="text-[9px] text-emerald-200 font-bold uppercase block">
+                  <span className="text-xs text-emerald-200 font-bold uppercase block">
                     COMISSÃO TOTAL ESTIMADA
                   </span>
                   <span className="font-mono font-black text-sm">
@@ -945,24 +960,24 @@ export function BarberSelfManagementView() {
             </div>
 
             {/* Bottom Footer Banner */}
-            <div className="mt-5 bg-[#022C22] text-white py-2.5 px-3 rounded-2xl flex items-center justify-center gap-2 text-[11px] font-bold text-center">
+            <div className="mt-5 bg-[#022C22] text-white py-2.5 px-3 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold text-center">
               <Target className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span>FOCO: AUMENTAR CONVERSÃO DE EXTRAS E COSMÉTICOS</span>
             </div>
           </div>
 
           {/* MODELO 3: EQUILIBRADO (ORANGE/BROWN) */}
-          <div className="bg-[#FAF9F5] dark:bg-zinc-800 text-zinc-900 rounded-3xl p-6 shadow-2xl flex flex-col justify-between border-2 border-[#C2410C]">
+          <div className="bg-[#FAF9F5] dark:bg-zinc-800 text-zinc-900 rounded-3xl p-6 shadow-sm flex flex-col justify-between border-2 border-[#C2410C]">
             <div className="space-y-5">
               {/* Header Badge & Title */}
               <div className="flex flex-col items-center text-center space-y-1.5 pb-2">
                 <span className="px-3.5 py-1 rounded-full bg-[#C2410C] text-white text-xs font-black uppercase tracking-wider shadow-sm">
                   MODELO 3
                 </span>
-                <h3 className="text-lg font-black text-[#C2410C] uppercase">
+                <h3 className="text-lg font-black text-[#C2410C] dark:text-orange-300 uppercase">
                   EQUILIBRADO (RECOMENDADO)
                 </h3>
-                <p className="text-xs text-zinc-600 font-medium">
+                <p className="text-xs text-zinc-600 dark:text-zinc-300 font-medium">
                   Crescimento equilibrado entre volume e vendas
                 </p>
               </div>
@@ -976,11 +991,11 @@ export function BarberSelfManagementView() {
                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-100 block font-mono">
                       {stats.m3_clientes}
                     </span>
-                    <span className="text-[10px] font-bold text-zinc-600 uppercase block">
+                    <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase block">
                       clientes
                     </span>
                   </div>
-                  <div className="mt-2 text-[9px] font-bold text-amber-800 leading-tight">
+                  <div className="mt-2 text-xs font-bold text-amber-800 leading-tight">
                     +{stats.m3_diffClients} clientes<br />
                     ({stats.m3_diffPct}% a mais)
                   </div>
@@ -993,11 +1008,11 @@ export function BarberSelfManagementView() {
                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-100 block font-mono">
                       {stats.m3_extras}
                     </span>
-                    <span className="text-[10px] font-bold text-zinc-600 uppercase block">
+                    <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase block">
                       extras
                     </span>
                   </div>
-                  <div className="mt-2 text-[9px] font-bold text-zinc-600 leading-tight">
+                  <div className="mt-2 text-xs font-bold text-zinc-600 dark:text-zinc-300 leading-tight">
                     48% dos clientes com extras
                   </div>
                 </div>
@@ -1009,20 +1024,20 @@ export function BarberSelfManagementView() {
                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-100 block font-mono">
                       {stats.m3_cosmClientes}
                     </span>
-                    <span className="text-[10px] font-bold text-zinc-600 uppercase block">
+                    <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase block">
                       clientes
                     </span>
                   </div>
-                  <div className="mt-2 text-[9px] font-bold text-zinc-600 leading-tight">
+                  <div className="mt-2 text-xs font-bold text-zinc-600 dark:text-zinc-300 leading-tight">
                     14% dos clientes com cosméticos
                   </div>
                 </div>
               </div>
 
               {/* 2x2 Mini Financial Table */}
-              <div className="grid grid-cols-2 gap-2 text-2xs pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
                 <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <span className="text-[9px] text-zinc-500 font-bold uppercase block">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase block">
                     PRODUÇÃO TOTAL
                   </span>
                   <span className="font-mono font-black text-zinc-900 dark:text-zinc-100 text-xs">
@@ -1030,7 +1045,7 @@ export function BarberSelfManagementView() {
                   </span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-right">
-                  <span className="text-[9px] text-zinc-500 font-bold uppercase block">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase block">
                     COMISSÃO SERVIÇOS (39%)
                   </span>
                   <span className="font-mono font-black text-zinc-900 dark:text-zinc-100 text-xs">
@@ -1038,7 +1053,7 @@ export function BarberSelfManagementView() {
                   </span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <span className="text-[9px] text-zinc-500 font-bold uppercase block">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase block">
                     COMISSÃO COSMÉTICOS (15%)
                   </span>
                   <span className="font-mono font-black text-zinc-900 dark:text-zinc-100 text-xs">
@@ -1046,7 +1061,7 @@ export function BarberSelfManagementView() {
                   </span>
                 </div>
                 <div className="bg-[#C2410C] text-white p-2 rounded-xl text-right shadow-sm">
-                  <span className="text-[9px] text-orange-200 font-bold uppercase block">
+                  <span className="text-xs text-orange-200 font-bold uppercase block">
                     COMISSÃO TOTAL ESTIMADA
                   </span>
                   <span className="font-mono font-black text-sm">
@@ -1057,7 +1072,7 @@ export function BarberSelfManagementView() {
             </div>
 
             {/* Bottom Footer Banner */}
-            <div className="mt-5 bg-[#431407] text-white py-2.5 px-3 rounded-2xl flex items-center justify-center gap-2 text-[11px] font-bold text-center">
+            <div className="mt-5 bg-[#431407] text-white py-2.5 px-3 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold text-center">
               <Scale className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>FOCO: EQUILÍBRIO ENTRE FLUXO, VENDA E RELACIONAMENTO</span>
             </div>
@@ -1070,7 +1085,7 @@ export function BarberSelfManagementView() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
         
         {/* Daily Targets Card */}
-        <div className="lg:col-span-8 bg-[#0a0d14] border border-zinc-800/90 rounded-3xl p-6 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="lg:col-span-8 bg-[#0a0d14] border border-zinc-800/90 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
             <h3 className="text-sm sm:text-base font-black text-white tracking-wider uppercase">
               METAS DIÁRIAS (MODELO EQUILIBRADO)
@@ -1090,7 +1105,7 @@ export function BarberSelfManagementView() {
                 <span className="text-2xl font-black text-white font-mono block leading-none">
                   {stats.dailyClients}
                 </span>
-                <span className="text-[10px] font-bold text-zinc-400 uppercase">
+                <span className="text-xs font-bold text-zinc-400 uppercase">
                   clientes/dia
                 </span>
               </div>
@@ -1105,7 +1120,7 @@ export function BarberSelfManagementView() {
                 <span className="text-2xl font-black text-white font-mono block leading-none">
                   {stats.dailyExtras}
                 </span>
-                <span className="text-[10px] font-bold text-zinc-400 uppercase">
+                <span className="text-xs font-bold text-zinc-400 uppercase">
                   extras/dia
                 </span>
               </div>
@@ -1120,7 +1135,7 @@ export function BarberSelfManagementView() {
                 <span className="text-2xl font-black text-white font-mono block leading-none">
                   {stats.dailyCosmetics}
                 </span>
-                <span className="text-[10px] font-bold text-zinc-400 uppercase">
+                <span className="text-xs font-bold text-zinc-400 uppercase">
                   clientes de cosméticos/dia
                 </span>
               </div>
@@ -1129,7 +1144,7 @@ export function BarberSelfManagementView() {
         </div>
 
         {/* Motivational Right Banner */}
-        <div className="lg:col-span-4 bg-gradient-to-r from-amber-950/30 to-zinc-900/60 border border-amber-500/40 rounded-3xl p-6 shadow-2xl flex items-center justify-center gap-3 text-center">
+        <div className="lg:col-span-4 bg-gradient-to-r from-amber-950/30 to-zinc-900/60 border border-amber-500/40 rounded-3xl p-6 shadow-sm flex items-center justify-center gap-3 text-center">
           <Star className="w-7 h-7 text-amber-400 fill-amber-400 shrink-0" />
           <span className="text-xs sm:text-sm font-black text-amber-200 uppercase tracking-wider leading-snug">
             PEQUENAS AÇÕES DIÁRIAS GERAM GRANDES RESULTADOS!

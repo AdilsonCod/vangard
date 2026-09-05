@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useStore } from "../store";
+import { QuarterlyRanking } from './QuarterlyRanking';
 import {
   Award,
   ChevronLeft,
@@ -435,6 +436,8 @@ export function BarberRankingsView() {
       </div>
 
       {/* Rankings Grid */}
+      <QuarterlyRanking year={selectedYear} month={Number(selectedMonth)} />
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {renderRankingCard(
           "Maior Faturamento",
