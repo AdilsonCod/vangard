@@ -580,10 +580,15 @@ html.dark body.theme-dark-pure {
   max-width: 100%;
 }
 
-.app-main-content .recharts-responsive-container,
+.app-main-content .recharts-responsive-container {
+  max-width: 100% !important;
+}
+
+/* ResponsiveContainer measures its outer box and intentionally uses a zero-width
+   inner wrapper. Clamping the measured chart to that wrapper hides every SVG. */
 .app-main-content .recharts-wrapper,
 .app-main-content .recharts-surface {
-  max-width: 100% !important;
+  max-width: none;
 }
 
 .app-main-content :where(.overflow-x-auto, .overflow-auto) {
