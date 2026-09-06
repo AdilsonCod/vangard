@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, getDoc, setDoc } from 'firebase/firestore';
-import { Plus, GripVertical, Trash2, Edit3, Calendar, Users, AlignLeft, Youtube, Instagram, Twitter, MessageCircle, X, Sparkles, Loader2, LayoutGrid, Library, Target } from 'lucide-react';
+import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query } from 'firebase/firestore';
+import { Plus, GripVertical, Trash2, Calendar, Youtube, Instagram, Twitter, MessageCircle, X, Sparkles, Loader2, LayoutGrid, Library, CheckSquare, Clock, Filter, UserRoundCheck, History, ShieldCheck } from 'lucide-react';
 import { useStore } from '../store';
+import { SystemUnit, User } from '../types';
 
-type PostStatus = 'Ideia' | 'Roteirização' | 'Gravação' | 'Edição' | 'Agendado' | 'Publicado' | 'Cancelado';
+type PostStatus = 'Ideia' | 'Briefing' | 'Roteiro' | 'Aprovação' | 'Gravação' | 'Edição' | 'Revisão' | 'Agendado' | 'Publicado' | 'Mensurado' | 'Cancelado';
+type PostPriority = 'BAIXA' | 'NORMAL' | 'ALTA' | 'URGENTE';
 
-const STATUSES: PostStatus[] = ['Ideia', 'Roteirização', 'Gravação', 'Edição', 'Agendado', 'Publicado', 'Cancelado'];
+const STATUSES: PostStatus[] = ['Ideia', 'Briefing', 'Roteiro', 'Aprovação', 'Gravação', 'Edição', 'Revisão', 'Agendado', 'Publicado', 'Mensurado'];
+const ALL_STATUSES: PostStatus[] = [...STATUSES, 'Cancelado'];
+const PRIORITY_LABELS: Record<PostPriority, string> = { BAIXA: 'Baixa', NORMAL: 'Normal', ALTA: 'Alta', URGENTE: 'Urgente' };
 
 const PLATFORMS = ['Instagram', 'TikTok', 'YouTube', 'Facebook', 'Twitter', 'Outros'];
 const FORMATS = ['Reels', 'Story', 'Carrossel', 'Vídeo Longo', 'Post Estático'];
@@ -23,9 +27,45 @@ export interface SocialPost {
   assignedUsers: string[]; // user IDs
   externalLinks: string;
   campaignId?: string;
+  unitId: string;
+  dueDate: string;
+  priority: PostPriority;
+  caption: string;
+  cta: string;
+  stageAssignments: Partial<Record<PostStatus, string>>;
+  checklist: { id: string; label: string; done: boolean }[];
+  comments: { id: string; text: string; authorId: string; authorName: string; createdAt: string }[];
+  history: { id: string; action: string; authorName: string; createdAt: string }[];
+  approvedAt?: string;
+  approvedBy?: string;
 }
 
 type CampaignOption = { id: string; name: string; status?: string };
+
+const normalizePost = (post: Partial<SocialPost> & { id: string }): SocialPost => ({
+  id: post.id,
+  title: post.title || '',
+  description: post.description || '',
+  status: (post.status as string) === 'Roteirização' ? 'Roteiro' : (post.status || 'Ideia'),
+  platform: post.platform || 'Instagram',
+  format: post.format || 'Reels',
+  scheduledDate: post.scheduledDate || '',
+  scheduledTime: post.scheduledTime || '',
+  assignedUsers: Array.isArray(post.assignedUsers) ? post.assignedUsers : [],
+  externalLinks: post.externalLinks || '',
+  campaignId: post.campaignId || '',
+  unitId: post.unitId || 'ALL',
+  dueDate: post.dueDate || post.scheduledDate || '',
+  priority: post.priority || 'NORMAL',
+  caption: post.caption || '',
+  cta: post.cta || '',
+  stageAssignments: post.stageAssignments || {},
+  checklist: Array.isArray(post.checklist) ? post.checklist : [],
+  comments: Array.isArray(post.comments) ? post.comments : [],
+  history: Array.isArray(post.history) ? post.history : [],
+  approvedAt: post.approvedAt || '',
+  approvedBy: post.approvedBy || '',
+});
 
 export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { initialTab?: 'KANBAN' | 'CALENDAR' | 'LIBRARY'; hideTabs?: boolean }) {
   const [activeTab, setActiveTab] = useState<'KANBAN' | 'CALENDAR' | 'LIBRARY'>(initialTab);
@@ -33,14 +73,16 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<SocialPost | null>(null);
   const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
-  const { users } = useStore();
+  const [scope, setScope] = useState<'ALL' | 'MINE'>('ALL');
+  const [unitFilter, setUnitFilter] = useState('ALL');
+  const { users, systemUnits, currentUser } = useStore();
 
   useEffect(() => {
     const q = query(collection(db, 'social_posts'));
     const unsub = onSnapshot(q, (snap) => {
       const loaded: SocialPost[] = [];
       snap.forEach(doc => {
-        loaded.push({ id: doc.id, ...doc.data() } as SocialPost);
+        loaded.push(normalizePost({ id: doc.id, ...doc.data() } as SocialPost));
       });
       setPosts(loaded);
     });
@@ -52,6 +94,15 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
   }), []);
 
   useEffect(() => setActiveTab(initialTab), [initialTab]);
+
+  const visiblePosts = posts.filter(post => {
+    const matchesUnit = unitFilter === 'ALL' || post.unitId === 'ALL' || post.unitId === unitFilter;
+    const stageOwner = Object.values(post.stageAssignments || {}).includes(currentUser?.id || '');
+    const matchesOwner = scope === 'ALL' || post.assignedUsers.includes(currentUser?.id || '') || stageOwner;
+    return matchesUnit && matchesOwner;
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  const overdueCount = visiblePosts.filter(post => post.dueDate && post.dueDate < today && !['Publicado', 'Mensurado', 'Cancelado'].includes(post.status)).length;
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData('text/plain', id);
@@ -69,7 +120,11 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
     if (id) {
       try {
         const postRef = doc(db, 'social_posts', id);
-        await updateDoc(postRef, { status });
+        const current = posts.find(post => post.id === id);
+        await updateDoc(postRef, {
+          status,
+          history: [...(current?.history || []), { id: crypto.randomUUID(), action: `Moveu de ${current?.status || 'etapa anterior'} para ${status}`, authorName: currentUser?.name || 'Equipe', createdAt: new Date().toISOString() }],
+        });
       } catch (error) {
         console.error("Failed to update post status", error);
       }
@@ -88,7 +143,16 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
       scheduledTime: '',
       assignedUsers: [],
       externalLinks: '',
-      campaignId: ''
+      campaignId: '',
+      unitId: currentUser?.unit || 'ALL',
+      dueDate: '',
+      priority: 'NORMAL',
+      caption: '',
+      cta: '',
+      stageAssignments: {},
+      checklist: [],
+      comments: [],
+      history: [],
     });
     setIsModalOpen(true);
   };
@@ -122,6 +186,15 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
             <Plus className="w-4 h-4" /> Nova Pauta
           </button>
         </div>
+
+        {activeTab !== 'LIBRARY' && <div className="mb-4 flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950/40 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex rounded-lg bg-gray-100 p-1 dark:bg-zinc-800">
+            <button onClick={() => setScope('ALL')} className={`flex-1 rounded-md px-3 py-2 text-xs font-bold sm:flex-none ${scope === 'ALL' ? 'bg-white text-gray-950 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-gray-500 dark:text-zinc-400'}`}>Toda a equipe</button>
+            <button onClick={() => setScope('MINE')} className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-bold sm:flex-none ${scope === 'MINE' ? 'bg-white text-gray-950 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-gray-500 dark:text-zinc-400'}`}><UserRoundCheck className="h-3.5 w-3.5"/>Minhas tarefas</button>
+          </div>
+          <label className="relative min-w-0 flex-1 sm:max-w-64"><Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"/><select value={unitFilter} onChange={event => setUnitFilter(event.target.value)} className="h-10 w-full rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-sm font-semibold outline-none dark:border-zinc-700 dark:bg-zinc-900"><option value="ALL">Todas as unidades</option>{systemUnits.filter(unit => unit.isActive !== false).map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label>
+          <span className={`rounded-lg px-3 py-2 text-xs font-bold ${overdueCount ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400'}`}><Clock className="mr-1.5 inline h-3.5 w-3.5"/>{overdueCount} atrasada{overdueCount === 1 ? '' : 's'}</span>
+        </div>}
         
         {!hideTabs && <div className="flex gap-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto">
           <button
@@ -161,8 +234,8 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
       <div className="flex-1 overflow-auto bg-gray-50/50 dark:bg-zinc-800/30">
         {activeTab === 'KANBAN' && (
           <div className="flex min-h-[500px] flex-1 items-stretch gap-3 overflow-x-auto p-3 custom-scrollbar sm:min-h-[600px] sm:gap-4 sm:p-4">
-            {STATUSES.map(status => {
-              const columnPosts = posts.filter(p => p.status === status);
+            {ALL_STATUSES.map(status => {
+              const columnPosts = visiblePosts.filter(p => p.status === status);
               
               return (
                 <div 
@@ -207,6 +280,12 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
                         
                         <h4 className="font-bold text-gray-900 dark:text-zinc-100 text-sm mb-1 leading-tight">{post.title}</h4>
                         {post.campaignId && <p className="mb-2 truncate text-[10px] font-bold uppercase tracking-wide text-[var(--theme-color)]">{campaigns.find(item => item.id === post.campaignId)?.name || 'Campanha vinculada'}</p>}
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          <span className={`rounded px-1.5 py-0.5 text-[9px] font-black uppercase ${post.priority === 'URGENTE' ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' : post.priority === 'ALTA' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' : 'bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>{PRIORITY_LABELS[post.priority]}</span>
+                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">{post.unitId === 'ALL' ? 'Todas as unidades' : systemUnits.find(unit => unit.id === post.unitId)?.name || 'Unidade'}</span>
+                        </div>
+                        {post.dueDate && <p className={`mb-2 flex items-center gap-1 text-[10px] font-semibold ${post.dueDate < today && !['Publicado','Mensurado'].includes(post.status) ? 'text-red-500' : 'text-gray-500 dark:text-zinc-400'}`}><Clock className="h-3 w-3"/>Prazo {post.dueDate.split('-').reverse().join('/')}</p>}
+                        {post.checklist.length > 0 && <div className="mb-2"><div className="mb-1 flex justify-between text-[9px] font-bold text-gray-400"><span>Checklist</span><span>{post.checklist.filter(item => item.done).length}/{post.checklist.length}</span></div><div className="h-1 rounded-full bg-gray-100 dark:bg-zinc-800"><div className="h-full rounded-full bg-emerald-500" style={{width:`${post.checklist.filter(item => item.done).length / post.checklist.length * 100}%`}}/></div></div>}
                         
                         {post.scheduledDate && (
                           <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400 font-medium mb-3">
@@ -237,7 +316,7 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
         )}
 
         {activeTab === 'CALENDAR' && (
-          <CalendarView posts={posts} getPlatformIcon={getPlatformIcon} onPostClick={openForm} />
+          <CalendarView posts={visiblePosts} getPlatformIcon={getPlatformIcon} onPostClick={openForm} />
         )}
 
         {activeTab === 'LIBRARY' && (
@@ -253,6 +332,8 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
           onClose={() => setIsModalOpen(false)} 
           users={users}
           campaigns={campaigns}
+          systemUnits={systemUnits}
+          currentUser={currentUser}
         />
       )}
     </div>
@@ -350,20 +431,25 @@ function LibraryView() {
   );
 }
 
-function PostModal({ post, onClose, users, campaigns }: { post: SocialPost, onClose: () => void, users: any[], campaigns: CampaignOption[] }) {
-  const [form, setForm] = useState<SocialPost>(post);
+function PostModal({ post, onClose, users, campaigns, systemUnits, currentUser }: { post: SocialPost, onClose: () => void, users: User[], campaigns: CampaignOption[], systemUnits: SystemUnit[], currentUser: User | null }) {
+  const [form, setForm] = useState<SocialPost>(normalizePost(post));
   const [loading, setLoading] = useState(false);
+  const [newChecklist, setNewChecklist] = useState('');
+  const [newComment, setNewComment] = useState('');
 
   const saveForm = async () => {
     if (!form.title) return alert("O título é obrigatório");
     setLoading(true);
     try {
+      const changedStatus = post.id && post.status !== form.status;
+      const event = { id: crypto.randomUUID(), action: changedStatus ? `Alterou a etapa de ${post.status} para ${form.status}` : post.id ? 'Atualizou a pauta' : 'Criou a pauta', authorName: currentUser?.name || 'Equipe', createdAt: new Date().toISOString() };
+      const payload = { ...form, assignedUsers: form.assignedUsers || [], stageAssignments: form.stageAssignments || {}, checklist: form.checklist || [], comments: form.comments || [], history: [...(form.history || []), event] };
       if (form.id) {
         const ref = doc(db, 'social_posts', form.id);
-        const { id, ...data } = form;
+        const { id, ...data } = payload;
         await updateDoc(ref, data);
       } else {
-        const { id, ...data } = form;
+        const { id, ...data } = payload;
         await addDoc(collection(db, 'social_posts'), data);
       }
       onClose();
@@ -389,6 +475,27 @@ function PostModal({ post, onClose, users, campaigns }: { post: SocialPost, onCl
       setForm({ ...form, assignedUsers: [...form.assignedUsers, uid] });
     }
   };
+
+  const addChecklistItem = () => {
+    const label = newChecklist.trim();
+    if (!label) return;
+    setForm({ ...form, checklist: [...form.checklist, { id: crypto.randomUUID(), label, done: false }] });
+    setNewChecklist('');
+  };
+
+  const addComment = () => {
+    const text = newComment.trim();
+    if (!text) return;
+    setForm({ ...form, comments: [...form.comments, { id: crypto.randomUUID(), text, authorId: currentUser?.id || '', authorName: currentUser?.name || 'Equipe', createdAt: new Date().toISOString() }] });
+    setNewComment('');
+  };
+
+  const approve = () => setForm({
+    ...form,
+    status: 'Gravação',
+    approvedAt: new Date().toISOString(),
+    approvedBy: currentUser?.name || 'Gerência',
+  });
 
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -421,7 +528,7 @@ function PostModal({ post, onClose, users, campaigns }: { post: SocialPost, onCl
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex flex-col items-center justify-center p-4">
-      <div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-zinc-900 sm:max-h-[90vh]">
+      <div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-zinc-900 sm:max-h-[92vh]">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900">
           <h2 className="text-xl font-bold flex items-center gap-2 text-gray-900 dark:text-white">
             {form.id ? 'Editar Pauta' : 'Nova Pauta de Conteúdo'}
@@ -478,7 +585,7 @@ function PostModal({ post, onClose, users, campaigns }: { post: SocialPost, onCl
               </select>
             </div>
             
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Status na Esteira</label>
                 <select 
@@ -486,10 +593,25 @@ function PostModal({ post, onClose, users, campaigns }: { post: SocialPost, onCl
                   onChange={e => setForm({...form, status: e.target.value as PostStatus})}
                   className="w-full border border-gray-300 dark:border-zinc-700 p-2.5 rounded-lg focus:ring-1 focus:ring-[var(--theme-color)] outline-none font-medium bg-white dark:bg-zinc-900 dark:text-white"
                 >
-                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {ALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Prioridade</label>
+                <select value={form.priority} onChange={e => setForm({...form, priority:e.target.value as PostPriority})} className="w-full border border-gray-300 dark:border-zinc-700 p-2.5 rounded-lg focus:ring-1 focus:ring-[var(--theme-color)] outline-none font-medium bg-white dark:bg-zinc-900 dark:text-white">{Object.entries(PRIORITY_LABELS).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Unidade</label>
+                <select value={form.unitId} onChange={e => setForm({...form, unitId:e.target.value})} className="w-full border border-gray-300 dark:border-zinc-700 p-2.5 rounded-lg focus:ring-1 focus:ring-[var(--theme-color)] outline-none font-medium bg-white dark:bg-zinc-900 dark:text-white"><option value="ALL">Todas as unidades</option>{systemUnits.filter(unit => unit.isActive !== false).map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Prazo da produção</label>
+                <input type="date" value={form.dueDate} onChange={e => setForm({...form,dueDate:e.target.value})} className="w-full border border-gray-300 dark:border-zinc-700 p-2.5 rounded-lg focus:ring-1 focus:ring-[var(--theme-color)] outline-none font-medium bg-white dark:bg-zinc-900 dark:text-white"/>
+              </div>
             </div>
+
+            {form.status === 'Aprovação' && <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-500/10 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold text-amber-900 dark:text-amber-200">Aguardando aprovação da gerência</p><p className="text-xs text-amber-700 dark:text-amber-300">Após a aprovação, a pauta seguirá para gravação.</p></div>{currentUser?.role === 'ADMIN' && <button type="button" onClick={approve} className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white"><ShieldCheck className="h-4 w-4"/>Aprovar roteiro</button>}</div>}
+            {form.approvedAt && <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400"><ShieldCheck className="mr-1 inline h-4 w-4"/>Aprovado por {form.approvedBy} em {new Date(form.approvedAt).toLocaleString('pt-BR')}</p>}
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
@@ -545,6 +667,11 @@ function PostModal({ post, onClose, users, campaigns }: { post: SocialPost, onCl
               />
             </div>
 
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div><label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Legenda da publicação</label><textarea value={form.caption} onChange={e=>setForm({...form,caption:e.target.value})} className="min-h-[90px] w-full rounded-lg border border-gray-300 bg-white p-3 font-medium outline-none focus:ring-2 focus:ring-[var(--theme-color)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-white" placeholder="Texto final, hashtags e marcações..."/></div>
+              <div><label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Chamada para ação (CTA)</label><textarea value={form.cta} onChange={e=>setForm({...form,cta:e.target.value})} className="min-h-[90px] w-full rounded-lg border border-gray-300 bg-white p-3 font-medium outline-none focus:ring-2 focus:ring-[var(--theme-color)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-white" placeholder="Ex.: Agende pelo WhatsApp, visite a unidade..."/></div>
+            </div>
+
             <div>
               <label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Recursos / Links</label>
               <input 
@@ -569,6 +696,18 @@ function PostModal({ post, onClose, users, campaigns }: { post: SocialPost, onCl
                 ))}
               </div>
             </div>
+
+            <div className="rounded-xl border border-gray-200 p-4 dark:border-zinc-700">
+              <h3 className="mb-3 text-sm font-black text-gray-900 dark:text-white">Responsável por etapa</h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{STATUSES.filter(status => !['Ideia','Publicado','Mensurado'].includes(status)).map(status => <label key={status} className="text-xs font-bold text-gray-500 dark:text-zinc-400">{status}<select value={form.stageAssignments[status] || ''} onChange={e=>setForm({...form,stageAssignments:{...form.stageAssignments,[status]:e.target.value}})} className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"><option value="">Não definido</option>{users.filter(user=>user.isActive!==false).map(user=><option key={user.id} value={user.id}>{user.name}</option>)}</select></label>)}</div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-xl border border-gray-200 p-4 dark:border-zinc-700"><h3 className="mb-3 flex items-center gap-2 text-sm font-black"><CheckSquare className="h-4 w-4 text-[var(--theme-color)]"/>Checklist da produção</h3><div className="space-y-2">{form.checklist.map(item=><div key={item.id} className="flex items-center gap-2 rounded-lg bg-gray-50 p-2 dark:bg-zinc-800/60"><input type="checkbox" checked={item.done} onChange={()=>setForm({...form,checklist:form.checklist.map(current=>current.id===item.id?{...current,done:!current.done}:current)})}/><span className={`min-w-0 flex-1 text-sm ${item.done?'line-through text-gray-400':''}`}>{item.label}</span><button type="button" onClick={()=>setForm({...form,checklist:form.checklist.filter(current=>current.id!==item.id)})} className="text-gray-400 hover:text-red-500"><X className="h-4 w-4"/></button></div>)}</div><div className="mt-3 flex gap-2"><input value={newChecklist} onChange={e=>setNewChecklist(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addChecklistItem();}}} className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900" placeholder="Adicionar tarefa..."/><button type="button" onClick={addChecklistItem} className="rounded-lg bg-[var(--theme-color)] px-3 text-sm font-bold text-white">Adicionar</button></div></div>
+              <div className="rounded-xl border border-gray-200 p-4 dark:border-zinc-700"><h3 className="mb-3 flex items-center gap-2 text-sm font-black"><MessageCircle className="h-4 w-4 text-[var(--theme-color)]"/>Comentários</h3><div className="max-h-44 space-y-2 overflow-y-auto">{form.comments.map(comment=><div key={comment.id} className="rounded-lg bg-gray-50 p-2.5 dark:bg-zinc-800/60"><div className="flex justify-between gap-2"><strong className="text-xs">{comment.authorName}</strong><span className="text-[10px] text-gray-400">{new Date(comment.createdAt).toLocaleString('pt-BR')}</span></div><p className="mt-1 text-sm text-gray-600 dark:text-zinc-300">{comment.text}</p></div>)}{!form.comments.length&&<p className="py-4 text-center text-xs text-gray-400">Nenhum comentário.</p>}</div><div className="mt-3 flex gap-2"><input value={newComment} onChange={e=>setNewComment(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addComment();}}} className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none dark:border-zinc-700 dark:bg-zinc-900" placeholder="Escrever comentário..."/><button type="button" onClick={addComment} className="rounded-lg bg-[var(--theme-color)] px-3 text-sm font-bold text-white">Enviar</button></div></div>
+            </div>
+
+            {form.history.length > 0 && <details className="rounded-xl border border-gray-200 p-4 dark:border-zinc-700"><summary className="cursor-pointer text-sm font-black"><History className="mr-2 inline h-4 w-4 text-[var(--theme-color)]"/>Histórico da pauta ({form.history.length})</summary><div className="mt-3 space-y-2">{form.history.slice().reverse().map(event=><div key={event.id} className="flex flex-col justify-between gap-1 border-l-2 border-[var(--theme-color)]/30 pl-3 text-xs sm:flex-row"><span>{event.action} · <strong>{event.authorName}</strong></span><span className="text-gray-400">{new Date(event.createdAt).toLocaleString('pt-BR')}</span></div>)}</div></details>}
 
           </div>
         </div>

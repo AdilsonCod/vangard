@@ -29,6 +29,7 @@ type SocialPostSummary = {
   title: string;
   status: string;
   scheduledDate?: string;
+  dueDate?: string;
   campaignId?: string;
   assignedUsers?: string[];
 };
@@ -62,9 +63,9 @@ export function MarketingOperations({ view, onNavigate }: { view: 'OVERVIEW' | '
   }), []);
 
   const activeCampaigns = campaigns.filter(item => item.status === 'ATIVA');
-  const overduePosts = posts.filter(item => item.scheduledDate && item.scheduledDate < today && !['Publicado', 'Cancelado'].includes(item.status));
+  const overduePosts = posts.filter(item => (item.dueDate || item.scheduledDate) && String(item.dueDate || item.scheduledDate) < today && !['Publicado', 'Mensurado', 'Cancelado'].includes(item.status));
   const approvalPosts = posts.filter(item => ['Aprovação', 'Revisão'].includes(item.status));
-  const productionPosts = posts.filter(item => !['Publicado', 'Cancelado'].includes(item.status));
+  const productionPosts = posts.filter(item => !['Publicado', 'Mensurado', 'Cancelado'].includes(item.status));
   const activeBudget = activeCampaigns.reduce((total, item) => total + (Number(item.budget) || 0), 0);
   const upcoming = posts.filter(item => item.scheduledDate && item.scheduledDate >= today && !['Publicado', 'Cancelado'].includes(item.status)).sort((a, b) => String(a.scheduledDate).localeCompare(String(b.scheduledDate))).slice(0, 6);
   const unlinked = posts.filter(item => !item.campaignId && !['Publicado', 'Cancelado'].includes(item.status));

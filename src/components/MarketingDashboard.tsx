@@ -5,6 +5,8 @@ import { collection, getDocs } from 'firebase/firestore';
 import { SocialMediaBoard } from './SocialMediaBoard';
 import { AppPageHeader } from './ui/AppPrimitives';
 import { MarketingOperations } from './MarketingOperations';
+import { MarketingPerformance } from './MarketingPerformance';
+import { MarketingIntelligence } from './MarketingIntelligence';
 
 interface AlertaGargalo {
   tipo: 'TRAFEGO' | 'CONTEUDO' | 'OPERACIONAL';
@@ -32,7 +34,7 @@ interface MarketingResponse {
 }
 
 export function MarketingDashboard() {
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CAMPAIGNS' | 'PRODUCTION' | 'CALENDAR' | 'TRAFFIC' | 'RESULTS' | 'LIBRARY'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CAMPAIGNS' | 'PRODUCTION' | 'CALENDAR' | 'TRAFFIC' | 'RESULTS' | 'LIBRARY' | 'ANALYSIS'>('OVERVIEW');
   const [activeSubTab, setActiveSubTab] = useState<'DIAGNOSTIC' | 'CALCULATOR'>('DIAGNOSTIC');
 
   const [conteudos, setConteudos] = useState<string>('');
@@ -195,6 +197,9 @@ export function MarketingDashboard() {
         <button onClick={() => { setActiveTab('RESULTS'); setActiveSubTab('CALCULATOR'); }} className={`flex items-center gap-2 pb-3 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${activeTab === 'RESULTS' ? 'border-[var(--theme-color)] text-[var(--theme-color)]' : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>
           <TrendingUp className="w-4 h-4" /> Resultados
         </button>
+        <button onClick={() => setActiveTab('ANALYSIS')} className={`flex items-center gap-2 pb-3 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${activeTab === 'ANALYSIS' ? 'border-[var(--theme-color)] text-[var(--theme-color)]' : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>
+          <Bot className="w-4 h-4" /> Inteligência
+        </button>
         <button onClick={() => setActiveTab('LIBRARY')} className={`flex items-center gap-2 pb-3 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${activeTab === 'LIBRARY' ? 'border-[var(--theme-color)] text-[var(--theme-color)]' : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>
           <Library className="w-4 h-4" /> Biblioteca
         </button>
@@ -204,8 +209,17 @@ export function MarketingDashboard() {
         <MarketingOperations view="OVERVIEW" onNavigate={(view) => setActiveTab(view)} />
       ) : activeTab === 'CAMPAIGNS' ? (
         <MarketingOperations view="CAMPAIGNS" onNavigate={(view) => setActiveTab(view)} />
-      ) : activeTab === 'TRAFFIC' || activeTab === 'RESULTS' ? (
+      ) : activeTab === 'TRAFFIC' ? (
+        <MarketingPerformance view="TRAFFIC" />
+      ) : activeTab === 'RESULTS' ? (
+        <MarketingPerformance view="RESULTS" />
+      ) : activeTab === 'ANALYSIS' ? (
         <div className="space-y-6 animate-in fade-in duration-300">
+          <MarketingIntelligence />
+          <div className="border-t border-gray-200 pt-6 dark:border-zinc-800">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--theme-color)]">Ferramentas complementares</p>
+            <h2 className="mt-1 text-xl font-black">Diagnóstico estratégico</h2>
+          </div>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
