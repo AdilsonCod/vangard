@@ -22,13 +22,17 @@ export interface SocialPost {
   scheduledTime: string;
   assignedUsers: string[]; // user IDs
   externalLinks: string;
+  campaignId?: string;
 }
 
-export function SocialMediaBoard() {
-  const [activeTab, setActiveTab] = useState<'KANBAN' | 'CALENDAR' | 'LIBRARY'>('KANBAN');
+type CampaignOption = { id: string; name: string; status?: string };
+
+export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { initialTab?: 'KANBAN' | 'CALENDAR' | 'LIBRARY'; hideTabs?: boolean }) {
+  const [activeTab, setActiveTab] = useState<'KANBAN' | 'CALENDAR' | 'LIBRARY'>(initialTab);
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<SocialPost | null>(null);
+  const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
   const { users } = useStore();
 
   useEffect(() => {
@@ -42,6 +46,12 @@ export function SocialMediaBoard() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => onSnapshot(collection(db, 'marketing_campaigns'), snap => {
+    setCampaigns(snap.docs.map(item => ({ id: item.id, ...item.data() } as CampaignOption)));
+  }), []);
+
+  useEffect(() => setActiveTab(initialTab), [initialTab]);
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData('text/plain', id);
@@ -77,7 +87,8 @@ export function SocialMediaBoard() {
       scheduledDate: '',
       scheduledTime: '',
       assignedUsers: [],
-      externalLinks: ''
+      externalLinks: '',
+      campaignId: ''
     });
     setIsModalOpen(true);
   };
@@ -112,7 +123,7 @@ export function SocialMediaBoard() {
           </button>
         </div>
         
-        <div className="flex gap-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto">
+        {!hideTabs && <div className="flex gap-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto">
           <button
             onClick={() => setActiveTab('KANBAN')}
             className={`flex items-center gap-2 pb-2 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${
@@ -144,7 +155,7 @@ export function SocialMediaBoard() {
             <Library className="w-4 h-4" /> Referências & Links
           </button>
 
-        </div>
+        </div>}
       </div>
 
       <div className="flex-1 overflow-auto bg-gray-50/50 dark:bg-zinc-800/30">
@@ -195,6 +206,7 @@ export function SocialMediaBoard() {
                         </div>
                         
                         <h4 className="font-bold text-gray-900 dark:text-zinc-100 text-sm mb-1 leading-tight">{post.title}</h4>
+                        {post.campaignId && <p className="mb-2 truncate text-[10px] font-bold uppercase tracking-wide text-[var(--theme-color)]">{campaigns.find(item => item.id === post.campaignId)?.name || 'Campanha vinculada'}</p>}
                         
                         {post.scheduledDate && (
                           <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400 font-medium mb-3">
@@ -240,6 +252,7 @@ export function SocialMediaBoard() {
           post={editingPost} 
           onClose={() => setIsModalOpen(false)} 
           users={users}
+          campaigns={campaigns}
         />
       )}
     </div>
@@ -337,7 +350,7 @@ function LibraryView() {
   );
 }
 
-function PostModal({ post, onClose, users }: { post: SocialPost, onClose: () => void, users: any[] }) {
+function PostModal({ post, onClose, users, campaigns }: { post: SocialPost, onClose: () => void, users: any[], campaigns: CampaignOption[] }) {
   const [form, setForm] = useState<SocialPost>(post);
   const [loading, setLoading] = useState(false);
 
@@ -451,6 +464,18 @@ function PostModal({ post, onClose, users }: { post: SocialPost, onClose: () => 
                 className="w-full border border-gray-300 dark:border-zinc-700 font-bold p-3 rounded-xl focus:ring-2 focus:ring-[var(--theme-color)] outline-none bg-white dark:bg-zinc-900 dark:text-white"
                 placeholder="Excesso de frizz na barba: Como resolver?"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 mb-1">Campanha vinculada</label>
+              <select
+                value={form.campaignId || ''}
+                onChange={e => setForm({...form, campaignId: e.target.value})}
+                className="w-full border border-gray-300 dark:border-zinc-700 p-2.5 rounded-lg focus:ring-1 focus:ring-[var(--theme-color)] outline-none font-medium bg-white dark:bg-zinc-900 dark:text-white"
+              >
+                <option value="">Sem campanha</option>
+                {campaigns.filter(item => item.status !== 'CANCELADA').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
             </div>
             
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

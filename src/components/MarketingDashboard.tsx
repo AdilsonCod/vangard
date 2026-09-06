@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, AlertTriangle, CheckCircle, Info, ArrowRight, Loader2, DollarSign, TrendingUp, Users, MousePointerClick, Activity, Brain, BarChart2, Share2, Calculator, Percent, Coins } from 'lucide-react';
+import { Bot, AlertTriangle, CheckCircle, Info, ArrowRight, Loader2, DollarSign, TrendingUp, Users, MousePointerClick, Activity, Brain, BarChart2, Share2, Calculator, Percent, Coins, LayoutDashboard, Megaphone, CalendarDays, Library, LayoutGrid } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { SocialMediaBoard } from './SocialMediaBoard';
 import { AppPageHeader } from './ui/AppPrimitives';
+import { MarketingOperations } from './MarketingOperations';
 
 interface AlertaGargalo {
   tipo: 'TRAFEGO' | 'CONTEUDO' | 'OPERACIONAL';
@@ -31,7 +32,7 @@ interface MarketingResponse {
 }
 
 export function MarketingDashboard() {
-  const [activeTab, setActiveTab] = useState<'ANALYSIS' | 'SOCIAL_MEDIA'>('ANALYSIS');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CAMPAIGNS' | 'PRODUCTION' | 'CALENDAR' | 'TRAFFIC' | 'RESULTS' | 'LIBRARY'>('OVERVIEW');
   const [activeSubTab, setActiveSubTab] = useState<'DIAGNOSTIC' | 'CALCULATOR'>('DIAGNOSTIC');
 
   const [conteudos, setConteudos] = useState<string>('');
@@ -149,28 +150,61 @@ export function MarketingDashboard() {
       />
       <div className="flex gap-4 border-b border-gray-200 dark:border-zinc-800 font-sans overflow-x-auto">
         <button
-          onClick={() => setActiveTab('ANALYSIS')}
+          onClick={() => setActiveTab('OVERVIEW')}
           className={`flex items-center gap-2 pb-3 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${
-            activeTab === 'ANALYSIS'
+            activeTab === 'OVERVIEW'
               ? "border-[var(--theme-color)] text-[var(--theme-color)]"
               : "border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-200"
           }`}
         >
-          <BarChart2 className="w-4 h-4" /> Inteligência e Tráfego
+          <LayoutDashboard className="w-4 h-4" /> Visão Geral
         </button>
         <button
-          onClick={() => setActiveTab('SOCIAL_MEDIA')}
+          onClick={() => setActiveTab('CAMPAIGNS')}
           className={`flex items-center gap-2 pb-3 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${
-            activeTab === 'SOCIAL_MEDIA'
+            activeTab === 'CAMPAIGNS'
               ? "border-[var(--theme-color)] text-[var(--theme-color)]"
               : "border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-200"
           }`}
         >
-          <Share2 className="w-4 h-4" /> Redes Sociais
+          <Megaphone className="w-4 h-4" /> Planejamento
+        </button>
+        <button
+          onClick={() => setActiveTab('PRODUCTION')}
+          className={`flex items-center gap-2 pb-3 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${
+            activeTab === 'PRODUCTION'
+              ? "border-[var(--theme-color)] text-[var(--theme-color)]"
+              : "border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+          }`}
+        >
+          <LayoutGrid className="w-4 h-4" /> Produção
+        </button>
+        <button
+          onClick={() => setActiveTab('CALENDAR')}
+          className={`flex items-center gap-2 pb-3 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${
+            activeTab === 'CALENDAR'
+              ? "border-[var(--theme-color)] text-[var(--theme-color)]"
+              : "border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+          }`}
+        >
+          <CalendarDays className="w-4 h-4" /> Calendário
+        </button>
+        <button onClick={() => { setActiveTab('TRAFFIC'); setActiveSubTab('DIAGNOSTIC'); }} className={`flex items-center gap-2 pb-3 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${activeTab === 'TRAFFIC' ? 'border-[var(--theme-color)] text-[var(--theme-color)]' : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>
+          <BarChart2 className="w-4 h-4" /> Tráfego
+        </button>
+        <button onClick={() => { setActiveTab('RESULTS'); setActiveSubTab('CALCULATOR'); }} className={`flex items-center gap-2 pb-3 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${activeTab === 'RESULTS' ? 'border-[var(--theme-color)] text-[var(--theme-color)]' : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>
+          <TrendingUp className="w-4 h-4" /> Resultados
+        </button>
+        <button onClick={() => setActiveTab('LIBRARY')} className={`flex items-center gap-2 pb-3 px-2 font-bold text-sm tracking-wide transition-colors whitespace-nowrap border-b-2 ${activeTab === 'LIBRARY' ? 'border-[var(--theme-color)] text-[var(--theme-color)]' : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>
+          <Library className="w-4 h-4" /> Biblioteca
         </button>
       </div>
 
-      {activeTab === 'ANALYSIS' ? (
+      {activeTab === 'OVERVIEW' ? (
+        <MarketingOperations view="OVERVIEW" onNavigate={(view) => setActiveTab(view)} />
+      ) : activeTab === 'CAMPAIGNS' ? (
+        <MarketingOperations view="CAMPAIGNS" onNavigate={(view) => setActiveTab(view)} />
+      ) : activeTab === 'TRAFFIC' || activeTab === 'RESULTS' ? (
         <div className="space-y-6 animate-in fade-in duration-300">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
             <div>
@@ -571,7 +605,7 @@ export function MarketingDashboard() {
         </div>
       ) : (
         <div className="animate-in fade-in duration-300">
-          <SocialMediaBoard />
+          <SocialMediaBoard initialTab={activeTab === 'CALENDAR' ? 'CALENDAR' : activeTab === 'LIBRARY' ? 'LIBRARY' : 'KANBAN'} hideTabs />
         </div>
       )}
     </div>
