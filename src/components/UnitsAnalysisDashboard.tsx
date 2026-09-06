@@ -47,10 +47,14 @@ const CardInput = ({
   suffix?: string;
   isReadOnly?: boolean;
 }) => {
-  const [localVal, setLocalVal] = useState<string>((value || 0).toString());
+  const formatValue = (v: any) => {
+    const num = Number(v) || 0;
+    return Number(num.toFixed(2)).toString();
+  };
+  const [localVal, setLocalVal] = useState<string>(formatValue(value));
 
   useEffect(() => {
-    setLocalVal((value || 0).toString());
+    setLocalVal(formatValue(value));
   }, [value]);
 
   const handleBlur = () => {
