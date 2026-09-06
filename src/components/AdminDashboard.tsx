@@ -44,6 +44,7 @@ import {
   Search,
   Building2,
   UserCircle2,
+  MessagesSquare,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { User, CatalogItem, Target, Category, Subcategory, Role } from "../types";
@@ -68,6 +69,7 @@ const FinancialDashboard = lazy(() => import("./FinancialDashboard").then(module
 const MarketingDashboard = lazy(() => import("./MarketingDashboard").then(module => ({ default: module.MarketingDashboard })));
 const ReportsTab = lazy(() => import("./ReportsTab").then(module => ({ default: module.ReportsTab })));
 const DataImporterView = lazy(() => import("./DataImporterView"));
+const MessageDispatchDashboard = lazy(() => import("./MessageDispatchDashboard"));
 
 export default function AdminDashboard() {
   const { currentUser, logout, themeLightBg, themeDarkBg, 
@@ -198,6 +200,7 @@ export default function AdminDashboard() {
       ]
     },
     { id: "AVISOS", label: "Mural de Avisos", section: "Operação", icon: Megaphone },
+    { id: "MESSAGES", label: "Disparo de Mensagens", section: "Operação", icon: MessagesSquare },
     { 
       id: "CATALOG", 
       label: "Catálogo", 
@@ -229,7 +232,7 @@ export default function AdminDashboard() {
   const navItems = currentUser?.role === 'FINANCIAL' 
     ? allNavItems.filter(item => item.id === "FINANCE" || item.id === "REPORTS" || item.id === "PAYMENTS" || item.id === "IMPORT" || item.id === "USERS")
     : currentUser?.role === 'MARKETING'
-    ? allNavItems.filter(item => item.id === "MARKETING")
+    ? allNavItems.filter(item => item.id === "MARKETING" || item.id === "MESSAGES")
     : allNavItems;
 
   const navSections = useMemo(
@@ -692,6 +695,8 @@ export default function AdminDashboard() {
           <PaymentsTab />
         ) : activeTab === "MARKETING" ? (
           <MarketingDashboard />
+        ) : activeTab === "MESSAGES" ? (
+          <MessageDispatchDashboard />
         ) : activeTab === "REPORTS" ? (
           <ReportsTab />
         ) : activeTab === "IMPORT" ? (

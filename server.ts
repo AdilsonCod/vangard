@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { configureMessageDispatch } from "./message-dispatch-service";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -59,6 +60,8 @@ async function startServer() {
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
+
+  configureMessageDispatch(app);
 
   app.post("/api/analyze-marketing", limitAiRequests, async (req, res) => {
     try {

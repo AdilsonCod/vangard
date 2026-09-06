@@ -26,6 +26,170 @@ var import_express = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_vite = require("vite");
 var import_genai = require("@google/genai");
+
+// message-dispatch-service.ts
+var import_baileys = __toESM(require("@whiskeysockets/baileys"), 1);
+var import_pino = __toESM(require("pino"), 1);
+var import_qrcode = __toESM(require("qrcode"), 1);
+var AUTH_DIRECTORY = process.env.WHATSAPP_AUTH_DIR || ".whatsapp-session";
+var MAX_CONTACTS = 200;
+var state = { enabled: true, connectionStatus: "disconnected", currentQr: "", isSending: false, progress: 0, total: 0, currentAction: "Aguardando conex\xE3o.", logs: [], campaignStatus: "idle", successCount: 0, errorCount: 0, errorDetails: [], runId: "" };
+var socket = null;
+var connecting = false;
+var addLog = (text, type = "info") => {
+  state.logs.unshift({ id: crypto.randomUUID(), time: (/* @__PURE__ */ new Date()).toLocaleTimeString("pt-BR"), text, type });
+  state.logs = state.logs.slice(0, 80);
+};
+var pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+var authorized = (req) => {
+  const expected = process.env.MESSAGE_DISPATCH_SECRET;
+  if (!expected) return process.env.NODE_ENV !== "production";
+  return req.header("x-dispatch-secret") === expected;
+};
+var guard = (req, res) => {
+  if (authorized(req)) return true;
+  res.status(403).json({ error: "Informe a chave operacional configurada no servidor." });
+  return false;
+};
+var publicState = () => ({ ...state, currentQr: state.currentQr, errorDetails: state.errorDetails.slice(0, 100) });
+async function connect() {
+  if (connecting || state.connectionStatus === "connected") return;
+  connecting = true;
+  state.connectionStatus = "connecting";
+  state.currentAction = "Inicializando conex\xE3o com o WhatsApp...";
+  try {
+    const { state: authState, saveCreds } = await (0, import_baileys.useMultiFileAuthState)(AUTH_DIRECTORY);
+    socket = (0, import_baileys.default)({ auth: authState, printQRInTerminal: false, logger: (0, import_pino.default)({ level: "silent" }), browser: ["Van\u2019s Management", "Chrome", "1.0.0"] });
+    socket.ev.on("creds.update", saveCreds);
+    socket.ev.on("connection.update", async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+      if (qr) {
+        state.connectionStatus = "qr";
+        state.currentQr = await import_qrcode.default.toDataURL(qr);
+        state.currentAction = "Escaneie o QR Code para conectar.";
+      }
+      if (connection === "open") {
+        connecting = false;
+        state.connectionStatus = "connected";
+        state.currentQr = "";
+        state.currentAction = "WhatsApp conectado e pronto.";
+        addLog("WhatsApp conectado com sucesso.", "success");
+      }
+      if (connection === "close") {
+        connecting = false;
+        state.connectionStatus = "disconnected";
+        state.currentQr = "";
+        state.currentAction = "WhatsApp desconectado.";
+        const code = lastDisconnect?.error?.output?.statusCode;
+        if (code !== import_baileys.DisconnectReason.loggedOut) setTimeout(() => void connect(), 3e3);
+      }
+    });
+  } catch (error) {
+    connecting = false;
+    state.connectionStatus = "disconnected";
+    state.currentAction = "Falha ao iniciar a conex\xE3o.";
+    addLog(error instanceof Error ? error.message : "Falha de conex\xE3o.", "warning");
+  }
+}
+function configureMessageDispatch(app) {
+  app.get("/api/message-dispatch/status", (req, res) => {
+    if (!guard(req, res)) return;
+    res.json(publicState());
+  });
+  app.post("/api/message-dispatch/connect", async (req, res) => {
+    if (!guard(req, res)) return;
+    void connect();
+    res.json({ success: true });
+  });
+  app.post("/api/message-dispatch/stop", (req, res) => {
+    if (!guard(req, res)) return;
+    state.isSending = false;
+    state.campaignStatus = "stopped";
+    state.currentAction = "Envio interrompido pelo operador.";
+    addLog("Campanha interrompida manualmente.", "warning");
+    res.json({ success: true });
+  });
+  app.post("/api/message-dispatch/start", async (req, res) => {
+    if (!guard(req, res)) return;
+    if (state.isSending) {
+      res.status(409).json({ error: "J\xE1 existe uma campanha em andamento." });
+      return;
+    }
+    if (state.connectionStatus !== "connected" || !socket) {
+      res.status(409).json({ error: "Conecte o WhatsApp antes de iniciar." });
+      return;
+    }
+    const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+    const rawContacts = Array.isArray(req.body?.contacts) ? req.body.contacts : String(req.body?.contacts || "").split(/\r?\n/);
+    const contacts = [...new Set(rawContacts.map((value) => String(value).replace(/\D/g, "")).map((value) => value.length === 10 || value.length === 11 ? `55${value}` : value).filter((value) => value.length >= 12 && value.length <= 13))];
+    const minDelay = Math.max(8, Math.min(120, Number(req.body?.minDelay) || 15));
+    const maxDelay = Math.max(minDelay, Math.min(180, Number(req.body?.maxDelay) || 35));
+    const simulateTyping = req.body?.simulateTyping !== false;
+    if (req.body?.confirmedOptIn !== true) {
+      res.status(400).json({ error: "Confirme que os destinat\xE1rios autorizaram o recebimento." });
+      return;
+    }
+    if (!message || message.length > 4096) {
+      res.status(400).json({ error: "A mensagem deve ter entre 1 e 4.096 caracteres." });
+      return;
+    }
+    if (!contacts.length || contacts.length > MAX_CONTACTS) {
+      res.status(400).json({ error: `Informe entre 1 e ${MAX_CONTACTS} contatos v\xE1lidos.` });
+      return;
+    }
+    res.json({ success: true, total: contacts.length });
+    state.isSending = true;
+    state.campaignStatus = "running";
+    state.runId = crypto.randomUUID();
+    state.successCount = 0;
+    state.errorCount = 0;
+    state.errorDetails = [];
+    state.total = contacts.length;
+    state.progress = 0;
+    state.logs = [];
+    addLog(`Campanha iniciada com ${contacts.length} destinat\xE1rio(s).`);
+    for (let index = 0; index < contacts.length && state.isSending; index++) {
+      const contact = contacts[index];
+      let jid = `${contact}@s.whatsapp.net`;
+      try {
+        state.currentAction = `Validando ${contact}...`;
+        const availability = await socket.onWhatsApp(contact);
+        if (!availability?.[0]?.exists) throw new Error("N\xFAmero n\xE3o encontrado no WhatsApp");
+        jid = availability[0].jid;
+        if (simulateTyping) {
+          state.currentAction = `Preparando mensagem ${index + 1} de ${contacts.length}...`;
+          await socket.sendPresenceUpdate("composing", jid);
+          await pause(Math.min(6e3, Math.max(1200, message.length * 45)));
+          await socket.sendPresenceUpdate("paused", jid);
+        }
+        if (!state.isSending) break;
+        state.currentAction = `Enviando ${index + 1} de ${contacts.length}...`;
+        await socket.sendMessage(jid, { text: message });
+        state.successCount++;
+        addLog(`Mensagem entregue para ${contact}.`, "success");
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Falha no envio";
+        state.errorCount++;
+        state.errorDetails.push({ contact, error: detail });
+        addLog(`Falha para ${contact}: ${detail}`, "warning");
+      }
+      state.progress = index + 1;
+      if (index < contacts.length - 1 && state.isSending) {
+        const seconds = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+        state.currentAction = `Intervalo operacional de ${seconds}s...`;
+        for (let elapsed = 0; elapsed < seconds && state.isSending; elapsed++) await pause(1e3);
+      }
+    }
+    if (state.isSending) {
+      state.campaignStatus = "completed";
+      state.currentAction = "Campanha conclu\xEDda.";
+      addLog("Processamento conclu\xEDdo.", "success");
+    }
+    state.isSending = false;
+  });
+}
+
+// server.ts
 var ai = new import_genai.GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 var AI_WINDOW_MS = 15 * 60 * 1e3;
 var AI_MAX_REQUESTS_PER_WINDOW = 20;
@@ -72,6 +236,7 @@ async function startServer() {
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
+  configureMessageDispatch(app);
   app.post("/api/analyze-marketing", limitAiRequests, async (req, res) => {
     try {
       const conteudos = readLimitedText(req.body?.conteudos, "conteudos");
