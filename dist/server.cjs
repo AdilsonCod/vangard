@@ -22,10 +22,10 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // server.ts
+var import_config = require("dotenv/config");
 var import_express = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_vite = require("vite");
-var import_genai = require("@google/genai");
 
 // message-dispatch-service.ts
 var import_baileys = __toESM(require("@whiskeysockets/baileys"), 1);
@@ -91,17 +91,17 @@ async function connect() {
     addLog(error instanceof Error ? error.message : "Falha de conex\xE3o.", "warning");
   }
 }
-function configureMessageDispatch(app) {
-  app.get("/api/message-dispatch/status", (req, res) => {
+function configureMessageDispatch(app2) {
+  app2.get("/api/message-dispatch/status", (req, res) => {
     if (!guard(req, res)) return;
     res.json(publicState());
   });
-  app.post("/api/message-dispatch/connect", async (req, res) => {
+  app2.post("/api/message-dispatch/connect", async (req, res) => {
     if (!guard(req, res)) return;
     void connect();
     res.json({ success: true });
   });
-  app.post("/api/message-dispatch/stop", (req, res) => {
+  app2.post("/api/message-dispatch/stop", (req, res) => {
     if (!guard(req, res)) return;
     state.isSending = false;
     state.campaignStatus = "stopped";
@@ -109,7 +109,7 @@ function configureMessageDispatch(app) {
     addLog("Campanha interrompida manualmente.", "warning");
     res.json({ success: true });
   });
-  app.post("/api/message-dispatch/start", async (req, res) => {
+  app2.post("/api/message-dispatch/start", async (req, res) => {
     if (!guard(req, res)) return;
     if (state.isSending) {
       res.status(409).json({ error: "J\xE1 existe uma campanha em andamento." });
@@ -189,8 +189,210 @@ function configureMessageDispatch(app) {
   });
 }
 
+// smart-links-service.ts
+var import_promises = require("node:dns/promises");
+var import_node_net = require("node:net");
+var import_firestore2 = require("firebase/firestore");
+
+// src/firebase.ts
+var import_app = require("firebase/app");
+var import_firestore = require("firebase/firestore");
+
+// firebase-applet-config.json
+var firebase_applet_config_default = {
+  projectId: "gen-lang-client-0595576094",
+  appId: "1:840151771043:web:ce866e491e4313faaa5c16",
+  apiKey: "AIzaSyCA3DoNDB8xR6cmZBM-SbIM8PzB4B9yOxY",
+  authDomain: "gen-lang-client-0595576094.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-vansguard-16394f26-85fa-4c3e-a3d9-b85f6d25ecce",
+  storageBucket: "gen-lang-client-0595576094.firebasestorage.app",
+  messagingSenderId: "840151771043",
+  measurementId: "",
+  oAuthClientId: "840151771043-ajaau37no5jf24cs1qdps5hbmieuq5jg.apps.googleusercontent.com",
+  recaptchaSiteKey: ""
+};
+
+// src/firebase.ts
+var app = (0, import_app.initializeApp)(firebase_applet_config_default);
+var db = (0, import_firestore.initializeFirestore)(app, {
+  experimentalForceLongPolling: true
+}, firebase_applet_config_default.firestoreDatabaseId || "(default)");
+
+// src/smartLinks.ts
+function generateCycleSlug(baseSlug, slugType, cycleNumber, customSlugs = []) {
+  const base = baseSlug.toLowerCase().replace(/[^a-z0-9-]/g, "") || "link";
+  if (slugType === "custom_list" && customSlugs.length) return customSlugs[(cycleNumber - 1) % customSlugs.length].trim().toLowerCase();
+  if (slugType === "sequential_number") return `${base}-${String(cycleNumber).padStart(2, "0")}`;
+  let hash = 0;
+  for (const character of `${base}:vans:${cycleNumber}`) hash = (hash << 5) - hash + character.charCodeAt(0) | 0;
+  const alphabet = "23456789abcdefghjkmnpqrstuvwxyz";
+  let token = "", value = Math.abs(hash);
+  for (let index = 0; index < 4; index++) {
+    token += alphabet[value % alphabet.length];
+    value = Math.floor(value / alphabet.length) + cycleNumber * 11 + index;
+  }
+  return `${base}-${token}`;
+}
+function rotatingStatus(link, at = /* @__PURE__ */ new Date()) {
+  const intervalMs = Math.max(1, link.rotationIntervalMinutes || 60) * 6e4;
+  const started = new Date(link.rotationStartedAt || link.createdAt).getTime();
+  const elapsed = Math.max(0, at.getTime() - started);
+  const cycleNumber = Math.floor(elapsed / intervalMs) + 1;
+  const offset = elapsed % intervalMs;
+  return { cycleNumber, current: generateCycleSlug(link.baseSlug || link.shortCode, link.slugType || "hash_token", cycleNumber, link.customSlugs), next: generateCycleSlug(link.baseSlug || link.shortCode, link.slugType || "hash_token", cycleNumber + 1, link.customSlugs), nextSwitchAt: new Date(at.getTime() + intervalMs - offset).toISOString(), progressPercent: Math.round(offset / intervalMs * 100) };
+}
+function resolveSmartLink(link, at = /* @__PURE__ */ new Date(), usedCode) {
+  const fallback = link.fallbackUrl || "";
+  if (!link.isActive) return { url: fallback, phase: "paused", label: "Pausado", activeShortCode: link.shortCode, progressPercent: 0, reason: "Link pausado manualmente." };
+  if (link.maxClicks && link.totalClicks >= link.maxClicks) return { url: fallback, phase: "limit", label: "Limite atingido", activeShortCode: link.shortCode, progressPercent: 100, reason: "O limite total de cliques foi atingido." };
+  if (link.mode === "rotating_shortlink") {
+    const status = rotatingStatus(link, at);
+    const base = (link.baseSlug || link.shortCode).toLowerCase();
+    const code = (usedCode || status.current).toLowerCase();
+    const isBase = code === base;
+    const expired = !isBase && code !== status.current;
+    if (expired && link.expireOldLinks) return { url: fallback, phase: "expired", label: "C\xF3digo expirado", cycleNumber: status.cycleNumber, activeShortCode: status.current, nextShortCode: status.next, nextSwitchAt: status.nextSwitchAt, progressPercent: status.progressPercent, reason: "Este c\xF3digo pertence a outro ciclo.", expiredSlug: true };
+    return { url: link.destinationUrl, phase: "rotating_shortlink", label: `Ciclo ${status.cycleNumber}`, cycleNumber: status.cycleNumber, activeShortCode: status.current, nextShortCode: status.next, nextSwitchAt: status.nextSwitchAt, progressPercent: status.progressPercent, reason: "Destino fixo com c\xF3digo curto rotativo." };
+  }
+  if (link.mode === "infinite_loop") {
+    const stages = (link.destinations || []).filter((item) => item.url && item.durationMinutes > 0);
+    if (!stages.length) return { url: link.destinationUrl, phase: "infinite_loop", label: "Destino principal", activeShortCode: link.shortCode, progressPercent: 0, reason: "Nenhuma etapa adicional cadastrada." };
+    const cycleMinutes = stages.reduce((sum, item) => sum + item.durationMinutes, 0), cycleMs = cycleMinutes * 6e4;
+    const started = new Date(link.rotationStartedAt || link.createdAt).getTime(), elapsed = Math.max(0, at.getTime() - started), cycleNumber = Math.floor(elapsed / cycleMs) + 1;
+    let offset = elapsed % cycleMs / 6e4, active = stages[0];
+    for (const stage of stages) {
+      if (offset < stage.durationMinutes) {
+        active = stage;
+        break;
+      }
+      offset -= stage.durationMinutes;
+    }
+    const remaining = Math.max(0, active.durationMinutes - offset) * 6e4;
+    return { url: active.url, phase: "infinite_loop", label: active.name, cycleNumber, activeShortCode: link.shortCode, nextSwitchAt: new Date(at.getTime() + remaining).toISOString(), progressPercent: Math.round(offset / active.durationMinutes * 100), reason: `Etapa ${active.name} do ciclo cont\xEDnuo.` };
+  }
+  if (link.mode === "dual_switch") {
+    const switched = at.getTime() >= new Date(link.switchDate).getTime();
+    const start = new Date(link.createdAt).getTime(), end = new Date(link.switchDate).getTime();
+    return { url: switched ? link.phaseTwoUrl || fallback : link.phaseOneUrl, phase: switched ? "phase2" : "phase1", label: switched ? "Fase 2" : "Fase 1", activeShortCode: link.shortCode, nextSwitchAt: switched ? void 0 : link.switchDate, progressPercent: switched ? 100 : Math.max(0, Math.min(100, Math.round((at.getTime() - start) / (end - start) * 100))), reason: switched ? "Prazo encerrado; destino final ativo." : "Destino inicial ativo at\xE9 a data programada." };
+  }
+  const steps = (link.timelineSteps || []).filter((step2) => new Date(step2.startDate).getTime() <= at.getTime() && (!step2.endDate || at.getTime() < new Date(step2.endDate).getTime()) && (!step2.maxClicks || (step2.clickCount || 0) < step2.maxClicks)).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+  const step = steps[0];
+  return { url: step?.url || fallback, phase: step ? "timeline" : "expired", label: step?.name || "Sem etapa ativa", activeShortCode: link.shortCode, nextSwitchAt: step?.endDate, progressPercent: 0, reason: step ? `Etapa cronol\xF3gica \u201C${step.name}\u201D ativa.` : "N\xE3o h\xE1 etapa ativa para esta data." };
+}
+function findSmartLinkByCode(links, code, at = /* @__PURE__ */ new Date()) {
+  const clean = code.toLowerCase();
+  const direct = links.find((link) => link.shortCode.toLowerCase() === clean || link.baseSlug?.toLowerCase() === clean);
+  if (direct) return direct;
+  return links.find((link) => {
+    if (link.mode !== "rotating_shortlink") return false;
+    const current = rotatingStatus(link, at);
+    if (current.current === clean) return true;
+    if (!link.expireOldLinks) {
+      for (let cycle = Math.max(1, current.cycleNumber - 200); cycle < current.cycleNumber; cycle++) if (generateCycleSlug(link.baseSlug, link.slugType, cycle, link.customSlugs) === clean) return true;
+    }
+    return false;
+  });
+}
+
+// smart-links-service.ts
+var escapeHtml = (value) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] || char);
+var device = (agent = "") => /ipad|tablet/i.test(agent) ? "tablet" : /mobile|android|iphone/i.test(agent) ? "mobile" : "desktop";
+var privateIpv4 = (address) => {
+  const parts = address.split(".").map(Number);
+  return parts[0] === 10 || parts[0] === 127 || parts[0] === 0 || parts[0] === 169 && parts[1] === 254 || parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31 || parts[0] === 192 && parts[1] === 168;
+};
+var privateIpv6 = (address) => address === "::1" || address.startsWith("fc") || address.startsWith("fd") || address.startsWith("fe80:");
+async function assertPublicUrl(raw) {
+  const url = new URL(raw);
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("Protocolo n\xE3o permitido.");
+  if (url.username || url.password) throw new Error("URL com credenciais n\xE3o permitida.");
+  if (["localhost", "0.0.0.0"].includes(url.hostname.toLowerCase())) throw new Error("Destino interno n\xE3o permitido.");
+  const addresses = (0, import_node_net.isIP)(url.hostname) ? [{ address: url.hostname }] : await (0, import_promises.lookup)(url.hostname, { all: true });
+  if (addresses.some((item) => item.address.includes(":") ? privateIpv6(item.address) : privateIpv4(item.address))) throw new Error("Destino interno n\xE3o permitido.");
+  return url;
+}
+async function fetchPublicHtml(raw) {
+  let url = await assertPublicUrl(raw);
+  for (let redirect = 0; redirect < 4; redirect++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8e3);
+    try {
+      const response = await fetch(url, { redirect: "manual", signal: controller.signal, headers: { "user-agent": "Mozilla/5.0 TempoLink/1.0", "accept": "text/html,application/xhtml+xml" } });
+      if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
+        url = await assertPublicUrl(new URL(response.headers.get("location"), url).toString());
+        continue;
+      }
+      if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return null;
+      const declared = Number(response.headers.get("content-length") || 0);
+      if (declared > 25e5) return null;
+      const html = await response.text();
+      return html.length <= 25e5 ? { html, url } : null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return null;
+}
+function statusPage(title, message, status) {
+  return { status, html: `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#09090b;color:#fafafa;font:15px system-ui;padding:20px;box-sizing:border-box}.c{max-width:480px;padding:34px;border:1px solid #3f3f46;border-radius:22px;background:#18181b;text-align:center}h1{font-size:22px}p{color:#a1a1aa;line-height:1.6}</style></head><body><div class="c"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></div></body></html>` };
+}
+async function allLinks() {
+  const snapshot = await (0, import_firestore2.getDocs)((0, import_firestore2.collection)(db, "smart_links"));
+  return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+}
+function configureSmartLinks(app2) {
+  app2.get("/api/smart-links/:id/simulate", async (req, res) => {
+    try {
+      const link = (await allLinks()).find((item) => item.id === req.params.id);
+      if (!link) return res.status(404).json({ error: "Link n\xE3o encontrado." });
+      const at = req.query.at ? new Date(String(req.query.at)) : /* @__PURE__ */ new Date();
+      if (Number.isNaN(at.getTime())) return res.status(400).json({ error: "Data inv\xE1lida." });
+      res.json(resolveSmartLink(link, at));
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Falha na simula\xE7\xE3o." });
+    }
+  });
+  app2.get("/r/:code", smartLinkRedirectHandler);
+}
+async function smartLinkRedirectHandler(req, res) {
+  try {
+    const links = await allLinks();
+    const link = findSmartLinkByCode(links, req.params.code, /* @__PURE__ */ new Date());
+    if (!link) {
+      const page = statusPage("Link n\xE3o encontrado", "O c\xF3digo informado n\xE3o existe ou foi removido.", 404);
+      return res.status(page.status).send(page.html);
+    }
+    const resolution = resolveSmartLink(link, /* @__PURE__ */ new Date(), req.params.code);
+    if (!resolution.url) {
+      const page = statusPage(resolution.label, link.expiredMessage || resolution.reason, resolution.expiredSlug ? 410 : 404);
+      return res.status(page.status).send(page.html);
+    }
+    await assertPublicUrl(resolution.url);
+    await Promise.allSettled([
+      (0, import_firestore2.updateDoc)((0, import_firestore2.doc)(db, "smart_links", link.id), { totalClicks: (0, import_firestore2.increment)(1), lastClickAt: (/* @__PURE__ */ new Date()).toISOString() }),
+      (0, import_firestore2.addDoc)((0, import_firestore2.collection)(db, "smart_link_clicks"), { linkId: link.id, shortCode: req.params.code, destinationUrl: resolution.url, phase: resolution.phase, cycleNumber: resolution.cycleNumber || null, timestamp: (/* @__PURE__ */ new Date()).toISOString(), device: device(req.headers["user-agent"]), referrer: req.headers.referer || "", simulated: false })
+    ]);
+    if (!link.maskUrl || req.query.direct === "1") return res.redirect(302, resolution.url);
+    const result = await fetchPublicHtml(resolution.url);
+    if (!result) return res.redirect(302, resolution.url);
+    let html = result.html.replace(/<title[^>]*>[\s\S]*?<\/title>/i, "");
+    const title = escapeHtml(link.maskTitle || link.title);
+    const favicon = link.maskFavicon ? `<link rel="icon" href="${escapeHtml(link.maskFavicon)}">` : "";
+    const injection = `<base href="${escapeHtml(result.url.origin)}/" target="_self"><title>${title}</title>${favicon}`;
+    html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (match) => `${match}${injection}`) : `${injection}${html}`;
+    res.removeHeader("X-Frame-Options");
+    res.removeHeader("Content-Security-Policy");
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    return res.send(html);
+  } catch (error) {
+    const page = statusPage("Destino indispon\xEDvel", error instanceof Error ? error.message : "N\xE3o foi poss\xEDvel abrir este link.", 502);
+    return res.status(page.status).send(page.html);
+  }
+}
+
 // server.ts
-var ai = new import_genai.GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+var DEEPSEEK_API_URL = (process.env.DEEPSEEK_API_URL || "https://api.deepseek.com").replace(/\/$/, "");
+var DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 var AI_WINDOW_MS = 15 * 60 * 1e3;
 var AI_MAX_REQUESTS_PER_WINDOW = 20;
 var AI_MAX_TEXT_LENGTH = 2e4;
@@ -220,33 +422,78 @@ function readLimitedText(value, field, required = false) {
   if (value.length > AI_MAX_TEXT_LENGTH) throw new Error(`O campo ${field} excede o limite permitido.`);
   return value.trim();
 }
+async function generateDeepSeekJson(systemPrompt, userPrompt, temperature = 0.4) {
+  const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
+  if (!apiKey) throw new Error("DEEPSEEK_API_KEY n\xE3o configurada no servidor.");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6e4);
+  try {
+    const response = await fetch(`${DEEPSEEK_API_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        response_format: { type: "json_object" },
+        thinking: { type: "disabled" },
+        temperature,
+        max_tokens: 2500,
+        stream: false
+      }),
+      signal: controller.signal
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error?.message || `DeepSeek respondeu com HTTP ${response.status}.`);
+    }
+    const content = payload.choices?.[0]?.message?.content?.trim();
+    if (!content) throw new Error("A DeepSeek retornou uma resposta vazia.");
+    return JSON.parse(content);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("A DeepSeek excedeu o tempo m\xE1ximo de resposta.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 async function startServer() {
-  const app = (0, import_express.default)();
+  const app2 = (0, import_express.default)();
   const PORT = 3e3;
-  app.disable("x-powered-by");
-  app.set("trust proxy", 1);
-  app.use((req, res, next) => {
+  app2.disable("x-powered-by");
+  app2.set("trust proxy", 1);
+  app2.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     next();
   });
-  app.use(import_express.default.json({ limit: "256kb" }));
-  app.get("/api/health", (req, res) => {
+  app2.use(import_express.default.json({ limit: "256kb" }));
+  app2.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
-  configureMessageDispatch(app);
-  app.post("/api/analyze-marketing", limitAiRequests, async (req, res) => {
+  configureMessageDispatch(app2);
+  configureSmartLinks(app2);
+  app2.post("/api/analyze-marketing", limitAiRequests, async (req, res) => {
     try {
       const conteudos = readLimitedText(req.body?.conteudos, "conteudos");
       const metricas = readLimitedText(req.body?.metricas, "metricas");
       const contexto = readLimitedText(req.body?.contexto, "contexto");
-      console.log("Analyzing metrics via Gemini");
-      const prompt = `
-Voc\xEA \xE9 um Engenheiro de IA s\xEAnior e Especialista em Business Intelligence para redes de varejo e servi\xE7os locais. Sua fun\xE7\xE3o \xE9 atuar como o motor de an\xE1lise de uma aba de Marketing e Tr\xE1fego integrada a um sistema de gest\xE3o corporativo.
-
+      console.log(`Analyzing metrics via DeepSeek (${DEEPSEEK_MODEL})`);
+      const systemPrompt = `
+Voc\xEA \xE9 um Engenheiro de IA s\xEAnior e Especialista em Business Intelligence para redes de varejo e servi\xE7os locais. Sua fun\xE7\xE3o \xE9 atuar como o motor de an\xE1lise de uma aba de Marketing e Tr\xE1fego integrada a um sistema de gest\xE3o corporativo. Responda somente com JSON v\xE1lido, sem markdown ou coment\xE1rios externos.
+`;
+      const userPrompt = `
 DADOS RECEBIDOS:
+
 1. CRONOGRAMA DE CONTE\xDADOS:
 ${conteudos || "N\xE3o informado."}
 
@@ -285,27 +532,21 @@ Retorne EXATAMENTE este objeto JSON estrito:
   ]
 }
 `;
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json"
-        }
-      });
-      const responseText = response.text || "{}";
-      const result = JSON.parse(responseText);
+      const result = await generateDeepSeekJson(systemPrompt, userPrompt, 0.2);
       res.json(result);
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: "Failed to perform marketing analysis." });
+    } catch (error) {
+      console.error("DeepSeek marketing analysis failed:", error);
+      res.status(502).json({ error: error instanceof Error ? error.message : "Falha ao realizar a an\xE1lise de marketing." });
     }
   });
-  app.post("/api/generate-post-idea", limitAiRequests, async (req, res) => {
+  app2.post("/api/generate-post-idea", limitAiRequests, async (req, res) => {
     try {
       const tema = readLimitedText(req.body?.tema, "tema", true);
       const publico = readLimitedText(req.body?.publico, "publico");
-      const prompt = `
-Voc\xEA \xE9 um diretor de conte\xFAdo viral e marketing para barbearias e est\xE9tica masculina.
+      const systemPrompt = `
+Voc\xEA \xE9 um diretor de conte\xFAdo e marketing para barbearias e est\xE9tica masculina. Responda somente com JSON v\xE1lido, sem markdown ou coment\xE1rios externos.
+`;
+      const userPrompt = `
 Crie UMA (1) ideia de postagem extremamente engajadora e pr\xE1tica baseada no tema fornecido.
 
 TEMA: "${tema}"
@@ -319,19 +560,11 @@ Retorne o resultado estritamente neste formato JSON:
   "formato": "Reels"
 }
 `;
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          temperature: 0.9
-        }
-      });
-      const text = response.text || "{}";
-      res.json(JSON.parse(text));
+      const result = await generateDeepSeekJson(systemPrompt, userPrompt, 0.8);
+      res.json(result);
     } catch (error) {
-      console.error("Erro ao gerar post", error);
-      res.status(500).json({ error: "Erro ao gerar ideia com IA" });
+      console.error("DeepSeek post generation failed:", error);
+      res.status(502).json({ error: error instanceof Error ? error.message : "Falha ao gerar ideia com IA." });
     }
   });
   if (process.env.NODE_ENV !== "production") {
@@ -339,15 +572,15 @@ Retorne o resultado estritamente neste formato JSON:
       server: { middlewareMode: true },
       appType: "spa"
     });
-    app.use(vite.middlewares);
+    app2.use(vite.middlewares);
   } else {
     const distPath = import_path.default.join(process.cwd(), "dist");
-    app.use(import_express.default.static(distPath));
-    app.use((req, res) => {
+    app2.use(import_express.default.static(distPath));
+    app2.use((req, res) => {
       res.sendFile(import_path.default.join(distPath, "index.html"));
     });
   }
-  app.listen(PORT, "0.0.0.0", () => {
+  app2.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

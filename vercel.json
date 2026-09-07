@@ -1,4 +1,7 @@
 {
   "name": "vangard-sistema",
-  "framework": "vite"
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/r/:code", "destination": "/api/r/:code" }
+  ]
 }

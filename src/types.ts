@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'BARBER' | 'MANICURE' | 'FINANCIAL' | 'MARKETING';
+export type Role = 'ADMIN' | 'BARBER' | 'MANICURE' | 'FINANCIAL' | 'MARKETING' | 'RECEPTION';
 export type Unit = string;
 export type ItemType = string;
 
@@ -178,6 +178,20 @@ export interface SystemAnnouncement {
   unitId: string; // 'ALL' or specific unit ID
   createdAt: string; // ISO date string
   createdBy: string; // Admin's Name
+  createdById?: string;
+  targetRoles?: Role[]; // Ausente preserva avisos antigos como gerais.
+  readBy?: string[];
+  comments?: AnnouncementComment[];
+}
+
+export interface AnnouncementComment {
+  id: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: string;
+  replyToId?: string;
+  replyToName?: string;
 }
 
 export interface GDVSettings {

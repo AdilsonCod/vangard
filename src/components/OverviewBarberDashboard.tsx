@@ -15,7 +15,10 @@ export function OverviewBarberDashboard({ onNavigate }: { onNavigate: (page: 'AU
   // Filter announcements for this user
   const relevantAnnouncements = useMemo(() => {
     return (announcements || [])
-      .filter(a => a.unitId === 'ALL' || (currentUser?.unit && a.unitId === currentUser.unit))
+      .filter(a =>
+        (a.unitId === 'ALL' || (currentUser?.unit && a.unitId === currentUser.unit)) &&
+        (!a.targetRoles?.length || (!!currentUser && a.targetRoles.includes(currentUser.role)))
+      )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [announcements, currentUser]);
 

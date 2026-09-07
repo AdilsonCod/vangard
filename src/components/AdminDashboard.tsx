@@ -45,9 +45,11 @@ import {
   Building2,
   UserCircle2,
   MessagesSquare,
+  Link2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { User, CatalogItem, Target, Category, Subcategory, Role } from "../types";
+import { AnnouncementWall } from "./AnnouncementWall";
 // Logo imported via direct asset path
 
 type AdminNavItem = {
@@ -70,6 +72,7 @@ const MarketingDashboard = lazy(() => import("./MarketingDashboard").then(module
 const ReportsTab = lazy(() => import("./ReportsTab").then(module => ({ default: module.ReportsTab })));
 const DataImporterView = lazy(() => import("./DataImporterView"));
 const MessageDispatchDashboard = lazy(() => import("./MessageDispatchDashboard"));
+const SmartLinksDashboard = lazy(() => import("./SmartLinksDashboard"));
 
 export default function AdminDashboard() {
   const { currentUser, logout, themeLightBg, themeDarkBg, 
@@ -87,7 +90,7 @@ export default function AdminDashboard() {
     setIsDarkMode,
   } = useStore();
   const [activeTab, setActiveTab] = useState<string>(
-    currentUser?.role === 'MARKETING' ? "MARKETING" : currentUser?.role === 'FINANCIAL' ? "FINANCE_RESUMO" : "OVERVIEW"
+    currentUser?.role === 'MARKETING' ? "MARKETING" : currentUser?.role === 'FINANCIAL' ? "FINANCE_RESUMO" : currentUser?.role === 'RECEPTION' ? "AVISOS" : "OVERVIEW"
   );
   const [selectedUnit, setSelectedUnit] = useState<string>(() => localStorage.getItem("vans_global_unit") || "ALL");
   const [selectedBarber, setSelectedBarber] = useState<User | null>(null);
@@ -201,6 +204,7 @@ export default function AdminDashboard() {
     },
     { id: "AVISOS", label: "Mural de Avisos", section: "Operação", icon: Megaphone },
     { id: "MESSAGES", label: "Disparo de Mensagens", section: "Operação", icon: MessagesSquare },
+    { id: "SMART_LINKS", label: "Links Inteligentes", section: "Operação", icon: Link2 },
     { 
       id: "CATALOG", 
       label: "Catálogo", 
@@ -232,7 +236,9 @@ export default function AdminDashboard() {
   const navItems = currentUser?.role === 'FINANCIAL' 
     ? allNavItems.filter(item => item.id === "FINANCE" || item.id === "REPORTS" || item.id === "PAYMENTS" || item.id === "IMPORT" || item.id === "USERS")
     : currentUser?.role === 'MARKETING'
-    ? allNavItems.filter(item => item.id === "MARKETING" || item.id === "MESSAGES")
+    ? allNavItems.filter(item => item.id === "MARKETING" || item.id === "MESSAGES" || item.id === "SMART_LINKS")
+    : currentUser?.role === 'RECEPTION'
+    ? allNavItems.filter(item => item.id === "AVISOS" || item.id === "MESSAGES" || item.id === "SMART_LINKS")
     : allNavItems;
 
   const navSections = useMemo(
@@ -675,7 +681,7 @@ export default function AdminDashboard() {
                 Publique comunicados, regras corporativas, avisos de conquistas ou alertas urgentes direcionados a unidades específicas ou a toda a equipe de barbeiros.
               </p>
             </div>
-            <AvisosManager />
+            <AnnouncementWall />
           </div>
         ) : activeTab === "USERS_STAFF" ? (
           <UsersDashboard tabView="BARBERS" />
@@ -697,6 +703,8 @@ export default function AdminDashboard() {
           <MarketingDashboard />
         ) : activeTab === "MESSAGES" ? (
           <MessageDispatchDashboard />
+        ) : activeTab === "SMART_LINKS" ? (
+          <SmartLinksDashboard />
         ) : activeTab === "REPORTS" ? (
           <ReportsTab />
         ) : activeTab === "IMPORT" ? (

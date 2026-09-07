@@ -138,6 +138,7 @@ interface StoreContextType extends AppState {
   markNotificationAsRead: (id: string) => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
   addAnnouncement: (announcement: SystemAnnouncement) => Promise<void>;
+  updateAnnouncement: (announcement: SystemAnnouncement) => Promise<void>;
   deleteAnnouncement: (id: string) => Promise<void>;
   themeColor: string;
   setThemeColor: (color: string) => void;
@@ -764,7 +765,11 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const addAnnouncement = async (announcement: SystemAnnouncement) => {
-    await setDoc(doc(db, 'announcements', announcement.id), announcement);
+    await setDoc(doc(db, 'announcements', announcement.id), cleanUndefined(announcement));
+  };
+
+  const updateAnnouncement = async (announcement: SystemAnnouncement) => {
+    await setDoc(doc(db, 'announcements', announcement.id), cleanUndefined(announcement));
   };
 
   const deleteAnnouncement = async (id: string) => {
@@ -803,7 +808,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       quarterlyRankingVisible, setQuarterlyRankingVisible,
       financialCategories, suppliers, finClassifications, finSubclassifications, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
       login, logout, addUser, updateUser, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
-      updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, markNotificationAsRead, deleteNotification, addAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
+      updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, markNotificationAsRead, deleteNotification, addAnnouncement, updateAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
       isDarkMode, setIsDarkMode
     }}>
       {children}

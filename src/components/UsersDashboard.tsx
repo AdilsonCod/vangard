@@ -88,7 +88,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
     if (!editingId) {
        if (subTab === 'BARBERS' && !['BARBER', 'MANICURE'].includes(role)) {
           assignedRole = 'BARBER';
-       } else if (subTab === 'MANAGERS' && !['ADMIN', 'FINANCIAL', 'MARKETING'].includes(role)) {
+       } else if (subTab === 'MANAGERS' && !['ADMIN', 'FINANCIAL', 'MARKETING', 'RECEPTION'].includes(role)) {
           assignedRole = 'ADMIN';
        }
     }
@@ -229,7 +229,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
 
   const filteredUsers = users.filter(u => {
     if (subTab === 'BARBERS') return u.role === 'BARBER' || u.role === 'MANICURE';
-    if (subTab === 'MANAGERS') return u.role === 'ADMIN' || u.role === 'FINANCIAL' || u.role === 'MARKETING';
+    if (subTab === 'MANAGERS') return u.role === 'ADMIN' || u.role === 'FINANCIAL' || u.role === 'MARKETING' || u.role === 'RECEPTION';
     return false;
   });
   const pageTitle = subTab === 'UNITS' ? 'Cadastro de unidades' : subTab === 'MANAGERS' ? 'Gerência e acessos' : 'Colaboradores';
@@ -434,6 +434,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
                       <option value="ADMIN">Gerente</option>
                       <option value="FINANCIAL">Financeiro</option>
                       <option value="MARKETING">Marketing</option>
+                      <option value="RECEPTION">Recepção</option>
                     </>
                   )}
                 </select>
@@ -511,7 +512,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
                          <td className="px-4 py-3 font-medium">{u.email || '-'}</td>
                          <td className="px-4 py-3">
                            <span className={`px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider ${u.role === 'ADMIN' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300' : u.role === 'MANICURE' ? 'bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-300' : 'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'}`}>
-                             {u.role === 'ADMIN' ? 'Gerente' : u.role === 'FINANCIAL' ? 'Financeiro' : u.role === 'MARKETING' ? 'Marketing' : u.role === 'MANICURE' ? 'Manicure' : 'Barbeiro'}
+                             {u.role === 'ADMIN' ? 'Gerente' : u.role === 'FINANCIAL' ? 'Financeiro' : u.role === 'MARKETING' ? 'Marketing' : u.role === 'RECEPTION' ? 'Recepção' : u.role === 'MANICURE' ? 'Manicure' : 'Barbeiro'}
                            </span>
                          </td>
                          <td className="px-4 py-3 font-medium">{u.role === 'ADMIN' ? '-' : getUnitLabel(u.unit)}</td>
@@ -581,7 +582,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
                   </div>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${u.role === 'ADMIN' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300' : u.role === 'MANICURE' ? 'bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-300' : 'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'}`}>
-                      {u.role === 'ADMIN' ? 'Gerente' : u.role === 'FINANCIAL' ? 'Financeiro' : u.role === 'MARKETING' ? 'Marketing' : u.role === 'MANICURE' ? 'Manicure' : 'Barbeiro'}
+                      {u.role === 'ADMIN' ? 'Gerente' : u.role === 'FINANCIAL' ? 'Financeiro' : u.role === 'MARKETING' ? 'Marketing' : u.role === 'RECEPTION' ? 'Recepção' : u.role === 'MANICURE' ? 'Manicure' : 'Barbeiro'}
                     </span>
                     {!['ADMIN', 'FINANCIAL', 'MARKETING'].includes(u.role) && (
                       <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-850 text-gray-600 dark:text-zinc-400 text-[10px] font-bold uppercase tracking-wider">

@@ -4,6 +4,7 @@ import Login from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
 import BarberDashboard from './components/BarberDashboard';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import PublicLinkRedirect from './components/PublicLinkRedirect';
 
 const THEME_COLORS: Record<string, { main: string; strong: string; soft: string }> = {
   green: { main: '#22c55e', strong: '#16a34a', soft: '#dcfce7' },
@@ -15,6 +16,7 @@ const THEME_COLORS: Record<string, { main: string; strong: string; soft: string 
 
 function AppContent() {
   const { currentUser, isDarkMode, themeColor, themeLightBg, themeDarkBg } = useStore();
+  const redirectMatch = window.location.pathname.match(/^\/r\/([^/]+)\/?$/i);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -51,9 +53,11 @@ function AppContent() {
     document.documentElement.style.setProperty('--theme-color-soft', palette.soft);
   }, [themeColor]);
 
+  if (redirectMatch) return <PublicLinkRedirect code={decodeURIComponent(redirectMatch[1])} />;
+
   if (!currentUser) return <Login />;
   
-  if (currentUser.role === 'ADMIN' || currentUser.role === 'FINANCIAL' || currentUser.role === 'MARKETING') return <AdminDashboard />;
+  if (currentUser.role === 'ADMIN' || currentUser.role === 'FINANCIAL' || currentUser.role === 'MARKETING' || currentUser.role === 'RECEPTION') return <AdminDashboard />;
   
   return <BarberDashboard />;
 }

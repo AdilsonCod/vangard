@@ -1,10 +1,12 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
 import { configureMessageDispatch } from "./message-dispatch-service";
+import { configureSmartLinks } from "./smart-links-service";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const DEEPSEEK_API_URL = (process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com').replace(/\/$/, '');
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
 
 const AI_WINDOW_MS = 15 * 60 * 1000;
 const AI_MAX_REQUESTS_PER_WINDOW = 20;
@@ -41,6 +43,58 @@ function readLimitedText(value: unknown, field: string, required = false) {
   return value.trim();
 }
 
+type DeepSeekChatResponse = {
+  choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>;
+  error?: { message?: string };
+};
+
+async function generateDeepSeekJson(systemPrompt: string, userPrompt: string, temperature = 0.4) {
+  const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
+  if (!apiKey) throw new Error('DEEPSEEK_API_KEY não configurada no servidor.');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  try {
+    const response = await fetch(`${DEEPSEEK_API_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        response_format: { type: 'json_object' },
+        thinking: { type: 'disabled' },
+        temperature,
+        max_tokens: 2_500,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+
+    const payload = await response.json() as DeepSeekChatResponse;
+    if (!response.ok) {
+      throw new Error(payload.error?.message || `DeepSeek respondeu com HTTP ${response.status}.`);
+    }
+
+    const content = payload.choices?.[0]?.message?.content?.trim();
+    if (!content) throw new Error('A DeepSeek retornou uma resposta vazia.');
+    return JSON.parse(content) as unknown;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('A DeepSeek excedeu o tempo máximo de resposta.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -62,6 +116,7 @@ async function startServer() {
   });
 
   configureMessageDispatch(app);
+  configureSmartLinks(app);
 
   app.post("/api/analyze-marketing", limitAiRequests, async (req, res) => {
     try {
@@ -69,11 +124,13 @@ async function startServer() {
       const metricas = readLimitedText(req.body?.metricas, 'metricas');
       const contexto = readLimitedText(req.body?.contexto, 'contexto');
 
-      console.log("Analyzing metrics via Gemini");
-      const prompt = `
-Você é um Engenheiro de IA sênior e Especialista em Business Intelligence para redes de varejo e serviços locais. Sua função é atuar como o motor de análise de uma aba de Marketing e Tráfego integrada a um sistema de gestão corporativo.
-
+      console.log(`Analyzing metrics via DeepSeek (${DEEPSEEK_MODEL})`);
+      const systemPrompt = `
+Você é um Engenheiro de IA sênior e Especialista em Business Intelligence para redes de varejo e serviços locais. Sua função é atuar como o motor de análise de uma aba de Marketing e Tráfego integrada a um sistema de gestão corporativo. Responda somente com JSON válido, sem markdown ou comentários externos.
+`;
+      const userPrompt = `
 DADOS RECEBIDOS:
+
 1. CRONOGRAMA DE CONTEÚDOS:
 ${conteudos || "Não informado."}
 
@@ -112,22 +169,11 @@ Retorne EXATAMENTE este objeto JSON estrito:
   ]
 }
 `;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-        }
-      });
-      
-      const responseText = response.text || "{}";
-      const result = JSON.parse(responseText);
-
+      const result = await generateDeepSeekJson(systemPrompt, userPrompt, 0.2);
       res.json(result);
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: "Failed to perform marketing analysis." });
+    } catch (error) {
+      console.error('DeepSeek marketing analysis failed:', error);
+      res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao realizar a análise de marketing.' });
     }
   });
 
@@ -136,8 +182,10 @@ Retorne EXATAMENTE este objeto JSON estrito:
       const tema = readLimitedText(req.body?.tema, 'tema', true);
       const publico = readLimitedText(req.body?.publico, 'publico');
 
-      const prompt = `
-Você é um diretor de conteúdo viral e marketing para barbearias e estética masculina.
+      const systemPrompt = `
+Você é um diretor de conteúdo e marketing para barbearias e estética masculina. Responda somente com JSON válido, sem markdown ou comentários externos.
+`;
+      const userPrompt = `
 Crie UMA (1) ideia de postagem extremamente engajadora e prática baseada no tema fornecido.
 
 TEMA: "${tema}"
@@ -151,21 +199,11 @@ Retorne o resultado estritamente neste formato JSON:
   "formato": "Reels"
 }
 `;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.9,
-        }
-      });
-      
-      const text = response.text || "{}";
-      res.json(JSON.parse(text));
+      const result = await generateDeepSeekJson(systemPrompt, userPrompt, 0.8);
+      res.json(result);
     } catch (error) {
-      console.error("Erro ao gerar post", error);
-      res.status(500).json({ error: "Erro ao gerar ideia com IA" });
+      console.error('DeepSeek post generation failed:', error);
+      res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao gerar ideia com IA.' });
     }
   });
 

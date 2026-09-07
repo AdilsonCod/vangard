@@ -14,7 +14,7 @@ import {
   Flame,
 } from "lucide-react";
 
-export function BarberAnnouncementsView() {
+export function LegacyBarberAnnouncementsView() {
   const { currentUser, announcements, systemUnits } = useStore();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<string>("ALL");
@@ -308,3 +308,5 @@ export function BarberAnnouncementsView() {
     </div>
   );
 }
+
+export { AnnouncementWall as BarberAnnouncementsView } from "./AnnouncementWall";
