@@ -677,3 +677,46 @@ html.dark body.theme-dark-pure {
     max-height: calc(100dvh - 1rem);
   }
 }
+
+/* Stable, device-independent canvas used only while exporting the billing report. */
+.report-pdf-export-stage {
+  position: fixed;
+  top: 0;
+  left: -20000px;
+  z-index: -1;
+  width: 1120px;
+  pointer-events: none;
+}
+
+.report-pdf-export {
+  width: 1120px !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 32px !important;
+  border-radius: 0 !important;
+  animation: none !important;
+  overflow: visible !important;
+}
+
+.report-pdf-export .report-pdf-columns,
+.report-pdf-export .report-pdf-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+.report-pdf-export .report-pdf-columns > :nth-child(n + 2) {
+  border-left-width: 1px !important;
+  padding-left: 1.5rem !important;
+}
+
+.report-pdf-export .report-pdf-metrics > :nth-child(2) {
+  border-top-width: 0 !important;
+  border-left-width: 1px !important;
+  border-right-width: 1px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.report-pdf-export .report-pdf-total {
+  flex-direction: row !important;
+  text-align: left !important;
+}

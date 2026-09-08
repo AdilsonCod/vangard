@@ -80,6 +80,23 @@ export interface PaymentRecord {
   potPercentage?: number;
 }
 
+export interface CommissionBracket {
+  id: string;
+  unitId: string;
+  minimumRevenue: number;
+  maximumRevenue: number;
+  percentage: number;
+}
+
+export interface CommissionConfig {
+  id: string;
+  unitId: string;
+  brackets: CommissionBracket[];
+  schemaVersion: 1;
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export interface DailyEntry {
   id: string;
   userId: string;

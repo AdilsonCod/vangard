@@ -46,6 +46,7 @@ import {
   UserCircle2,
   MessagesSquare,
   Link2,
+  Calculator,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { User, CatalogItem, Target, Category, Subcategory, Role } from "../types";
@@ -74,6 +75,7 @@ const DataImporterView = lazy(() => import("./DataImporterView"));
 const MessageDispatchDashboard = lazy(() => import("./MessageDispatchDashboard"));
 const SmartLinksDashboard = lazy(() => import("./SmartLinksDashboard"));
 const NotificationCenter = lazy(() => import("./NotificationCenter").then(m => ({ default: m.NotificationCenter })));
+const CommissionCalculationView = lazy(() => import("./CommissionCalculationView"));
 
 export default function AdminDashboard() {
   const { currentUser, logout, themeLightBg, themeDarkBg, 
@@ -191,6 +193,7 @@ export default function AdminDashboard() {
       ]
     },
     { id: "PAYMENTS", label: "Pagamentos", section: "Financeiro", icon: DollarSign },
+    { id: "COMMISSION_CALCULATION", label: "Cálculo de Comissão", section: "Financeiro", icon: Calculator },
     { id: "BARBERS", label: "Barbeiros e Metas", section: "Operação", icon: TrendingUp },
     { 
       id: "MANAGEMENT", 
@@ -237,7 +240,7 @@ export default function AdminDashboard() {
   ];
 
   const navItems = currentUser?.role === 'FINANCIAL' 
-    ? allNavItems.filter(item => item.id === "FINANCE" || item.id === "REPORTS" || item.id === "PAYMENTS" || item.id === "CONFIG" || item.id === "NOTIFICATIONS")
+    ? allNavItems.filter(item => item.id === "FINANCE" || item.id === "REPORTS" || item.id === "PAYMENTS" || item.id === "COMMISSION_CALCULATION" || item.id === "CONFIG" || item.id === "NOTIFICATIONS")
     : currentUser?.role === 'MARKETING'
     ? allNavItems.filter(item => item.id === "MARKETING" || item.id === "MESSAGES" || item.id === "SMART_LINKS" || item.id === "CONFIG" || item.id === "NOTIFICATIONS")
     : currentUser?.role === 'RECEPTION'
@@ -728,6 +731,8 @@ export default function AdminDashboard() {
           <CatalogEditor catalog={catalog} updateCatalog={updateCatalog} tabView="CATEGORIES" />
         ) : activeTab === "PAYMENTS" ? (
           <PaymentsTab />
+        ) : activeTab === "COMMISSION_CALCULATION" ? (
+          <CommissionCalculationView />
         ) : activeTab === "MARKETING" ? (
           <MarketingDashboard />
         ) : activeTab === "MESSAGES" ? (

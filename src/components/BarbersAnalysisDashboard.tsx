@@ -742,7 +742,6 @@ export function BarbersAnalysisDashboard() {
                                       <CardInput label="Serviços Assinatura" value={bStats.servicosAssinatura || 0} onChange={v => handleUpdate(barber.id, monthStr, 'servicosAssinatura', v)} suffix="un" />
                                       <CardInput label="Fichas Assinatura" value={bStats.fichasAssinatura || 0} onChange={v => handleUpdate(barber.id, monthStr, 'fichasAssinatura', v)} suffix="un" />
                                       <CardInput label="Ticket Médio" value={ticketMedio} prefix="R$" isReadOnly />
-                                      <CardInput label="Comissão" value={bStats.comissao} onChange={v => handleUpdate(barber.id, monthStr, 'comissao', v)} prefix="R$" />
                                       <CardInput label="Comissão Serviços" value={bStats.comissaoServicos || 0} onChange={v => handleUpdate(barber.id, monthStr, 'comissaoServicos', v)} prefix="R$" />
                                       <CardInput label="Comissão Produtos" value={bStats.comissaoProdutos || 0} onChange={v => handleUpdate(barber.id, monthStr, 'comissaoProdutos', v)} prefix="R$" />
                                       <CardInput label="Comissão Assinaturas" value={bStats.comissaoAssinatura || 0} onChange={v => handleUpdate(barber.id, monthStr, 'comissaoAssinatura', v)} prefix="R$" />

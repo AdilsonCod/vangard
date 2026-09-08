@@ -57,9 +57,14 @@ export default function DataImporterView() {
     | "CATALOGO"
     | "DPOTE_PDF"
     | "CASHBARBER_PRODUTOS"
+    | "RELATORIO_09"
+    | "RELATORIO_17"
+    | "RELATORIO_33"
   >("SERVICOS");
   const isUnitItemsImport = ["UNIDADE_ITENS", "UNIDADE_SERVICOS", "UNIDADE_PRODUTOS"].includes(importType);
+  const isClientMetricsImport = ["RELATORIO_09", "RELATORIO_17", "RELATORIO_33"].includes(importType);
   const [targetUnitId, setTargetUnitId] = useState<string>("");
+  const [targetBarberId, setTargetBarberId] = useState<string>("");
 
   const [isParsing, setIsParsing] = useState(false);
   const [rawHeaders, setRawHeaders] = useState<string[]>([]);
@@ -150,6 +155,12 @@ export default function DataImporterView() {
             ? "UNIDADE_SERVICOS"
             : normalizedName.includes("relatorio produtos")
               ? "UNIDADE_PRODUTOS"
+              : /relatorio\s*09/.test(normalizedName)
+                ? "RELATORIO_09"
+                : /relatorio\s*17/.test(normalizedName)
+                  ? "RELATORIO_17"
+                  : /relatorio\s*33/.test(normalizedName)
+                    ? "RELATORIO_33"
               : null;
     if (detectedType) {
       setImportType(detectedType);
@@ -572,6 +583,71 @@ if (importType === "CASHBARBER_PRODUTOS") {
             const warnings = results.errors.slice(0, 5).map(
               (item) => `Linha ${(item.row ?? 0) + 2}: ${item.message}`,
             );
+            if (isClientMetricsImport) {
+              const rows = results.data as Record<string, unknown>[];
+              const clean = (value: unknown) => String(value ?? "").trim();
+              const parsed: any[] = [];
+
+              if (importType === "RELATORIO_09") {
+                if (!targetBarberId) {
+                  setErrorMessage("Selecione o barbeiro correspondente ao Relatório 09 antes de ler o arquivo.");
+                  setIsParsing(false);
+                  return;
+                }
+                const totalRow = rows.find((row) => clean(row.Cliente).toLowerCase() === "total geral");
+                const fallbackClients = new Set(
+                  rows.map((row) => clean(row.Cliente))
+                    .filter((name) => name && !/^(com clube|sem clube|total)/i.test(name)),
+                ).size;
+                const quantity = parseWholeNumber(totalRow?.Total) || fallbackClients;
+                const barber = users.find((user) => user.id === targetBarberId);
+                if (barber && quantity > 0) parsed.push({ profissional: barber.name, userId: barber.id, quantidade: quantity });
+              } else if (importType === "RELATORIO_17") {
+                let currentProfessional = "";
+                const counts: Record<string, number> = {};
+                rows.forEach((row) => {
+                  const name = clean(row.Nome);
+                  const date = clean(row.Data);
+                  if (!name || /^total$/i.test(name)) return;
+                  if (!date && !clean(row.Email) && !clean(row.Telefone)) {
+                    currentProfessional = name;
+                    counts[currentProfessional] ??= 0;
+                  } else if (date && currentProfessional) {
+                    counts[currentProfessional] += 1;
+                  }
+                });
+                Object.entries(counts).forEach(([profissional, quantidade]) => parsed.push({ profissional, quantidade }));
+              } else {
+                const counts: Record<string, number> = {};
+                rows.forEach((row) => {
+                  const profissional = clean(row.Profissional);
+                  if (!profissional || /^totalizado/i.test(profissional)) return;
+                  counts[profissional] = (counts[profissional] || 0) + 1;
+                });
+                Object.entries(counts).forEach(([profissional, quantidade]) => parsed.push({ profissional, quantidade }));
+              }
+
+              if (!parsed.length) {
+                setErrorMessage("Nenhum dado compatível foi encontrado neste relatório.");
+                setIsParsing(false);
+                return;
+              }
+              const newMap = { ...manualUserMapping };
+              parsed.forEach((row) => {
+                if (row.userId) newMap[row.profissional] = row.userId;
+                else {
+                  const normalized = row.profissional.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+                  const matched = users.find((user) => user.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() === normalized);
+                  if (matched) newMap[row.profissional] = matched.id;
+                }
+              });
+              setManualUserMapping(newMap);
+              setParsedData(parsed);
+              setImportSummary({ read: rows.length, valid: parsed.length, ignored: Math.max(0, rows.length - parsed.length) });
+              setParseWarnings(warnings);
+              setIsParsing(false);
+              return;
+            }
             handleParsedRawData(results.data as any[], warnings);
           },
           error: (error) => {
@@ -640,6 +716,13 @@ if (importType === "CASHBARBER_PRODUTOS") {
       }
 
       if (!parsedData.length) return [];
+
+      if (isClientMetricsImport) {
+        return parsedData.map((row) => {
+          const userId = row.userId || manualUserMapping[row.profissional];
+          return { ...row, userId, userRole: users.find((user) => user.id === userId)?.role };
+        });
+      }
 
       if (isUnitItemsImport) {
         let fatTotal = 0;
@@ -751,7 +834,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
     ]);
 
     const handleSave = async () => {
-      if ((importType === "DPOTE_PDF" || isUnitItemsImport || importType === "CASHBARBER_PRODUTOS") && !targetUnitId) {
+      if ((importType === "DPOTE_PDF" || isUnitItemsImport || importType === "CASHBARBER_PRODUTOS" || isClientMetricsImport) && !targetUnitId) {
          alert("Por favor, selecione a Unidade Alvo antes de salvar.");
          return;
       }
@@ -797,7 +880,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
         let importJobRef: ReturnType<typeof doc> | null = null;
         if (file && fileFingerprint) {
           const contextFingerprint = await sha256(
-            `${fileFingerprint}|${importType}|${monthStr}|${targetUnitId || "AUTO"}|${selectedSheet || "DEFAULT"}`,
+            `${fileFingerprint}|${importType}|${monthStr}|${targetUnitId || "AUTO"}|${targetBarberId || "ALL"}|${selectedSheet || "DEFAULT"}`,
           );
           importJobRef = doc(db, "dataImportJobs", contextFingerprint);
           const previousImport = await getDoc(importJobRef);
@@ -1095,6 +1178,44 @@ if (importType === "CASHBARBER_PRODUTOS") {
 
             await updateMonthlyUnitStats(updated);
           }
+        } else if (isClientMetricsImport) {
+          const metric = importType === "RELATORIO_09"
+            ? "clientesAtendidos"
+            : importType === "RELATORIO_17"
+              ? "clientesNovos"
+              : "clientesSemPreferencia";
+          const patches = new Map<string, MonthlyBarberStats>();
+
+          for (const group of groupedData) {
+            if (!group.userId) continue;
+            const statId = `${monthStr}_${group.userId}`;
+            const current = monthlyBarberStats.find((stat) => stat.id === statId) || ({
+              id: statId, barberId: group.userId, unitId: targetUnitId,
+              month: monthStr, faturamentoTotal: 0, faturamentoAssinatura: 0,
+              comissao: 0, clientesAtendidos: 0, servicosRealizados: 0,
+              vendaProdutosValor: 0, vendasProdutosQtd: 0, taxaRetorno: 0,
+              clientesNovos: 0, clientesSemPreferencia: 0, extraCounts: {}, extraValues: {},
+            } as MonthlyBarberStats);
+            const updated = { ...current, unitId: targetUnitId, [metric]: group.quantidade } as MonthlyBarberStats;
+            patches.set(group.userId, updated);
+            await updateMonthlyBarberStats(updated);
+          }
+
+          const unitStatId = `${monthStr}_${targetUnitId}`;
+          const currentUnit = monthlyUnitStats.find((stat) => stat.id === unitStatId) || ({
+            id: unitStatId, unitId: targetUnitId, month: monthStr,
+            faturamentoTotal: 0, faturamentoAssinatura: 0, assinantes: 0,
+            clientesNovos: 0, clientesSemPreferencia: 0, clientesAtendidos: 0,
+            servicosRealizados: 0, vendaProdutosValor: 0, vendasProdutosQtd: 0,
+            extraCounts: {}, extraValues: {},
+          } as MonthlyUnitStats);
+          const barberIdsInUnit = new Set(users.filter((user) => user.unit === targetUnitId).map((user) => user.id));
+          patches.forEach((_value, key) => barberIdsInUnit.add(key));
+          const total = Array.from(barberIdsInUnit).reduce((sum, barberId) => {
+            const stat = patches.get(barberId) || monthlyBarberStats.find((item) => item.id === `${monthStr}_${barberId}`);
+            return sum + Number(stat?.[metric] || 0);
+          }, 0);
+          await updateMonthlyUnitStats({ ...currentUnit, [metric]: total });
         } else if (importType === "UNIDADE") {
           for (const group of groupedData) {
             if (!group.unitId) continue;
@@ -1280,6 +1401,9 @@ if (importType === "CASHBARBER_PRODUTOS") {
                 <option value="SERVICOS">Barbeiros - Serviços e comissões (CSV)</option>
                 <option value="CASHBARBER_PRODUTOS">Barbeiros - Produtos e comissões (PDF/Planilha)</option>
                 <option value="DPOTE_PDF">Barbeiros - Assinaturas D'Pote (PDF/Planilha)</option>
+                <option value="RELATORIO_09">Relatório 09 - Clientes atendidos por barbeiro</option>
+                <option value="RELATORIO_17">Relatório 17 - Clientes novos</option>
+                <option value="RELATORIO_33">Relatório 33 - Clientes sem preferência</option>
                 <option value="UNIDADE_SERVICOS">Unidade - Serviços realizados (CSV)</option>
                 <option value="UNIDADE_PRODUTOS">Unidade - Produtos vendidos (CSV)</option>
                 <option value="PRODUTOS">Barbeiros - Produtos (CSV genérico)</option>
@@ -1316,6 +1440,18 @@ if (importType === "CASHBARBER_PRODUTOS") {
                 <option value="12">Dezembro</option>
               </select>
             </div>
+
+            {importType === "RELATORIO_09" && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-zinc-300 mb-2">Barbeiro do Relatório</label>
+                <select value={targetBarberId} onChange={(e) => setTargetBarberId(e.target.value)} className={`${appControlClass} w-full bg-gray-50 dark:bg-zinc-950`}>
+                  <option value="">Selecione o barbeiro</option>
+                  {users.filter((user) => user.role === "BARBER" && (!targetUnitId || user.unit === targetUnitId)).map((user) => (
+                    <option key={user.id} value={user.id}>{user.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 dark:text-zinc-300 mb-2">
@@ -1640,6 +1776,12 @@ if (importType === "CASHBARBER_PRODUTOS") {
                         <th className="px-4 py-3 text-right">Assinantes</th>
                         <th className="px-4 py-3 text-right">Serviços</th>
                       </>
+                    ) : isClientMetricsImport ? (
+                      <>
+                        <th className="px-4 py-3">Profissional (Relatório)</th>
+                        <th className="px-4 py-3">Barbeiro do Sistema</th>
+                        <th className="px-4 py-3 text-right">{importType === "RELATORIO_09" ? "Clientes atendidos" : importType === "RELATORIO_17" ? "Clientes novos" : "Sem preferência"}</th>
+                      </>
                     ) : (
                       <>
                         <th className="px-4 py-3">Profissional (Planilha)</th>
@@ -1777,6 +1919,30 @@ if (importType === "CASHBARBER_PRODUTOS") {
                           <td className="px-4 py-4 text-right font-mono font-medium">
                             {g.servicosRealizados}
                           </td>
+                        </tr>
+                      );
+                    }
+
+                    if (isClientMetricsImport) {
+                      return (
+                        <tr
+                          key={i}
+                          className={`hover:bg-gray-50 dark:hover:bg-zinc-900/50 transition-colors ${!g.userId ? "bg-red-50/50 dark:bg-red-900/10" : ""}`}
+                        >
+                          <td className="px-4 py-4 font-bold text-gray-900 dark:text-zinc-100">{g.profissional}</td>
+                          <td className="px-4 py-4">
+                            <select
+                              value={g.userId || ""}
+                              onChange={(e) => handleUserMapChange(g.profissional, e.target.value)}
+                              className={`w-full bg-white dark:bg-zinc-950 border ${!g.userId ? "border-red-300 text-red-600 font-semibold" : "border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100"} rounded-lg p-2 text-sm outline-none`}
+                            >
+                              <option value="">-- Não localizado, selecione --</option>
+                              {users.filter((user) => user.role === "BARBER" && (!targetUnitId || user.unit === targetUnitId)).map((user) => (
+                                <option key={user.id} value={user.id}>{user.name}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-4 py-4 text-right font-mono font-bold text-[var(--theme-color)]">{g.quantidade}</td>
                         </tr>
                       );
                     }

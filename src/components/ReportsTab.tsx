@@ -120,12 +120,32 @@ export function ReportsTab() {
   const handleDownloadPDF = async () => {
     if (!reportRef.current) return;
     setIsGeneratingPdf(true);
+    let exportStage: HTMLDivElement | null = null;
     try {
       const element = reportRef.current;
-      
-      const canvas = await toCanvas(element, {
-        pixelRatio: 2, // 2x scale for crisp vector rendering of texts
-        backgroundColor: '#101F1F', // Executive dark emerald background to match brand layout
+
+      // Render a desktop-sized clone so exports made on phones and computers
+      // always have exactly the same A4 landscape composition.
+      const exportWidth = 1120;
+      const clone = element.cloneNode(true) as HTMLDivElement;
+      clone.classList.add('report-pdf-export');
+      clone.querySelectorAll<HTMLElement>('[data-html2canvas-ignore="true"]').forEach(node => node.remove());
+      exportStage = document.createElement('div');
+      exportStage.className = 'report-pdf-export-stage';
+      exportStage.style.width = `${exportWidth}px`;
+      exportStage.appendChild(clone);
+      document.body.appendChild(exportStage);
+
+      if (document.fonts?.ready) await document.fonts.ready;
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+
+      const backgroundColor = getComputedStyle(clone).backgroundColor || '#18181b';
+      const canvas = await toCanvas(clone, {
+        pixelRatio: 2,
+        width: exportWidth,
+        height: clone.scrollHeight,
+        backgroundColor,
+        cacheBust: true,
         filter: (node) => {
           if (node instanceof HTMLElement && node.dataset && node.dataset.html2canvasIgnore) {
             return false;
@@ -143,28 +163,25 @@ export function ReportsTab() {
 
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const margin = 6; // Reduced margin to maximize usable print space on the sheet
-      const contentWidth = pdfWidth - (margin * 2);
-      const contentHeight = (canvas.height * contentWidth) / canvas.width;
 
-      if (contentHeight <= pdfHeight - (margin * 2)) {
-        const yOffset = (pdfHeight - contentHeight) / 2;
-        pdf.addImage(imgData, 'PNG', margin, yOffset, contentWidth, contentHeight, undefined, 'FAST');
-      } else {
-        let heightLeft = contentHeight;
-        let position = margin;
+      const margin = 4;
+      const availableWidth = pdfWidth - margin * 2;
+      const availableHeight = pdfHeight - margin * 2;
+      const scale = Math.min(availableWidth / canvas.width, availableHeight / canvas.height);
+      const contentWidth = canvas.width * scale;
+      const contentHeight = canvas.height * scale;
+      const xOffset = (pdfWidth - contentWidth) / 2;
+      const yOffset = (pdfHeight - contentHeight) / 2;
 
-        pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight, undefined, 'FAST');
-        heightLeft -= (pdfHeight - margin * 2);
-
-        while (heightLeft > 0) {
-          position = heightLeft - contentHeight + margin;
-          pdf.addPage();
-          pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight, undefined, 'FAST');
-          heightLeft -= (pdfHeight - margin * 2);
-        }
-      }
+      // Paint the entire sheet using the report background and fit the complete
+      // report once; this deliberately prevents additional PDF pages.
+      const backgroundChannels = backgroundColor.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+      const [backgroundRed, backgroundGreen, backgroundBlue] = backgroundChannels?.length === 3
+        ? backgroundChannels
+        : [24, 24, 27];
+      pdf.setFillColor(backgroundRed, backgroundGreen, backgroundBlue);
+      pdf.rect(0, 0, pdfWidth, pdfHeight, 'F');
+      pdf.addImage(imgData, 'PNG', xOffset, yOffset, contentWidth, contentHeight, undefined, 'FAST');
 
       const unitName = systemUnits?.find(u => u.id === selectedUnit)?.name || 'Consolidado';
       const periodLabel = selectedWeek === 'ALL' 
@@ -177,6 +194,7 @@ export function ReportsTab() {
       console.error('Erro ao gerar PDF:', error);
       alert('Erro: ' + (error instanceof Error ? error.message : String(error)));
     } finally {
+      exportStage?.remove();
       setIsGeneratingPdf(false);
     }
   };
@@ -910,7 +928,7 @@ export function ReportsTab() {
       <div 
         ref={reportRef}
         id="print-report"
-        className="bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 p-6 md:p-8 rounded-3xl shadow-2xl border border-gray-200 dark:border-zinc-800 font-sans space-y-8 max-w-5xl mx-auto relative overflow-hidden animate-in zoom-in-95 duration-200"
+        className="w-full max-w-none bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 p-6 md:p-8 rounded-3xl shadow-2xl border border-gray-200 dark:border-zinc-800 font-sans space-y-8 relative overflow-hidden animate-in zoom-in-95 duration-200"
       >
         {/* Floating Download Button inside report */}
         <div className="absolute top-6 right-6 flex gap-2" data-html2canvas-ignore="true">
@@ -946,7 +964,7 @@ export function ReportsTab() {
         </div>
 
         {/* 3 COLUMNS: SERVIÇOS | PRODUTOS E BEBIDAS | ASSINATURA */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-4">
+        <div className="report-pdf-columns grid grid-cols-1 md:grid-cols-3 gap-8 pt-4">
           
           {/* SERVIÇOS COLUMN */}
           <div className="space-y-4">
@@ -1052,7 +1070,7 @@ export function ReportsTab() {
         </div>
 
         {/* BOTTOM METRICS BAR - GIVES LIVE EDIT SENSE */}
-        <div className="border-t border-gray-200 dark:border-zinc-800/50 pt-6 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+        <div className="report-pdf-metrics border-t border-gray-200 dark:border-zinc-800/50 pt-6 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
           <div className="space-y-0.5">
             <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-widest">DESCONTOS E CORTESIAS</span>
             {isEditing ? (
@@ -1095,7 +1113,7 @@ export function ReportsTab() {
         </div>
 
         {/* FATURAMENTO TOTAL BOTTOM BANNER */}
-        <div className="bg-orange-500 text-white p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-2 text-center sm:text-left shadow-lg">
+        <div className="report-pdf-total bg-orange-500 text-white p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-2 text-center sm:text-left shadow-lg">
           <div>
             <span className="text-2xs uppercase font-extrabold tracking-widest text-orange-950/70 dark:text-orange-950/70">FATURAMENTO TOTAL</span>
             <p className="text-4xs text-zinc-100 opacity-90 tracking-wide">Faturamento bruto das 3 colunas deduzido das comissões de cortesias abatidas</p>

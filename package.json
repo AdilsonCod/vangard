@@ -10,6 +10,7 @@
     "start": "node dist/server.cjs",
     "lint": "eslint .",
     "test:rede-parser": "tsx scripts/test-rede-parser.ts",
+    "test:commission": "tsx --test scripts/commission-calculator.test.ts",
     "firestore:import:dry": "tsx scripts/import-firestore-backup.ts",
     "firestore:import:apply": "tsx scripts/import-firestore-backup.ts --apply",
     "auth:migrate:dry": "tsx scripts/migrate-firebase-auth.ts",
