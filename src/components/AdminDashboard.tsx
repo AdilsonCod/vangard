@@ -47,6 +47,8 @@ import {
   MessagesSquare,
   Link2,
   Calculator,
+  Gift,
+  ShoppingBag,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { User, CatalogItem, Target, Category, Subcategory, Role } from "../types";
@@ -74,8 +76,8 @@ const ReportsTab = lazy(() => import("./ReportsTab").then(module => ({ default: 
 const DataImporterView = lazy(() => import("./DataImporterView"));
 const MessageDispatchDashboard = lazy(() => import("./MessageDispatchDashboard"));
 const SmartLinksDashboard = lazy(() => import("./SmartLinksDashboard"));
-const NotificationCenter = lazy(() => import("./NotificationCenter").then(m => ({ default: m.NotificationCenter })));
 const CommissionCalculationView = lazy(() => import("./CommissionCalculationView"));
+const OperationalControls = lazy(() => import("./OperationalControls"));
 
 export default function AdminDashboard() {
   const { currentUser, logout, themeLightBg, themeDarkBg, 
@@ -93,7 +95,7 @@ export default function AdminDashboard() {
     setIsDarkMode,
   } = useStore();
   const [activeTab, setActiveTab] = useState<string>(
-    currentUser?.role === 'MARKETING' ? "MARKETING" : currentUser?.role === 'FINANCIAL' ? "FINANCE_RESUMO" : currentUser?.role === 'RECEPTION' ? "AVISOS" : "OVERVIEW"
+    currentUser?.role === 'MARKETING' ? "MARKETING" : currentUser?.role === 'FINANCIAL' ? "FINANCE_RESUMO" : "OVERVIEW"
   );
   const [selectedUnit, setSelectedUnit] = useState<string>(() => localStorage.getItem("vans_global_unit") || "ALL");
   const [selectedBarber, setSelectedBarber] = useState<User | null>(null);
@@ -126,10 +128,18 @@ export default function AdminDashboard() {
   }, [selectedUnit]);
 
   useEffect(() => {
+    if (currentUser?.role !== 'RECEPTION') return;
+    const registeredUnit = currentUser.unit;
+    const canonicalUnit = availableUnits.find(unit => unit.id === registeredUnit || unit.name === registeredUnit)?.id;
+    setSelectedUnit(canonicalUnit || registeredUnit || '__SEM_UNIDADE__');
+  }, [availableUnits, currentUser?.role, currentUser?.unit]);
+
+  useEffect(() => {
+    if (currentUser?.role === 'RECEPTION') return;
     if (selectedUnit !== "ALL" && availableUnits.length > 0 && !availableUnits.some(unit => unit.id === selectedUnit)) {
       setSelectedUnit("ALL");
     }
-  }, [availableUnits, selectedUnit]);
+  }, [availableUnits, currentUser?.role, selectedUnit]);
 
 
   const barbers = users.filter(
@@ -207,6 +217,8 @@ export default function AdminDashboard() {
       ]
     },
     { id: "AVISOS", label: "Mural de Avisos", section: "Operação", icon: Megaphone },
+    { id: "COURTESY_CONTROL", label: "Controle de Cortesias", section: "Financeiro", icon: Gift },
+    { id: "INTERNAL_SALES", label: "Vendas Internas", section: "Financeiro", icon: ShoppingBag },
     { id: "MESSAGES", label: "Disparo de Mensagens", section: "Operação", icon: MessagesSquare },
     { id: "SMART_LINKS", label: "Links Inteligentes", section: "Operação", icon: Link2 },
     { 
@@ -236,15 +248,14 @@ export default function AdminDashboard() {
     { id: "REPORTS", label: "Relatórios", section: "Dados", icon: FileText },
     { id: "IMPORT", label: "Importações", section: "Dados", icon: Upload },
     { id: "CONFIG", label: "Configurações", section: "Sistema", icon: Settings },
-    { id: "NOTIFICATIONS", label: "Central de Notificações", section: "Sistema", icon: Bell },
   ];
 
   const navItems = currentUser?.role === 'FINANCIAL' 
-    ? allNavItems.filter(item => item.id === "FINANCE" || item.id === "REPORTS" || item.id === "PAYMENTS" || item.id === "COMMISSION_CALCULATION" || item.id === "CONFIG" || item.id === "NOTIFICATIONS")
+    ? allNavItems.filter(item => item.id === "FINANCE" || item.id === "REPORTS" || item.id === "PAYMENTS" || item.id === "COMMISSION_CALCULATION" || item.id === "COURTESY_CONTROL" || item.id === "INTERNAL_SALES" || item.id === "CONFIG")
     : currentUser?.role === 'MARKETING'
-    ? allNavItems.filter(item => item.id === "MARKETING" || item.id === "MESSAGES" || item.id === "SMART_LINKS" || item.id === "CONFIG" || item.id === "NOTIFICATIONS")
+    ? allNavItems.filter(item => item.id === "MARKETING" || item.id === "MESSAGES" || item.id === "SMART_LINKS" || item.id === "CONFIG")
     : currentUser?.role === 'RECEPTION'
-    ? allNavItems.filter(item => item.id === "AVISOS" || item.id === "MESSAGES" || item.id === "SMART_LINKS" || item.id === "CONFIG" || item.id === "NOTIFICATIONS")
+    ? allNavItems.filter(item => item.id === "OVERVIEW" || item.id === "AVISOS" || item.id === "COURTESY_CONTROL" || item.id === "INTERNAL_SALES" || item.id === "MESSAGES" || item.id === "SMART_LINKS" || item.id === "CONFIG")
     : allNavItems;
 
   const navSections = useMemo(
@@ -279,6 +290,10 @@ export default function AdminDashboard() {
     .toUpperCase();
 
   const navigateTo = (tabId: string) => {
+    if (currentUser?.role === 'RECEPTION') {
+      const allowed = new Set(navItems.flatMap(item => [item.id, ...(item.subItems || []).map(subItem => subItem.id)]));
+      if (!allowed.has(tabId)) return;
+    }
     setActiveTab(tabId);
     setGlobalSearch("");
     setIsMobileMenuOpen(false);
@@ -485,17 +500,6 @@ export default function AdminDashboard() {
                     </button>
                   ))}
                 </div>
-                <div className="border-t border-gray-100 p-2 dark:border-zinc-800">
-                  <button
-                    onClick={() => {
-                      setActiveTab("NOTIFICATIONS");
-                      setIsNotificationsOpen(false);
-                    }}
-                    className="w-full rounded-xl py-2 text-center text-xs font-bold text-[var(--theme-color)] transition hover:bg-[var(--theme-color)]/10"
-                  >
-                    Ver todas as notificações
-                  </button>
-                </div>
               </div>
             )}
           </div>
@@ -576,10 +580,12 @@ export default function AdminDashboard() {
               <select
                 value={selectedUnit}
                 onChange={event => setSelectedUnit(event.target.value)}
+                disabled={currentUser?.role === 'RECEPTION'}
                 aria-label="Unidade ativa"
-                className={cn(appControlClass, "w-full appearance-none pl-9 pr-8")}
+                className={cn(appControlClass, "w-full appearance-none pl-9 pr-8", currentUser?.role === 'RECEPTION' && "cursor-not-allowed opacity-80")}
               >
-                <option value="ALL">Todas as unidades</option>
+                {currentUser?.role !== 'RECEPTION' && <option value="ALL">Todas as unidades</option>}
+                {currentUser?.role === 'RECEPTION' && !availableUnits.some(unit => unit.id === selectedUnit) && <option value={selectedUnit}>Unidade do cadastro</option>}
                 {availableUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
               </select>
             </div>
@@ -690,7 +696,7 @@ export default function AdminDashboard() {
         <main className="app-main-content mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 py-4 sm:px-5 sm:py-6 lg:px-6 xl:px-7 xl:py-7">
         <Suspense fallback={<AppLoadingState />}>
         {activeTab === "OVERVIEW" ? (
-          <OverviewDashboard selectedUnit={selectedUnit} onNavigate={navigateTo} />
+          <OverviewDashboard selectedUnit={selectedUnit} onUnitChange={currentUser?.role === 'RECEPTION' ? undefined : setSelectedUnit} onNavigate={navigateTo} strictUnitScope={currentUser?.role === 'RECEPTION'} receptionMode={currentUser?.role === 'RECEPTION'} />
         ) : activeTab.startsWith("FINANCE") ? (
           <FinancialDashboard currentTab={activeTab.replace("FINANCE_", "") as any} />
         ) : activeTab === "MANAGEMENT_SVA" ? (
@@ -721,8 +727,6 @@ export default function AdminDashboard() {
           <UsersDashboard tabView="UNITS" />
         ) : activeTab === "CONFIG" ? (
           <ConfigEditor />
-        ) : activeTab === "NOTIFICATIONS" ? (
-          <NotificationCenter onNavigate={setActiveTab} />
         ) : activeTab === "CATALOG_PRODUCTS" ? (
           <CatalogEditor catalog={catalog} updateCatalog={updateCatalog} tabView="PRODUCTS" />
         ) : activeTab === "CATALOG_SERVICES" ? (
@@ -733,6 +737,10 @@ export default function AdminDashboard() {
           <PaymentsTab />
         ) : activeTab === "COMMISSION_CALCULATION" ? (
           <CommissionCalculationView />
+        ) : activeTab === "COURTESY_CONTROL" ? (
+          <OperationalControls kind="COURTESY" selectedUnit={selectedUnit} strictUnitScope={currentUser?.role === 'RECEPTION'} />
+        ) : activeTab === "INTERNAL_SALES" ? (
+          <OperationalControls kind="INTERNAL_SALE" selectedUnit={selectedUnit} strictUnitScope={currentUser?.role === 'RECEPTION'} />
         ) : activeTab === "MARKETING" ? (
           <MarketingDashboard />
         ) : activeTab === "MESSAGES" ? (

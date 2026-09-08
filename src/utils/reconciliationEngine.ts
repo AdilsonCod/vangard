@@ -150,6 +150,16 @@ export function normalizeFormaPgto(raw: string): {
   return { nome: clean, modalidadeLote: 'Outros', categoria: 'OUTROS' };
 }
 
+const PDV_CATEGORIES_IGNORED_IN_RECONCILIATION = new Set([
+  'ASSINATURA',
+  'VALE_PRESENTE',
+  'CORTESIA',
+]);
+
+export function shouldIgnorePdvReconciliationRow(paymentMethod: string): boolean {
+  return PDV_CATEGORIES_IGNORED_IN_RECONCILIATION.has(normalizeFormaPgto(paymentMethod).categoria);
+}
+
 // Ingestão 1: PDV / Caixa Operacional (Relatório20_Movimentacoes.csv ou .xlsx)
 export async function parsePDVFile(file: File): Promise<PDVMovimentacao[]> {
   const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
@@ -192,7 +202,7 @@ export async function parsePDVFile(file: File): Promise<PDVMovimentacao[]> {
         dataDia,
         isAssinaturaClube: isAssinatura
       };
-    });
+    }).filter(row => !shouldIgnorePdvReconciliationRow(row.formaPgto));
   }
 
   // Se for CSV ou TXT
@@ -224,7 +234,7 @@ export async function parsePDVFile(file: File): Promise<PDVMovimentacao[]> {
             isAssinaturaClube: isAssinatura
           };
         });
-        resolve(rows);
+        resolve(rows.filter(row => !shouldIgnorePdvReconciliationRow(row.formaPgto)));
       },
       error: (err) => reject(err)
     });

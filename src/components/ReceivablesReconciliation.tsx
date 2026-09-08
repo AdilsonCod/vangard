@@ -363,14 +363,6 @@ export function ReceivablesReconciliation() {
               <List className="h-4 w-4" /> Detalhada
             </button>
           </div>
-          <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-600 transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40 lg:w-auto"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            Importar Relatórios
-          </button>
-          
           <div className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800 lg:w-auto">
              <Filter className="w-4 h-4 text-gray-500" />
              <select 

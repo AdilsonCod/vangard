@@ -268,6 +268,9 @@ export interface FinancialTransaction {
   movementNature?: 'REVENUE' | 'EXPENSE' | 'PASS_THROUGH' | 'INTERNAL_TRANSFER' | 'ADVANCE' | 'COMMERCIAL_DISCOUNT' | 'NON_FINANCIAL';
   reconciliationStatus?: 'PENDING' | 'AWAITING_SETTLEMENT' | 'DIVERGENT' | 'RECONCILED' | 'NOT_APPLICABLE';
   sourceReference?: string;
+  clientName?: string;
+  barberId?: string;
+  itemName?: string;
 }
 
 export interface CashClosing {

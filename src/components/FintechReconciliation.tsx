@@ -132,6 +132,10 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const [showOnlySaldosNaoAdquirente, setShowOnlySaldosNaoAdquirente] = useState<boolean>(false);
   const [selectedBatchModalidade, setSelectedBatchModalidade] = useState<string>('TODAS');
   const [selectedBatchStatus, setSelectedBatchStatus] = useState<string>('TODOS');
+  const [objectiveStatus, setObjectiveStatus] = useState<'TODOS' | 'CONCILIADOS' | 'DIVERGENCIAS' | 'PENDENTES'>('TODOS');
+  const [expandedObjectiveBatch, setExpandedObjectiveBatch] = useState<string | null>(null);
+  const [showObjectiveFilters, setShowObjectiveFilters] = useState(false);
+  const [showUnitSelector, setShowUnitSelector] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
   const [sessions, setSessions] = useState<any[]>([]);
@@ -158,8 +162,8 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
 
   // Navegação de visualização
   const [activeTab, setActiveTab] = useState<
-    'FECHAMENTO' | 'REGRA_1' | 'REGRA_2' | 'REGRA_3' | 'DIVERGENCIAS' | 'PROJECAO' | 'CODIGO_BACKEND'
-  >('FECHAMENTO');
+    'RESUMO' | 'FECHAMENTO' | 'REGRA_1' | 'REGRA_2' | 'REGRA_3' | 'DIVERGENCIAS' | 'PROJECAO' | 'CODIGO_BACKEND'
+  >('RESUMO');
   const [divergenceFilter, setDivergenceFilter] = useState<AuditStatusFilter>('TODAS');
   const [expandedDailyDates, setExpandedDailyDates] = useState<Set<string>>(new Set());
   const [copiedCodeTab, setCopiedCodeTab] = useState<string | null>(null);
@@ -863,6 +867,25 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     setIsManualReconModalOpen(true);
   };
 
+  const handleObjectiveReview = (batch: BatchConciliationItem) => {
+    const normalize = (value: string) => value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toUpperCase();
+    const batchMode = normalize(batch.modalidade);
+    const relatedItem = items.find(item => {
+      const itemMode = normalize(item.modalidadeOuPlano || '');
+      return item.dataVenda === batch.dataVenda && (itemMode.includes(batchMode) || batchMode.includes(itemMode));
+    }) || items.find(item => item.dataVenda === batch.dataVenda && item.regra === 'REGRA_2_PDV_REDE');
+
+    if (!relatedItem) {
+      showToast('Este lote não possui uma transação individual disponível para edição.');
+      return;
+    }
+    handleManualReconciliation(relatedItem.id);
+  };
+
   const confirmManualReconciliation = () => {
     if (!manualReconItem) return;
     
@@ -1133,6 +1156,29 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     });
   }, [batches, selectedBatchModalidade, selectedBatchStatus]);
 
+  const objectiveBatches = useMemo(() => batches.filter(batch => {
+    if (selectedBatchModalidade !== 'TODAS') {
+      const normalizedBatch = batch.modalidade.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+      const normalizedFilter = selectedBatchModalidade.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+      if (normalizedFilter === 'OUTROS') {
+        if (['CREDITO', 'DEBITO', 'PIX', 'DINHEIRO', 'ASSINATURA'].includes(normalizedBatch)) return false;
+      } else if (normalizedBatch !== normalizedFilter) return false;
+    }
+    const divergent = ['DIVERGENTE', 'NAO_ENCONTRADO_ADQUIRENTE', 'NAO_ENCONTRADO_PDV'].includes(batch.status);
+    const reconciled = batch.status === 'CONCILIADO';
+    if (objectiveStatus === 'CONCILIADOS') return reconciled;
+    if (objectiveStatus === 'DIVERGENCIAS') return divergent;
+    if (objectiveStatus === 'PENDENTES') return !reconciled && !divergent;
+    return true;
+  }), [batches, objectiveStatus, selectedBatchModalidade]);
+
+  const objectiveCounts = useMemo(() => ({
+    all: batches.length,
+    reconciled: batches.filter(batch => batch.status === 'CONCILIADO').length,
+    divergent: batches.filter(batch => ['DIVERGENTE', 'NAO_ENCONTRADO_ADQUIRENTE', 'NAO_ENCONTRADO_PDV'].includes(batch.status)).length,
+    pending: batches.filter(batch => batch.status !== 'CONCILIADO' && !['DIVERGENTE', 'NAO_ENCONTRADO_ADQUIRENTE', 'NAO_ENCONTRADO_PDV'].includes(batch.status)).length,
+  }), [batches]);
+
   // Copy code helper
   const copyToClipboard = (text: string, tabName: string) => {
     navigator.clipboard.writeText(text);
@@ -1332,30 +1378,43 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       {/* Header com Branding e Ações Rápidas */}
       <div className="flex flex-col justify-between gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-6 lg:flex-row lg:items-center">
         <div className="min-w-0">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400 font-semibold bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded-lg">
-              <MapPin className="w-3.5 h-3.5" />
-              <select 
-                value={selectedUnidade}
-                onChange={e => setSelectedUnidade(e.target.value)}
+          <div className="mb-3 flex items-center gap-3">
+            <div className="group relative flex min-w-[210px] items-center gap-3 rounded-xl border border-[var(--theme-color)]/60 bg-[var(--theme-color)]/[0.08] px-3 py-2.5 shadow-sm transition hover:border-[var(--theme-color)] hover:bg-[var(--theme-color)]/[0.12] sm:min-w-[240px]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--theme-color)] text-white shadow-sm">
+                <MapPin className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="mb-0.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[var(--theme-color)]">Unidade da conciliação</span>
+                <button
+                  type="button"
+                  onClick={() => setShowUnitSelector(open => !open)}
                 disabled={reconciliationUnits.length === 0}
-                className="bg-transparent font-bold text-gray-700 dark:text-zinc-200 focus:outline-none cursor-pointer"
-              >
-                {reconciliationUnits.length === 0 ? (
-                  <option value="">Nenhuma unidade cadastrada</option>
-                ) : reconciliationUnits.map(unit => (
-                  <option key={unit.id} value={unit.id}>
-                    {unit.name}{unit.isActive === false ? ' (Inativa)' : ''}
-                  </option>
-                ))}
-              </select>
+                  aria-label="Selecionar unidade da conciliação"
+                  aria-expanded={showUnitSelector}
+                  className="flex w-full cursor-pointer items-center justify-between gap-2 bg-transparent text-left text-sm font-black text-gray-950 outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:text-white"
+                >
+                  <span className="truncate">{reconciliationUnits.length === 0 ? 'Nenhuma unidade cadastrada' : selectedUnitName || 'Selecione uma unidade'}</span>
+                  <ChevronDown className={`h-4 w-4 shrink-0 text-[var(--theme-color)] transition ${showUnitSelector ? 'rotate-180' : ''}`} />
+                </button>
+              </span>
+              {showUnitSelector && reconciliationUnits.length > 0 && (
+                <div className="absolute left-0 top-[calc(100%+8px)] z-50 w-full min-w-[240px] overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+                  {reconciliationUnits.map(unit => {
+                    const selected = unit.id === selectedUnidade;
+                    return <button key={unit.id} type="button" onClick={() => { setSelectedUnidade(unit.id); setShowUnitSelector(false); }} className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-bold transition ${selected ? 'bg-[var(--theme-color)] text-white' : 'text-gray-700 hover:bg-gray-100 dark:text-zinc-200 dark:hover:bg-zinc-800'}`}>
+                      <span className="truncate">{unit.name}{unit.isActive === false ? ' (Inativa)' : ''}</span>
+                      {selected && <Check className="h-4 w-4 shrink-0" />}
+                    </button>;
+                  })}
+                </div>
+              )}
             </div>
           </div>
           <h2 className="text-xl font-black tracking-tight text-gray-900 dark:text-white sm:text-2xl">
-            Conciliação Financeira & Fluxo de Caixa Automatizado
+            Conciliação
           </h2>
           <p className="text-sm text-gray-500 dark:text-zinc-400">
-            Ingestão de 4 fontes: PDV Balcão, Gateway de Assinaturas, Adquirente Rede e Previsão D+31.
+            Confira vendas, recebimentos e divergências por período.
           </p>
         </div>
 
@@ -1413,6 +1472,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
         </div>
       </div>
 
+      {false && <>
       <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
@@ -1811,9 +1871,22 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
         </div>
       )}
 
+      </>}
+
       {/* Navegação entre Abas de Visualização */}
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-        <div className="border-b border-gray-200 dark:border-zinc-800 px-6 pt-4 flex flex-wrap gap-2">
+        <div className="border-b border-gray-200 dark:border-zinc-800 px-4 pt-3 flex flex-wrap gap-2 sm:px-6">
+          <button
+            onClick={() => setActiveTab('RESUMO')}
+            className={`pb-3 px-3 text-sm font-extrabold transition-all border-b-2 flex items-center gap-2 ${
+              activeTab === 'RESUMO'
+                ? 'border-[var(--theme-color)] text-[var(--theme-color)]'
+                : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-white'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            Visão objetiva
+          </button>
           <button
             onClick={() => setActiveTab('FECHAMENTO')}
             className={`pb-4 px-3 text-sm font-extrabold transition-all border-b-2 flex items-center gap-2 ${
@@ -1823,7 +1896,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
             }`}
           >
             <Calendar className="w-4 h-4" />
-            Fechamento Diário de Caixa
+            Fechamento diário
             {dailyClosings.length > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold">
                 {dailyClosings.length}
@@ -1840,7 +1913,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
             }`}
           >
             <Layers className="w-4 h-4" />
-            Regra 1: Clube vs Previsão D+31
+            Regra 1 · Clube × D+31
           </button>
 
           <button
@@ -1852,7 +1925,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
             }`}
           >
             <CreditCard className="w-4 h-4" />
-            Regra 2: PDV Cartão vs Rede
+            Regra 2 · PDV × Adquirente
           </button>
 
 
@@ -1865,7 +1938,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
             }`}
           >
             <Sparkles className="w-4 h-4" />
-            Regra 3: Assinaturas Balcão
+            Regra 3 · Assinaturas
           </button>
 
           <button
@@ -1877,7 +1950,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
             }`}
           >
             <AlertTriangle className="w-4 h-4" />
-            Auditoria de Divergências & Taxas
+            Auditoria
             {kpis.totalDivergenciasCount > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-300 font-bold">
                 {kpis.totalDivergenciasCount}
@@ -1885,7 +1958,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
             )}
           </button>
 
-          <button
+          {false && <button
             onClick={() => setActiveTab('CODIGO_BACKEND')}
             className={`pb-4 px-3 text-sm font-extrabold transition-all border-b-2 flex items-center gap-2 ${
               activeTab === 'CODIGO_BACKEND'
@@ -1895,8 +1968,120 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
           >
             <FileCode className="w-4 h-4" />
             Código Backend Python & PostgreSQL
-          </button>
+          </button>}
         </div>
+
+        {/* VISÃO OBJETIVA */}
+        {activeTab === 'RESUMO' && (
+          <div className="space-y-5 p-4 sm:p-6">
+            <section className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-zinc-800 dark:bg-zinc-950/30">
+              <input type="file" accept=".csv,.txt" ref={pdvInputRef} onChange={handlePdvUpload} className="hidden" />
+              <input type="file" accept=".csv,.txt" ref={clubeInputRef} onChange={handleClubeUpload} className="hidden" />
+              <input type="file" accept=".xlsx,.xls,.csv,.txt" ref={redeInputRef} onChange={handleRedeUpload} className="hidden" />
+              <input type="file" accept=".xlsx,.xls" ref={previsaoInputRef} onChange={handlePrevisaoUpload} className="hidden" />
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-gray-900 dark:text-white">Fontes da conciliação</h3>
+                  <p className="text-xs text-gray-500 dark:text-zinc-400">Carregue apenas os relatórios usados no período.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[
+                    { label: 'PDV', ready: pdvData.length > 0, action: () => pdvInputRef.current?.click() },
+                    { label: 'Assinaturas', ready: clubeData.length > 0, action: () => clubeInputRef.current?.click() },
+                    { label: 'Adquirente', ready: redePagamentos.length > 0 || Boolean(redeResumoInfo), action: () => redeInputRef.current?.click() },
+                    { label: 'Previsão D+31', ready: previsaoData.length > 0, action: () => previsaoInputRef.current?.click() },
+                  ].map(source => (
+                    <button key={source.label} type="button" onClick={source.action} className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${source.ready ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-gray-200 bg-white text-gray-600 hover:border-[var(--theme-color)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300'}`}>
+                      {source.ready ? <CheckCircle className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
+                      {source.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+              {[
+                { label: 'Total PDV', value: kpis.totalFaturadoPDV, tone: 'text-gray-900 dark:text-white', icon: <FileSpreadsheet className="h-4 w-4" /> },
+                { label: 'Adquirentes', value: kpis.totalAprovadoAdquirente, tone: 'text-blue-600 dark:text-blue-400', icon: <CreditCard className="h-4 w-4" /> },
+                { label: 'Taxas', value: kpis.totalTaxasMdrRetidas, tone: 'text-amber-600 dark:text-amber-400', icon: <DollarSign className="h-4 w-4" /> },
+                { label: 'Diferença', value: kpis.totalDivergenciasValor, tone: 'text-red-600 dark:text-red-400', icon: <AlertTriangle className="h-4 w-4" /> },
+              ].map(card => (
+                <div key={card.label} className="rounded-xl border border-gray-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="mb-2 flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400"><span>{card.label}</span>{card.icon}</div>
+                  <p className={`text-lg font-black tabular-nums sm:text-xl ${card.tone}`}>{card.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                </div>
+              ))}
+              <div className="col-span-2 rounded-xl border border-gray-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-1">
+                <div className="mb-2 flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400"><span>Pendências</span><Clock className="h-4 w-4" /></div>
+                <p className="text-xl font-black text-amber-600 dark:text-amber-400">{objectiveCounts.divergent + objectiveCounts.pending}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-b border-gray-200 pb-3 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex gap-1 overflow-x-auto pb-1">
+                {[
+                  ['TODOS', 'Todos', objectiveCounts.all],
+                  ['CONCILIADOS', 'Conciliados', objectiveCounts.reconciled],
+                  ['DIVERGENCIAS', 'Divergências', objectiveCounts.divergent],
+                  ['PENDENTES', 'Pendentes', objectiveCounts.pending],
+                ].map(([value, label, count]) => (
+                  <button key={String(value)} type="button" onClick={() => setObjectiveStatus(value as typeof objectiveStatus)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-extrabold transition ${objectiveStatus === value ? 'bg-[var(--theme-color)] text-white' : 'text-gray-500 hover:bg-gray-100 dark:text-zinc-400 dark:hover:bg-zinc-800'}`}>
+                    {label} <span className="ml-1 rounded-full bg-black/10 px-1.5 py-0.5 dark:bg-white/10">{count}</span>
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={() => setShowObjectiveFilters(current => !current)} aria-expanded={showObjectiveFilters} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                <Filter className="h-3.5 w-3.5" /> Filtros avançados <ChevronDown className={`h-3.5 w-3.5 transition ${showObjectiveFilters ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            {showObjectiveFilters && (
+              <div className="grid gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-zinc-800 dark:bg-zinc-950/40 sm:grid-cols-2">
+                <label className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">
+                  Forma de pagamento
+                  <select value={selectedBatchModalidade} onChange={event => setSelectedBatchModalidade(event.target.value)} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900 outline-none focus:border-[var(--theme-color)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-white">
+                    <option value="TODAS">Todas as formas</option><option value="CRÉDITO">Crédito</option><option value="DÉBITO">Débito</option><option value="PIX">Pix</option><option value="DINHEIRO">Dinheiro</option><option value="ASSINATURA">Assinatura</option><option value="OUTROS">Outros</option>
+                  </select>
+                </label>
+                <div className="flex items-end">
+                  <button type="button" onClick={() => { setSelectedBatchModalidade('TODAS'); setObjectiveStatus('TODOS'); }} className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">Limpar filtros</button>
+                </div>
+              </div>
+            )}
+
+            <div className="hidden overflow-hidden rounded-xl border border-gray-200 dark:border-zinc-800 md:block">
+              <table className="w-full table-fixed text-left text-xs">
+                <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500 dark:bg-zinc-950/60 dark:text-zinc-400">
+                  <tr><th className="w-[15%] px-3 py-3">Data</th><th className="w-[16%] px-3 py-3">Pagamento</th><th className="w-[13%] px-3 py-3 text-right">PDV</th><th className="w-[13%] px-3 py-3 text-right">Adquirente</th><th className="w-[11%] px-3 py-3 text-right">Taxa</th><th className="w-[11%] px-3 py-3 text-right">Diferença</th><th className="w-[15%] px-3 py-3 text-center">Status</th><th className="w-[6%] px-3 py-3"></th></tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+                  {objectiveBatches.map(batch => (
+                    <React.Fragment key={batch.id}>
+                      <tr className="bg-white hover:bg-gray-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50">
+                        <td className="px-3 py-3 font-bold text-gray-700 dark:text-zinc-200">{batch.dataVenda}</td>
+                        <td className="px-3 py-3"><span className="font-extrabold text-gray-900 dark:text-white">{batch.modalidade}</span><span className="block text-[10px] text-gray-400">{batch.qtdPdv} vendas</span></td>
+                        <td className="px-3 py-3 text-right font-bold tabular-nums">{batch.totalPdv.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="px-3 py-3 text-right font-bold tabular-nums">{batch.totalRedeBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="px-3 py-3 text-right text-amber-600 tabular-nums">-{batch.totalTaxaMdr.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className={`px-3 py-3 text-right font-black tabular-nums ${Math.abs(batch.diferencaBruta) <= 0.05 ? 'text-emerald-600' : 'text-red-600'}`}>{batch.diferencaBruta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="px-3 py-3 text-center">{renderFormaStatusBadge(batch.status)}</td>
+                        <td className="px-3 py-3 text-right"><button type="button" aria-label="Ver detalhes" onClick={() => setExpandedObjectiveBatch(current => current === batch.id ? null : batch.id)} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-zinc-800 dark:hover:text-white"><ChevronDown className={`h-4 w-4 transition ${expandedObjectiveBatch === batch.id ? 'rotate-180' : ''}`} /></button></td>
+                      </tr>
+                      {expandedObjectiveBatch === batch.id && <tr><td colSpan={8} className="bg-gray-50 px-4 py-3 dark:bg-zinc-950/50"><div className="flex items-center justify-between gap-4"><div><p className="font-extrabold text-gray-900 dark:text-white">{batch.diagnostico || 'Sem observações para este lote.'}</p><p className="mt-1 text-[11px] text-gray-500 dark:text-zinc-400">{batch.qtdRede} transações na adquirente • líquido previsto {batch.totalRedeLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p></div><button type="button" onClick={() => handleObjectiveReview(batch)} className="shrink-0 rounded-lg border border-gray-300 px-3 py-2 font-bold transition hover:bg-white dark:border-zinc-700 dark:hover:bg-zinc-900">Revisar neste painel</button></div></td></tr>}
+                    </React.Fragment>
+                  ))}
+                  {objectiveBatches.length === 0 && <tr><td colSpan={8} className="px-4 py-12 text-center text-gray-500 dark:text-zinc-400"><FileSpreadsheet className="mx-auto mb-2 h-7 w-7 opacity-50" /><p className="font-bold">Nenhum lançamento neste filtro.</p><p className="mt-1 text-[11px]">Carregue os arquivos e execute a conciliação para visualizar os lotes.</p></td></tr>}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-2 md:hidden">
+              {objectiveBatches.map(batch => <button key={batch.id} type="button" onClick={() => setExpandedObjectiveBatch(current => current === batch.id ? null : batch.id)} className="w-full rounded-xl border border-gray-200 bg-white p-4 text-left dark:border-zinc-800 dark:bg-zinc-900"><div className="flex items-start justify-between gap-3"><div><p className="text-xs text-gray-500 dark:text-zinc-400">{batch.dataVenda}</p><p className="font-black text-gray-900 dark:text-white">{batch.modalidade}</p></div>{renderFormaStatusBadge(batch.status)}</div><div className="mt-3 grid grid-cols-3 gap-2 text-xs"><div><span className="block text-[10px] text-gray-400">PDV</span><strong>{batch.totalPdv.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div><div><span className="block text-[10px] text-gray-400">Adquirente</span><strong>{batch.totalRedeBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div><div><span className="block text-[10px] text-gray-400">Diferença</span><strong className={Math.abs(batch.diferencaBruta) <= 0.05 ? 'text-emerald-600' : 'text-red-600'}>{batch.diferencaBruta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div></div>{expandedObjectiveBatch === batch.id && <p className="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-600 dark:border-zinc-800 dark:text-zinc-300">{batch.diagnostico || 'Sem observações para este lote.'}</p>}</button>)}
+              {objectiveBatches.length === 0 && <div className="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-500 dark:border-zinc-700 dark:text-zinc-400">Nenhum lançamento neste filtro.</div>}
+            </div>
+          </div>
+        )}
 
         {/* ABA 1: FECHAMENTO DIÁRIO DE CAIXA */}
         {activeTab === 'FECHAMENTO' && (
