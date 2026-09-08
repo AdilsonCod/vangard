@@ -834,6 +834,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
     ]);
 
     const handleSave = async () => {
+      const monthStr = `${selectedYear}-${selectedMonth}`;
       if ((importType === "DPOTE_PDF" || isUnitItemsImport || importType === "CASHBARBER_PRODUTOS" || isClientMetricsImport) && !targetUnitId) {
          alert("Por favor, selecione a Unidade Alvo antes de salvar.");
          return;
@@ -873,8 +874,45 @@ if (importType === "CASHBARBER_PRODUTOS") {
         }
       }
 
+      const hasValue = (value: unknown) => Number(value || 0) !== 0;
+      const existingTargets: string[] = [];
+      if (importType === "CATALOGO") {
+        if (parsedData.some((item) => catalog.some((entry) => entry.name.toLowerCase() === item.itemNome?.toLowerCase()))) existingTargets.push("itens do catálogo");
+      } else if (importType === "DPOTE_PDF") {
+        const ids = new Set(Object.values(manualUserMapping));
+        if (monthlyBarberStats.some((stat) => stat.month === monthStr && ids.has(stat.barberId) && (hasValue(stat.faturamentoAssinatura) || hasValue(stat.comissaoAssinatura)))) existingTargets.push("assinaturas e comissões dos barbeiros");
+        if (monthlyUnitStats.some((stat) => stat.month === monthStr && stat.unitId === targetUnitId && hasValue(stat.faturamentoAssinatura))) existingTargets.push("faturamento de assinaturas da unidade");
+      } else if (importType === "CASHBARBER_PRODUTOS" || importType === "PRODUTOS") {
+        const ids = new Set(groupedData.map((group) => group.userId));
+        if (monthlyBarberStats.some((stat) => stat.month === monthStr && ids.has(stat.barberId) && (hasValue(stat.vendaProdutosValor) || hasValue(stat.vendasProdutosQtd) || hasValue(stat.comissaoProdutos)))) existingTargets.push("produtos e comissões dos barbeiros");
+      } else if (importType === "SERVICOS") {
+        const ids = new Set(groupedData.map((group) => group.userId));
+        if (monthlyBarberStats.some((stat) => stat.month === monthStr && ids.has(stat.barberId) && (hasValue(stat.faturamentoAvulso) || hasValue(stat.servicosRealizados) || hasValue(stat.comissaoServicos)))) existingTargets.push("serviços e comissões dos barbeiros");
+      } else if (isClientMetricsImport) {
+        const metric = importType === "RELATORIO_09" ? "clientesAtendidos" : importType === "RELATORIO_17" ? "clientesNovos" : "clientesSemPreferencia";
+        const ids = new Set(groupedData.map((group) => group.userId));
+        if (monthlyBarberStats.some((stat) => stat.month === monthStr && ids.has(stat.barberId) && hasValue(stat[metric]))) existingTargets.push("indicadores de clientes dos barbeiros");
+        if (monthlyUnitStats.some((stat) => stat.month === monthStr && stat.unitId === targetUnitId && hasValue(stat[metric]))) existingTargets.push("indicador consolidado da unidade");
+      } else if (isUnitItemsImport || importType === "UNIDADE") {
+        const unitIds = new Set(groupedData.map((group) => group.unitId));
+        if (monthlyUnitStats.some((stat) => stat.month === monthStr && unitIds.has(stat.unitId) && (
+          importType === "UNIDADE_PRODUTOS" ? hasValue(stat.vendaProdutosValor) || hasValue(stat.vendasProdutosQtd)
+            : importType === "UNIDADE_SERVICOS" ? hasValue(stat.faturamentoServicos) || hasValue(stat.servicosRealizados)
+              : hasValue(stat.faturamentoTotal) || hasValue(stat.clientesAtendidos) || hasValue(stat.clientesNovos)
+        ))) existingTargets.push("dados mensais da unidade");
+      }
+
+      if (existingTargets.length > 0) {
+        const confirmed = window.confirm(
+          `Já existem dados preenchidos em: ${existingTargets.join(", ")}.\n\nDeseja substituir os dados existentes pelos valores deste arquivo? Esta ação não poderá ser desfeita automaticamente.`,
+        );
+        if (!confirmed) {
+          setErrorMessage("Importação cancelada. Os dados existentes foram preservados.");
+          return;
+        }
+      }
+
       setIsSaving(true);
-      const monthStr = `${selectedYear}-${selectedMonth}`;
 
       try {
         let importJobRef: ReturnType<typeof doc> | null = null;
@@ -884,7 +922,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
           );
           importJobRef = doc(db, "dataImportJobs", contextFingerprint);
           const previousImport = await getDoc(importJobRef);
-          if (previousImport.exists() && previousImport.data().status === "COMPLETED") {
+          if (previousImport.exists() && previousImport.data().status === "COMPLETED" && existingTargets.length === 0) {
             setErrorMessage(
               "Este mesmo arquivo já foi importado para este período, tipo e unidade. A gravação foi bloqueada para evitar valores duplicados.",
             );
@@ -1126,6 +1164,20 @@ if (importType === "CASHBARBER_PRODUTOS") {
               extraValues: { ...current.extraValues },
             };
 
+            const isProductKey = (key: string) => {
+              const catalogItem = catalog.find((item) => item.id === key || item.name.toLowerCase() === key.toLowerCase());
+              const category = catalogItem ? categories.find((item) => item.id === catalogItem.type) : undefined;
+              return catalogItem?.type === "PRODUCT" || category?.type === "PRODUCT";
+            };
+            if (importType === "UNIDADE_ITENS") {
+              updated.extraCounts = {};
+              updated.extraValues = {};
+            } else {
+              const replacingProducts = importType === "UNIDADE_PRODUTOS";
+              updated.extraCounts = Object.fromEntries(Object.entries(updated.extraCounts).filter(([key]) => isProductKey(key) !== replacingProducts));
+              updated.extraValues = Object.fromEntries(Object.entries(updated.extraValues).filter(([key]) => isProductKey(key) !== replacingProducts));
+            }
+
             let totalAddedFaturamento = 0;
             let addedServicos = 0;
             let addedProdutosValor = 0;
@@ -1141,8 +1193,8 @@ if (importType === "CASHBARBER_PRODUTOS") {
                 updated.extraCounts[key] = item.quantidade;
                 updated.extraValues[key] = item.valorTotal;
               } else {
-                updated.extraCounts[key] = (updated.extraCounts[key] || 0) + item.quantidade;
-                updated.extraValues[key] = (updated.extraValues[key] || 0) + item.valorTotal;
+                updated.extraCounts[key] = item.quantidade;
+                updated.extraValues[key] = item.valorTotal;
               }
 
               totalAddedFaturamento += item.valorTotal;
@@ -1170,10 +1222,12 @@ if (importType === "CASHBARBER_PRODUTOS") {
               updated.vendasProdutosQtd = addedProdutosQtd;
               updated.faturamentoTotal = serviceRevenue + totalAddedFaturamento + (current.faturamentoAssinatura || 0);
             } else {
-              updated.faturamentoTotal += totalAddedFaturamento;
-              updated.servicosRealizados += addedServicos;
-              updated.vendaProdutosValor = (updated.vendaProdutosValor || 0) + addedProdutosValor;
-              updated.vendasProdutosQtd = (updated.vendasProdutosQtd || 0) + addedProdutosQtd;
+              updated.faturamentoServicos = totalAddedFaturamento - addedProdutosValor;
+              updated.faturamentoProdutos = addedProdutosValor;
+              updated.faturamentoTotal = totalAddedFaturamento + (current.faturamentoAssinatura || 0);
+              updated.servicosRealizados = addedServicos;
+              updated.vendaProdutosValor = addedProdutosValor;
+              updated.vendasProdutosQtd = addedProdutosQtd;
             }
 
             await updateMonthlyUnitStats(updated);
@@ -1242,17 +1296,13 @@ if (importType === "CASHBARBER_PRODUTOS") {
 
             const updated = {
               ...current,
-              faturamentoTotal:
-                current.faturamentoTotal + group.faturamentoTotal,
-              faturamentoAssinatura:
-                current.faturamentoAssinatura + group.faturamentoAssinatura,
+              faturamentoTotal: group.faturamentoTotal,
+              faturamentoAssinatura: group.faturamentoAssinatura,
               assinantes:
                 group.assinantes > 0 ? group.assinantes : current.assinantes,
-              clientesNovos: current.clientesNovos + group.clientesNovos,
-              clientesAtendidos:
-                current.clientesAtendidos + group.clientesAtendidos,
-              servicosRealizados:
-                current.servicosRealizados + group.servicosRealizados,
+              clientesNovos: group.clientesNovos,
+              clientesAtendidos: group.clientesAtendidos,
+              servicosRealizados: group.servicosRealizados,
             };
 
             await updateMonthlyUnitStats(updated);
@@ -1289,6 +1339,15 @@ if (importType === "CASHBARBER_PRODUTOS") {
               extraCounts: { ...current.extraCounts },
               extraValues: { ...current.extraValues },
             };
+
+            const replacingProducts = importType !== "SERVICOS";
+            const isProductKey = (key: string) => {
+              const catalogItem = catalog.find((item) => item.id === key || item.name.toLowerCase() === key.toLowerCase());
+              const category = catalogItem ? categories.find((item) => item.id === catalogItem.type) : undefined;
+              return catalogItem?.type === "PRODUCT" || category?.type === "PRODUCT";
+            };
+            updated.extraCounts = Object.fromEntries(Object.entries(updated.extraCounts).filter(([key]) => isProductKey(key) !== replacingProducts));
+            updated.extraValues = Object.fromEntries(Object.entries(updated.extraValues).filter(([key]) => isProductKey(key) !== replacingProducts));
 
             if (importType === "SERVICOS") {
               updated.faturamentoAvulso = group.valorTotal;
