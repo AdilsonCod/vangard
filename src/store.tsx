@@ -135,7 +135,9 @@ interface StoreContextType extends AppState {
   deleteSystemUnit: (id: string) => Promise<void>;
   deletePayment: (id: string) => Promise<void>;
   addNotification: (notification: SystemNotification) => Promise<void>;
+  addNotifications: (notifications: SystemNotification[]) => Promise<void>;
   markNotificationAsRead: (id: string) => Promise<void>;
+  markAllNotificationsAsRead: () => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
   addAnnouncement: (announcement: SystemAnnouncement) => Promise<void>;
   updateAnnouncement: (announcement: SystemAnnouncement) => Promise<void>;
@@ -753,11 +755,20 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     await setDoc(doc(db, 'notifications', notification.id), notification);
   };
 
+  const addNotifications = async (batch: SystemNotification[]) => {
+    await Promise.all(batch.map(n => setDoc(doc(db, 'notifications', n.id), n)));
+  };
+
   const markNotificationAsRead = async (id: string) => {
     const notif = notifications.find(n => n.id === id);
     if (notif) {
       await setDoc(doc(db, 'notifications', id), { ...notif, read: true });
     }
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    const unread = notifications.filter(n => n.userId === currentUser?.id && !n.read);
+    await Promise.all(unread.map(n => setDoc(doc(db, 'notifications', n.id), { ...n, read: true })));
   };
   
   const deleteNotification = async (id: string) => {
@@ -808,7 +819,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       quarterlyRankingVisible, setQuarterlyRankingVisible,
       financialCategories, suppliers, finClassifications, finSubclassifications, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
       login, logout, addUser, updateUser, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
-      updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, markNotificationAsRead, deleteNotification, addAnnouncement, updateAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
+      updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, addNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, addAnnouncement, updateAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
       isDarkMode, setIsDarkMode
     }}>
       {children}

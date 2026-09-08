@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import { PaymentRecord, PotServiceData } from '../types';
 import { FileText, Plus, Save, Trash2, Check, X, DollarSign, User as UserIcon, Edit2, ChevronDown, ChevronRight } from 'lucide-react';
 import { AppEmptyState, AppPageHeader } from './ui/AppPrimitives';
+import { createBarberPaymentNotification } from '../notificationService';
 
 export function PaymentsTab() {
   const { users, payments, addPayment, updatePayment, deletePayment, addTransaction, deleteTransaction, catalog, systemUnits, addNotification } = useStore();
@@ -209,15 +210,14 @@ export function PaymentsTab() {
         } else {
            await addPayment(record);
            // Enviar notificação ao barbeiro sobre o novo pagamento
-           addNotification({
-              id: crypto.randomUUID(),
-              userId: selectedBarberId,
-              title: 'Novo Pagamento Registrado',
-              message: `Um pagamento no valor de R$ ${record.amountToBePaid.toFixed(2)} referente a ${record.date} foi registrado com status: ${record.status}.`,
-              type: 'success',
-              createdAt: new Date().toISOString(),
-              read: false,
-           });
+           await addNotification(
+             createBarberPaymentNotification(
+               selectedBarberId,
+               record.amountToBePaid,
+               record.date,
+               record.status
+             )
+           );
         }
         await syncPaymentWithCash(record, previousWasPaid);
       } catch (error) {

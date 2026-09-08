@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { AppPageHeader } from "./ui/AppPrimitives";
 
-export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" | "UNITS" }) {
+export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" | "MANAGERS" | "UNITS" }) {
   const { 
     users, 
     systemUnits, 
@@ -31,8 +31,8 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('BARBER');
-  const [unit, setUnit] = useState<string>('UNIT_1');
+  const [role, setRole] = useState<Role>(subTab === 'MANAGERS' ? 'ADMIN' : subTab === 'RECEPTION' ? 'RECEPTION' : 'BARBER');
+  const [unit, setUnit] = useState<string>(systemUnits?.[0]?.id || 'UNIT_1');
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
   const [unitName, setUnitName] = useState<string>('');
   const [password, setPassword] = useState('');
@@ -62,7 +62,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
     setEditingId(null);
     setName('');
     setEmail('');
-    setRole(subTab === 'MANAGERS' ? 'ADMIN' : 'BARBER');
+    setRole(subTab === 'MANAGERS' ? 'ADMIN' : subTab === 'RECEPTION' ? 'RECEPTION' : 'BARBER');
     setUnit(systemUnits?.[0]?.id || 'UNIT_1');
     setPassword('');
   };
@@ -86,12 +86,18 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
     // Auto-assign role based on subTab if it's new
     let assignedRole = role;
     if (!editingId) {
-       if (subTab === 'BARBERS' && !['BARBER', 'MANICURE'].includes(role)) {
+       if (subTab === 'BARBERS' && !['BARBER', 'MANICURE', 'RECEPTION'].includes(role)) {
           assignedRole = 'BARBER';
-       } else if (subTab === 'MANAGERS' && !['ADMIN', 'FINANCIAL', 'MARKETING', 'RECEPTION'].includes(role)) {
+       } else if (subTab === 'RECEPTION') {
+          assignedRole = 'RECEPTION';
+       } else if (subTab === 'MANAGERS' && !['ADMIN', 'FINANCIAL', 'MARKETING'].includes(role)) {
           assignedRole = 'ADMIN';
        }
     }
+
+    const assignedUnit = ['ADMIN', 'FINANCIAL', 'MARKETING'].includes(assignedRole)
+      ? (unit || null)
+      : (unit || systemUnits?.[0]?.id || 'UNIT_1');
 
     if (editingId) {
       const existingUser = users.find((user) => user.id === editingId);
@@ -106,7 +112,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
           name,
           email: normalizedEmail,
           role: assignedRole,
-          unit,
+          unit: assignedUnit,
           ...(password ? { password } : {}),
         });
         showToast('Usuário atualizado com sucesso!');
@@ -125,7 +131,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
           name,
           email: normalizedEmail,
           role: assignedRole,
-          unit,
+          unit: assignedUnit,
           password,
           isActive: true,
         });
@@ -143,7 +149,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
     setName(u.name);
     setEmail(u.email || '');
     setRole(u.role);
-    setUnit(u.unit);
+    setUnit(u.unit || systemUnits?.[0]?.id || 'UNIT_1');
     setPassword('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -228,16 +234,25 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
   };
 
   const filteredUsers = users.filter(u => {
-    if (subTab === 'BARBERS') return u.role === 'BARBER' || u.role === 'MANICURE';
-    if (subTab === 'MANAGERS') return u.role === 'ADMIN' || u.role === 'FINANCIAL' || u.role === 'MARKETING' || u.role === 'RECEPTION';
+    if (subTab === 'BARBERS') return u.role === 'BARBER' || u.role === 'MANICURE' || u.role === 'RECEPTION';
+    if (subTab === 'RECEPTION') return u.role === 'RECEPTION';
+    if (subTab === 'MANAGERS') return u.role === 'ADMIN' || u.role === 'FINANCIAL' || u.role === 'MARKETING';
     return false;
   });
-  const pageTitle = subTab === 'UNITS' ? 'Cadastro de unidades' : subTab === 'MANAGERS' ? 'Gerência e acessos' : 'Colaboradores';
+  const pageTitle = subTab === 'UNITS' 
+    ? 'Cadastro de unidades' 
+    : subTab === 'RECEPTION'
+      ? 'Cadastro da recepção'
+      : subTab === 'MANAGERS' 
+        ? 'Gerência e acessos' 
+        : 'Colaboradores';
   const pageDescription = subTab === 'UNITS'
     ? 'Gerencie as unidades disponíveis em todos os módulos do sistema.'
-    : subTab === 'MANAGERS'
-      ? 'Gerencie administradores e responsáveis pelas áreas financeira e de marketing.'
-      : 'Cadastre profissionais, organize vínculos por unidade e mantenha os acessos atualizados.';
+    : subTab === 'RECEPTION'
+      ? 'Cadastre profissionais de recepção, defina a unidade de atuação e mantenha os acessos atualizados.'
+      : subTab === 'MANAGERS'
+        ? 'Gerencie administradores e responsáveis pelas áreas financeira e de marketing.'
+        : 'Cadastre profissionais, organize vínculos por unidade e mantenha os acessos atualizados.';
 
   return (
     <div className="space-y-6 relative">
@@ -376,7 +391,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
         </section>
       )}
 
-      {(subTab === 'BARBERS' || subTab === 'MANAGERS') && (
+      {(subTab === 'BARBERS' || subTab === 'RECEPTION' || subTab === 'MANAGERS') && (
         <section className="rounded-2xl border border-gray-150 bg-white p-4 shadow-xs transition-colors animate-in fade-in duration-200 dark:border-zinc-800/80 dark:bg-zinc-900 sm:p-6">
           <div className="flex items-center justify-between border-b dark:border-zinc-800/80 pb-4 mb-6">
              <div className="flex items-center gap-2">
@@ -428,13 +443,17 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
                     <>
                       <option value="BARBER">Barbeiro</option>
                       <option value="MANICURE">Manicure</option>
+                      <option value="RECEPTION">Recepção</option>
+                    </>
+                  ) : subTab === 'RECEPTION' ? (
+                    <>
+                      <option value="RECEPTION">Recepção</option>
                     </>
                   ) : (
                     <>
                       <option value="ADMIN">Gerente</option>
                       <option value="FINANCIAL">Financeiro</option>
                       <option value="MARKETING">Marketing</option>
-                      <option value="RECEPTION">Recepção</option>
                     </>
                   )}
                 </select>
@@ -511,11 +530,18 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
                          <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{u.name}</td>
                          <td className="px-4 py-3 font-medium">{u.email || '-'}</td>
                          <td className="px-4 py-3">
-                           <span className={`px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider ${u.role === 'ADMIN' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300' : u.role === 'MANICURE' ? 'bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-300' : 'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'}`}>
+                           <span className={`px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider ${
+                              u.role === 'ADMIN' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300' :
+                              u.role === 'MANICURE' ? 'bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-300' :
+                              u.role === 'RECEPTION' ? 'bg-teal-100 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300' :
+                              u.role === 'FINANCIAL' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' :
+                              u.role === 'MARKETING' ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' :
+                              'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
+                            }`}>
                              {u.role === 'ADMIN' ? 'Gerente' : u.role === 'FINANCIAL' ? 'Financeiro' : u.role === 'MARKETING' ? 'Marketing' : u.role === 'RECEPTION' ? 'Recepção' : u.role === 'MANICURE' ? 'Manicure' : 'Barbeiro'}
                            </span>
                          </td>
-                         <td className="px-4 py-3 font-medium">{u.role === 'ADMIN' ? '-' : getUnitLabel(u.unit)}</td>
+                         <td className="px-4 py-3 font-medium">{['ADMIN', 'FINANCIAL', 'MARKETING'].includes(u.role) && !u.unit ? '-' : getUnitLabel(u.unit)}</td>
                          <td className="px-4 py-3 text-right">
                             <button
                                onClick={() => handleEdit(u)}
@@ -581,10 +607,17 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "MANAGERS" |
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${u.role === 'ADMIN' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300' : u.role === 'MANICURE' ? 'bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-300' : 'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'}`}>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${
+                      u.role === 'ADMIN' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300' :
+                      u.role === 'MANICURE' ? 'bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-300' :
+                      u.role === 'RECEPTION' ? 'bg-teal-100 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300' :
+                      u.role === 'FINANCIAL' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' :
+                      u.role === 'MARKETING' ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' :
+                      'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
+                    }`}>
                       {u.role === 'ADMIN' ? 'Gerente' : u.role === 'FINANCIAL' ? 'Financeiro' : u.role === 'MARKETING' ? 'Marketing' : u.role === 'RECEPTION' ? 'Recepção' : u.role === 'MANICURE' ? 'Manicure' : 'Barbeiro'}
                     </span>
-                    {!['ADMIN', 'FINANCIAL', 'MARKETING'].includes(u.role) && (
+                    {(!['ADMIN', 'FINANCIAL', 'MARKETING'].includes(u.role) || u.unit) && (
                       <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-850 text-gray-600 dark:text-zinc-400 text-[10px] font-bold uppercase tracking-wider">
                         {getUnitLabel(u.unit)}
                       </span>

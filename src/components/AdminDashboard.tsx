@@ -73,6 +73,7 @@ const ReportsTab = lazy(() => import("./ReportsTab").then(module => ({ default: 
 const DataImporterView = lazy(() => import("./DataImporterView"));
 const MessageDispatchDashboard = lazy(() => import("./MessageDispatchDashboard"));
 const SmartLinksDashboard = lazy(() => import("./SmartLinksDashboard"));
+const NotificationCenter = lazy(() => import("./NotificationCenter").then(m => ({ default: m.NotificationCenter })));
 
 export default function AdminDashboard() {
   const { currentUser, logout, themeLightBg, themeDarkBg, 
@@ -224,6 +225,7 @@ export default function AdminDashboard() {
       icon: Users,
       subItems: [
         { id: "USERS_STAFF", label: "Colaboradores" },
+        { id: "USERS_RECEPTION", label: "Recepção" },
         { id: "USERS_MANAGEMENT", label: "Gerência" },
         { id: "USERS_UNITS", label: "Unidades" }
       ]
@@ -231,14 +233,15 @@ export default function AdminDashboard() {
     { id: "REPORTS", label: "Relatórios", section: "Dados", icon: FileText },
     { id: "IMPORT", label: "Importações", section: "Dados", icon: Upload },
     { id: "CONFIG", label: "Configurações", section: "Sistema", icon: Settings },
+    { id: "NOTIFICATIONS", label: "Central de Notificações", section: "Sistema", icon: Bell },
   ];
 
   const navItems = currentUser?.role === 'FINANCIAL' 
-    ? allNavItems.filter(item => item.id === "FINANCE" || item.id === "REPORTS" || item.id === "PAYMENTS" || item.id === "IMPORT" || item.id === "USERS")
+    ? allNavItems.filter(item => item.id === "FINANCE" || item.id === "REPORTS" || item.id === "PAYMENTS" || item.id === "CONFIG" || item.id === "NOTIFICATIONS")
     : currentUser?.role === 'MARKETING'
-    ? allNavItems.filter(item => item.id === "MARKETING" || item.id === "MESSAGES" || item.id === "SMART_LINKS")
+    ? allNavItems.filter(item => item.id === "MARKETING" || item.id === "MESSAGES" || item.id === "SMART_LINKS" || item.id === "CONFIG" || item.id === "NOTIFICATIONS")
     : currentUser?.role === 'RECEPTION'
-    ? allNavItems.filter(item => item.id === "AVISOS" || item.id === "MESSAGES" || item.id === "SMART_LINKS")
+    ? allNavItems.filter(item => item.id === "AVISOS" || item.id === "MESSAGES" || item.id === "SMART_LINKS" || item.id === "CONFIG" || item.id === "NOTIFICATIONS")
     : allNavItems;
 
   const navSections = useMemo(
@@ -435,17 +438,28 @@ export default function AdminDashboard() {
                   ) : userNotifications.slice(0, 12).map(notification => (
                     <button
                       key={notification.id}
-                      onClick={() => !notification.read && markNotificationAsRead(notification.id)}
+                      onClick={() => {
+                        if (!notification.read) markNotificationAsRead(notification.id);
+                        if (notification.actionTab) {
+                           setActiveTab(notification.actionTab);
+                           setIsNotificationsOpen(false);
+                        }
+                      }}
                       className={cn(
                         "group w-full border-b border-gray-100 px-4 py-3 text-left transition last:border-0 hover:bg-gray-50 dark:border-zinc-800 dark:hover:bg-zinc-800",
                         !notification.read && "bg-[var(--theme-color)]/[0.045]",
                       )}
                     >
                       <div className="flex items-start gap-3">
-                        <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", notification.read ? "bg-gray-300 dark:bg-zinc-700" : "bg-[var(--theme-color)]")} />
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--theme-color)]/10 text-lg">
+                           {notification.icon || "🔔"}
+                        </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-bold text-gray-900 dark:text-zinc-100">{notification.title}</span>
-                          <span className="mt-0.5 block text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{notification.message}</span>
+                          <span className="flex items-center justify-between gap-1">
+                            <span className="block truncate text-sm font-bold text-gray-900 dark:text-zinc-100">{notification.title}</span>
+                            <span className="shrink-0 text-[10px] text-gray-400">{new Date(notification.createdAt).toLocaleDateString('pt-BR')}</span>
+                          </span>
+                          <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{notification.message}</span>
                         </span>
                         <span
                           role="button"
@@ -467,6 +481,17 @@ export default function AdminDashboard() {
                       </div>
                     </button>
                   ))}
+                </div>
+                <div className="border-t border-gray-100 p-2 dark:border-zinc-800">
+                  <button
+                    onClick={() => {
+                      setActiveTab("NOTIFICATIONS");
+                      setIsNotificationsOpen(false);
+                    }}
+                    className="w-full rounded-xl py-2 text-center text-xs font-bold text-[var(--theme-color)] transition hover:bg-[var(--theme-color)]/10"
+                  >
+                    Ver todas as notificações
+                  </button>
                 </div>
               </div>
             )}
@@ -685,12 +710,16 @@ export default function AdminDashboard() {
           </div>
         ) : activeTab === "USERS_STAFF" ? (
           <UsersDashboard tabView="BARBERS" />
+        ) : activeTab === "USERS_RECEPTION" ? (
+          <UsersDashboard tabView="RECEPTION" />
         ) : activeTab === "USERS_MANAGEMENT" ? (
           <UsersDashboard tabView="MANAGERS" />
         ) : activeTab === "USERS_UNITS" ? (
           <UsersDashboard tabView="UNITS" />
         ) : activeTab === "CONFIG" ? (
           <ConfigEditor />
+        ) : activeTab === "NOTIFICATIONS" ? (
+          <NotificationCenter onNavigate={setActiveTab} />
         ) : activeTab === "CATALOG_PRODUCTS" ? (
           <CatalogEditor catalog={catalog} updateCatalog={updateCatalog} tabView="PRODUCTS" />
         ) : activeTab === "CATALOG_SERVICES" ? (

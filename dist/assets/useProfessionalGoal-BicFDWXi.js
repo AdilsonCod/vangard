@@ -1,0 +1,1 @@
+import{r as c}from"./index-bUDTM67V.js";function m(a){const e=`vans_professional_goal_${a||"guest"}`,[r,n]=c.useState({});let s=1e4;try{const o=localStorage.getItem(e),t=Number(o);o!==null&&Number.isFinite(t)&&t>=0&&(s=t)}catch{}return[r[e]??s,o=>{const t=Number.isFinite(o)?Math.max(0,o):0;n(l=>({...l,[e]:t}));try{localStorage.setItem(e,String(t))}catch{}}]}export{m as u};

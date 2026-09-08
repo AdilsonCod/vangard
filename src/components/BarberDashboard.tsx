@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from "react";
 import { useStore } from "../store";
 import { ProgressCard } from "./ProgressCard";
-import { DailyEntry, Target } from "../types";
+import { DailyEntry, Target, CatalogItem } from "../types";
 import {
   LogOut,
   Calendar,
@@ -14,6 +14,7 @@ import {
   Scissors,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   FileText,
   Check,
   Save,
@@ -34,6 +35,8 @@ import {
   UserCircle2
 } from "lucide-react";
 import { AppIconButton, AppLoadingState, cn } from "./ui/AppPrimitives";
+import { createGoalReachedNotification } from "../notificationService";
+import { NotificationCenter } from "./NotificationCenter";
 // Logo imported via direct asset path
 
 import {
@@ -203,7 +206,7 @@ export default function BarberDashboard() {
   const [clientsServed, setClientsServed] = useState(0);
   const [uniqueClientsServed, setUniqueClientsServed] = useState(0);
   const [activeTab, setActiveTab] = useState<
-    "OVERVIEW" | "AVISOS" | "AUTOGESTAO" | "METAS" | "PAGAMENTOS" | "RELATORIOS" | "RANKINGS" | "ANOTACOES" | "CONFIGURACOES"
+    "OVERVIEW" | "AVISOS" | "AUTOGESTAO" | "METAS" | "PAGAMENTOS" | "RELATORIOS" | "RANKINGS" | "ANOTACOES" | "CONFIGURACOES" | "NOTIFICACOES"
   >("OVERVIEW");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -212,6 +215,8 @@ export default function BarberDashboard() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [detailsModal, setDetailsModal] = useState<{ isOpen: boolean; title: string; items: CatalogItem[] }>({ isOpen: false, title: "", items: [] });
+  const [inputModal, setInputModal] = useState<{ isOpen: boolean; title: string; items: CatalogItem[] }>({ isOpen: false, title: "", items: [] });
 
 
   const userNotifications = useMemo(() => {
@@ -380,15 +385,7 @@ export default function BarberDashboard() {
     addEntry(newEntry);
     
     if (totalTargetValue > 0 && totalAchievedValue < totalTargetValue && (totalAchievedValue + addedValue) >= totalTargetValue) {
-      addNotification({
-        id: crypto.randomUUID(),
-        userId: currentUser!.id,
-        title: 'Objetivo Alcançado! 🏆',
-        message: 'Parabéns! Com este lançamento você atingiu 100% do seu objetivo de faturamento!',
-        type: 'success',
-        createdAt: new Date().toISOString(),
-        read: false,
-      });
+      addNotification(createGoalReachedNotification(currentUser!.id));
     }
     
     setSuccessMessage("Dados enviados com sucesso!");
@@ -416,6 +413,7 @@ export default function BarberDashboard() {
     { id: "AVISOS", label: "Comunicados", section: "Principal", icon: Megaphone },
     { id: "METAS", label: "Registrar produção", section: "Ferramentas", icon: TargetIcon },
     { id: "RELATORIOS", label: "Meus relatórios", section: "Ferramentas", icon: FileText },
+    { id: "NOTIFICACOES", label: "Notificações", section: "Ferramentas", icon: Bell },
     { id: "ANOTACOES", label: "Anotações", section: "Pessoal", icon: Edit3 },
     { id: "CONFIGURACOES", label: "Configurações", section: "Pessoal", icon: Settings },
   ] as const;
@@ -650,20 +648,38 @@ export default function BarberDashboard() {
                             key={notif.id} 
                             onClick={() => {
                               if (!notif.read) markNotificationAsRead(notif.id);
+                              if (notif.actionTab) {
+                                setActiveTab(notif.actionTab as any);
+                                setIsNotificationsOpen(false);
+                              }
                             }}
                             className={`p-3 border-b border-gray-100 dark:border-zinc-700/50 cursor-pointer transition ${notif.read ? 'opacity-60 bg-transparent' : 'bg-blue-50/50 dark:bg-blue-900/10'}`}
                           >
                             <div className="flex justify-between items-start mb-1">
-                              <h4 className="text-sm font-bold text-gray-900 dark:text-zinc-100">{notif.title}</h4>
+                              <h4 className="text-sm font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-1.5">
+                                <span>{notif.icon || "🔔"}</span>
+                                {notif.title}
+                              </h4>
                               <span className="text-[10px] text-gray-400">{new Date(notif.createdAt).toLocaleDateString('pt-BR')}</span>
                             </div>
-                            <p className="text-xs text-gray-600 dark:text-zinc-300">{notif.message}</p>
+                            <p className="text-xs text-gray-600 dark:text-zinc-300 mt-0.5 line-clamp-2">{notif.message}</p>
                             <div className="flex justify-end mt-2">
                                <button onClick={(e) => { e.stopPropagation(); deleteNotification(notif.id); }} className="text-[10px] text-red-500 hover:text-red-700 font-medium">Excluir</button>
                             </div>
                           </div>
                         ))
                       )}
+                    </div>
+                    <div className="border-t border-gray-200 dark:border-zinc-700 p-2">
+                      <button
+                        onClick={() => {
+                          setActiveTab("NOTIFICACOES" as any);
+                          setIsNotificationsOpen(false);
+                        }}
+                        className="w-full text-center text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 py-2 rounded-lg transition"
+                      >
+                        Ver todas as notificações
+                      </button>
                     </div>
                   </div>
                 )}
@@ -878,16 +894,13 @@ export default function BarberDashboard() {
                         />
                       </div>
                       
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 opacity-90">
-                        {itemsOfCat.map((c) => {
-                          const totalC = stats.totals[c.id] || 0;
-                          return (
-                            <div key={c.id} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 p-3 rounded-xl shadow-sm text-sm flex flex-col justify-between">
-                               <p className="text-gray-500 dark:text-zinc-400 font-bold mb-1 text-xs">{c.name}</p>
-                               <p className="text-gray-900 dark:text-zinc-100 font-bold text-base">R$ {totalC.toFixed(2)}</p>
-                            </div>
-                          )
-                        })}
+                      <div className="mt-1 mb-6">
+                        <button 
+                          onClick={() => setDetailsModal({ isOpen: true, title: cat.name, items: itemsOfCat })}
+                          className="text-sm font-bold text-[var(--theme-color)] hover:bg-[var(--theme-color)]/10 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
+                        >
+                          Ver mais <ChevronRight className="w-4 h-4" />
+                        </button>
                       </div>
                     </React.Fragment>
                   );
@@ -909,16 +922,13 @@ export default function BarberDashboard() {
                         />
                       </div>
                       
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 opacity-90">
-                        {itemsOfCat.map((c) => {
-                          const totalC = stats.totals[c.id] || 0;
-                          return (
-                            <div key={c.id} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 p-3 rounded-xl shadow-sm text-sm flex flex-col justify-between">
-                               <p className="text-gray-500 dark:text-zinc-400 font-bold mb-1 text-xs">{c.name}</p>
-                               <p className="text-gray-900 dark:text-zinc-100 font-bold text-base">R$ {totalC.toFixed(2)}</p>
-                            </div>
-                          )
-                        })}
+                      <div className="mt-1 mb-6">
+                        <button 
+                          onClick={() => setDetailsModal({ isOpen: true, title: cat.name, items: itemsOfCat })}
+                          className="text-sm font-bold text-[var(--theme-color)] hover:bg-[var(--theme-color)]/10 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
+                        >
+                          Ver mais <ChevronRight className="w-4 h-4" />
+                        </button>
                       </div>
                     </React.Fragment>
                   );
@@ -1075,34 +1085,34 @@ export default function BarberDashboard() {
 
                 {!isDayOff && (
                   <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {categories.map((cat) => {
                         const itemsOfCat = catalog.filter(
                           (c) => c.type === cat.id,
                         );
                         if (itemsOfCat.length === 0) return null;
+                        
+                        const filledCount = itemsOfCat.filter(c => form[c.id]?.amount > 0 || form[c.id]?.commission > 0).length;
+
                         return (
-                          <div key={cat.id} className="space-y-4">
-                            <h3 className="font-bold text-gray-900 dark:text-zinc-100 border-b pb-2">
-                              {cat.name}
-                            </h3>
-                            {itemsOfCat.map((c) => {
-                              const subcat = subcategories.find(
-                                (s) => s.id === c.subcategoryId,
-                              );
-                              const label = subcat
-                                ? `${c.name} (${subcat.name})`
-                                : c.name;
-                              return (
-                                <Row
-                                  key={c.id}
-                                  label={label}
-                                  id={c.id}
-                                  form={form}
-                                  setForm={setForm}
-                                />
-                              );
-                            })}
+                          <div key={cat.id} className="bg-gray-50 dark:bg-zinc-800/50 p-4 rounded-xl border border-gray-200 dark:border-zinc-700/50 flex flex-col gap-3 justify-between">
+                            <div>
+                              <h3 className="font-bold text-gray-900 dark:text-zinc-100 flex items-center justify-between">
+                                {cat.name}
+                                {filledCount > 0 && <Check className="w-4 h-4 text-emerald-500" />}
+                              </h3>
+                              <p className="text-xs text-gray-500 dark:text-zinc-400 mt-1">
+                                {filledCount} de {itemsOfCat.length} preenchidos
+                              </p>
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => setInputModal({ isOpen: true, title: cat.name, items: itemsOfCat })}
+                              className="text-sm font-bold text-[var(--theme-color)] hover:bg-[var(--theme-color)]/10 px-3 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 shadow-sm"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                              {filledCount > 0 ? "Editar Valores" : "Preencher"}
+                            </button>
                           </div>
                         );
                       })}
@@ -1454,13 +1464,92 @@ export default function BarberDashboard() {
           <BarberRankingsView />
         ) : activeTab === "ANOTACOES" ? (
           <BarberNotesView />
-
+        ) : activeTab === "NOTIFICACOES" ? (
+          <NotificationCenter onNavigate={(tab) => setActiveTab(tab as any)} />
         ) : (
           <BarberSettingsView />
         )}
         </Suspense>
       </main>
       </div>
+      
+      {detailsModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-opacity">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl border border-gray-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center p-5 border-b border-gray-100 dark:border-zinc-800 shrink-0">
+              <h3 className="text-lg font-black text-gray-900 dark:text-zinc-100 flex items-center gap-2">
+                <Scissors className="w-5 h-5 text-[var(--theme-color)]" />
+                Detalhes: {detailsModal.title}
+              </h3>
+              <button 
+                onClick={() => setDetailsModal({ isOpen: false, title: "", items: [] })} 
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300 p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto app-scrollbar">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {detailsModal.items.map(c => {
+                  const totalC = stats.totals[c.id] || 0;
+                  return (
+                    <div key={c.id} className="bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700/50 p-3 rounded-xl shadow-sm text-sm flex flex-col justify-between transition-colors hover:border-[var(--theme-color)]/30 group">
+                       <p className="text-gray-500 dark:text-zinc-400 font-bold mb-1 text-xs group-hover:text-[var(--theme-color)] transition-colors">{c.name}</p>
+                       <p className="text-gray-900 dark:text-zinc-100 font-black text-base">R$ {totalC.toFixed(2)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {inputModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-opacity">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl border border-gray-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center p-5 border-b border-gray-100 dark:border-zinc-800 shrink-0">
+              <h3 className="text-lg font-black text-gray-900 dark:text-zinc-100 flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-[var(--theme-color)]" />
+                Preencher: {inputModal.title}
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setInputModal({ isOpen: false, title: "", items: [] })} 
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300 p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto app-scrollbar">
+              <div className="space-y-4">
+                {inputModal.items.map(c => {
+                  const subcat = subcategories.find((s) => s.id === c.subcategoryId);
+                  const label = subcat ? `${c.name} (${subcat.name})` : c.name;
+                  return (
+                    <Row
+                      key={c.id}
+                      label={label}
+                      id={c.id}
+                      form={form}
+                      setForm={setForm}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+            <div className="p-5 border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900 rounded-b-2xl flex justify-end shrink-0">
+               <button 
+                 type="button" 
+                 onClick={() => setInputModal({ isOpen: false, title: "", items: [] })} 
+                 className="bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white font-bold py-2.5 px-6 rounded-xl transition-colors flex items-center gap-2"
+               >
+                 <Check className="w-5 h-5" /> Confirmar
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -160,14 +160,32 @@ export interface MonthlyBarberStats {
   extraValues?: Record<string, number>; // itemId => monetary value
 }
 
+export type NotificationEventType =
+  | 'mural'
+  | 'payment_scheduled'
+  | 'payment_completed'
+  | 'analysis_ready'
+  | 'ranking_changed'
+  | 'general';
+
+export type NotificationPriority = 'urgent' | 'high' | 'normal' | 'informational';
+
 export interface SystemNotification {
   id: string;
   userId: string;
   title: string;
   message: string;
   type?: 'success' | 'info' | 'warning';
-  createdAt: string; // ISO date string
+  createdAt: string;
   read: boolean;
+  eventType?: NotificationEventType;
+  priority?: NotificationPriority;
+  icon?: string;
+  actionLabel?: string;
+  actionTab?: string;
+  data?: Record<string, unknown>;
+  groupId?: string;
+  groupCount?: number;
 }
 
 export interface SystemAnnouncement {

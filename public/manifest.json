@@ -3,27 +3,27 @@
   "name": "Van's Management 2.0",
   "icons": [
     {
-      "src": "/pwa-icon-192.png",
+      "src": "/logo-escura.png",
       "type": "image/png",
-      "sizes": "192x192",
+      "sizes": "192x192 512x512",
       "purpose": "any"
     },
     {
-      "src": "/pwa-icon-512.png",
+      "src": "/logo-clara.png",
       "type": "image/png",
-      "sizes": "512x512",
+      "sizes": "192x192 512x512",
       "purpose": "any"
     },
     {
-      "src": "/pwa-icon-192.png",
+      "src": "/logo-escura.png",
       "type": "image/png",
-      "sizes": "192x192",
+      "sizes": "192x192 512x512",
       "purpose": "maskable"
     },
     {
-      "src": "/pwa-icon-512.png",
+      "src": "/logo-clara.png",
       "type": "image/png",
-      "sizes": "512x512",
+      "sizes": "192x192 512x512",
       "purpose": "maskable"
     }
   ],
