@@ -15,6 +15,7 @@
     "firestore:import:apply": "tsx scripts/import-firestore-backup.ts --apply",
     "auth:migrate:dry": "tsx scripts/migrate-firebase-auth.ts",
     "auth:migrate:apply": "tsx scripts/migrate-firebase-auth.ts --apply",
+    "test:auth-migration": "tsx --test scripts/user-uid-migration.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -33,6 +34,7 @@
     "express": "^5.2.1",
     "fflate": "^0.8.3",
     "firebase": "^12.13.0",
+    "firebase-admin": "^13.10.0",
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
     "jimp": "^1.6.1",

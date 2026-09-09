@@ -22,7 +22,7 @@ import {
   FinSubclassification,
 } from './types';
 import { db, auth } from './firebase';
-import { collection, doc, setDoc, deleteDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { seedDatabase } from './firebase-sync';
 
@@ -172,6 +172,12 @@ const withoutLegacyPassword = (user: User): User => {
   return sanitized;
 };
 
+const canonicalUser = (user: User, uid: string): User => ({
+  ...withoutLegacyPassword(user),
+  id: uid,
+  authUid: uid,
+});
+
 export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [quarterlyRankingVisible, setQuarterlyRankingVisibility] = useState<boolean | null>(null);
@@ -240,8 +246,15 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
         try {
-          const snap = await getDocs(query(collection(db, 'users'), where('email', '==', fbUser.email?.toLowerCase())));
-          const u = snap.docs.map(d => withoutLegacyPassword(withDocumentId<User>(d)))[0];
+          const canonicalSnapshot = await getDoc(doc(db, 'users', fbUser.uid));
+          let u = canonicalSnapshot.exists()
+            ? canonicalUser(withDocumentId<User>(canonicalSnapshot), fbUser.uid)
+            : undefined;
+          if (!u && fbUser.email) {
+            const legacySnapshot = await getDocs(query(collection(db, 'users'), where('email', '==', fbUser.email.toLowerCase())));
+            const legacy = legacySnapshot.docs.map(d => withoutLegacyPassword(withDocumentId<User>(d)))[0];
+            if (legacy) u = { ...legacy, authUid: fbUser.uid };
+          }
           if (u && u.isActive !== false) {
             setCurrentUser(u);
             localStorage.setItem(AUTH_SESSION_KEY, u.id);
@@ -430,11 +443,17 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const normalizedEmail = email.trim().toLowerCase();
     try {
       await signInWithEmailAndPassword(auth, normalizedEmail, pass);
-      const snapshot = await getDocs(query(collection(db, 'users'), where('email', '==', normalizedEmail)));
-      const u = snapshot.docs
-        .map(document => withoutLegacyPassword(withDocumentId<User>(document)))
-        .find(user => user.isActive !== false);
-      if (u) {
+      const uid = auth.currentUser?.uid;
+      const canonicalSnapshot = uid ? await getDoc(doc(db, 'users', uid)) : null;
+      let u = canonicalSnapshot?.exists()
+        ? canonicalUser(withDocumentId<User>(canonicalSnapshot), uid!)
+        : undefined;
+      if (!u) {
+        const snapshot = await getDocs(query(collection(db, 'users'), where('email', '==', normalizedEmail)));
+        const legacy = snapshot.docs.map(document => withoutLegacyPassword(withDocumentId<User>(document)))[0];
+        if (legacy && uid) u = { ...legacy, authUid: uid };
+      }
+      if (u && u.isActive !== false) {
         setCurrentUser(u);
         localStorage.setItem(AUTH_SESSION_KEY, u.id);
         return true;
@@ -739,6 +758,9 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
   const addUser = async (user: User) => {
     try {
+      if (!user.authUid || user.id !== user.authUid) {
+        throw new Error('O perfil deve usar o UID do Firebase Authentication como identificador.');
+      }
       const sanitizedUser: any = withoutLegacyPassword(user);
       Object.keys(sanitizedUser).forEach(key => {
         if (sanitizedUser[key] === undefined) {
@@ -754,6 +776,9 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
   const updateUser = async (user: User) => {
     try {
+      if (user.authUid && user.id !== user.authUid) {
+        throw new Error('O perfil deve ser salvo no documento correspondente ao UID autenticado.');
+      }
       const sanitizedUser: any = withoutLegacyPassword(user);
       Object.keys(sanitizedUser).forEach(key => {
         if (sanitizedUser[key] === undefined) {

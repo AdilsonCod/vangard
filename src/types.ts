@@ -23,6 +23,8 @@ export interface Subcategory {
 export interface User {
   isActive?: boolean;
   id: string;
+  authUid?: string;
+  legacyId?: string;
   name: string;
   email?: string;
   role: Role;

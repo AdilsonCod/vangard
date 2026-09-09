@@ -182,6 +182,8 @@ Somente nomes e finalidades são documentados. Valores reais devem permanecer no
 | `GENERATE_SOURCEMAP` | Build | Habilitar sourcemaps quando explicitamente necessário. |
 | `DISABLE_HMR` | Desenvolvimento | Desabilitar HMR e observação de arquivos em ambientes especiais. |
 | `VITE_ENABLE_DATABASE_SEED` | Frontend/build | Chave histórica para impedir carga automática de dados de exemplo em bancos reais. Deve permanecer desativada fora de ambientes controlados. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Migração local | Caminho local para a credencial administrativa usada na migração de UID. Nunca deve ser versionada. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Migração local | Alternativa em JSON para a credencial administrativa, fornecida somente pelo ambiente seguro. |
 
 `MESSAGE_DISPATCH_SECRET` ainda aparece no `.env.example`, mas não é consumida pelo servidor atual. Ela pertence ao fluxo legado de chave operacional e deve ser removida quando a autenticação das APIs for concluída nas Tarefas 10 e 11.
 
@@ -199,6 +201,7 @@ Versões declaradas ou observadas no ambiente desta validação:
 | Tailwind CSS | 4.3.3 |
 | Express | 5.2.1 |
 | Firebase Web SDK | 12.13.0 |
+| Firebase Admin SDK | 13.5.x, restrito a scripts/servidor |
 | Baileys | 7.0.0-rc14 |
 | Recharts | 3.8.1 |
 | PDF.js | 6.3.289 |
@@ -220,8 +223,8 @@ Para builds reproduzíveis, a referência efetiva é o `package-lock.json`. Atua
 | `npm run test:rede-parser` | Testar o parser do relatório Rede. |
 | `npm run firestore:import:dry` | Simular importação de backup do Firestore. |
 | `npm run firestore:import:apply` | Aplicar importação de backup após validação. |
-| `npm run auth:migrate:dry` | Simular migração para Firebase Authentication. |
-| `npm run auth:migrate:apply` | Aplicar migração de autenticação após validação. |
+| `npm run auth:migrate:dry` | Simular a padronização dos perfis em `users/{uid}`. |
+| `npm run auth:migrate:apply` | Aplicar a migração transacional de perfis para UID. |
 
 Comandos `*:apply` alteram dados externos e só devem ser executados com ambiente, backup e autorização confirmados.
 
@@ -248,7 +251,7 @@ Além dos comandos, alterações de segurança exigem Firebase Emulator; altera�
 
 ## 11. Limitações conhecidas
 
-- Autenticação e perfil ainda possuem caminhos legados de sessão e identificação; modelos e formulários da aplicação já não persistem senha.
+- A identidade dos perfis usa o UID do Firebase; a restauração de sessão por armazenamento local será removida na Tarefa 5.
 - Regras do Firestore não cobrem com segurança todas as coleções ativas.
 - A autorização por função ainda não está centralizada no servidor.
 - Algumas chamadas do frontend não enviam o token exigido pelas APIs.
@@ -267,3 +270,4 @@ Essas limitações correspondem às tarefas ainda abertas em [tasks.md](./tasks.
 - [Plano progressivo](./tasks.md)
 - [Cálculo de Comissão](./CALCULO_COMISSAO.md)
 - [Relatório de testes de comissão](./RELATORIO_TESTES_COMISSAO.md)
+- [Migração dos perfis para UID](./MIGRACAO_UID.md)

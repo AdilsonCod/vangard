@@ -1,116 +1,88 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { deleteApp, initializeApp } from 'firebase/app';
-import { deleteField, doc, initializeFirestore, setDoc } from 'firebase/firestore';
+import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
+import { buildCanonicalUserProfile, isCanonicalUserProfile, UserProfileData as LegacyProfile } from './user-uid-migration-core';
 
-type BackupUser = {
-  _id?: string;
-  id?: string;
-  email?: string;
-  password?: string;
-  name?: string;
-  role?: string;
-  unit?: string | null;
-  isActive?: boolean;
-};
+const applyChanges = process.argv.slice(2).includes('--apply');
+const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+const credential = serviceAccountJson ? cert(JSON.parse(serviceAccountJson)) : applicationDefault();
+const app = getApps()[0] ?? initializeApp({ credential, projectId: firebaseConfig.projectId });
+const auth = getAuth(app);
+const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
 
-type AuthResponse = {
-  localId: string;
-};
+const profiles = await db.collection('users').get();
+const unmatched: Array<{ documentId: string; email: string; reason: string }> = [];
+const migrations: Array<{ documentId: string; uid: string }> = [];
+let alreadyCanonical = 0;
 
-const args = process.argv.slice(2);
-const applyChanges = args.includes('--apply');
-const backupArgument = args.find(argument => !argument.startsWith('--'));
-
-if (!backupArgument) {
-  throw new Error('Informe o backup. Exemplo: npm run auth:migrate:dry -- .Docs/BAKU.MOD.md');
+for (const document of profiles.docs) {
+  const profile = document.data() as LegacyProfile;
+  const email = String(profile.email || '').trim().toLowerCase();
+  try {
+    const authUser = profile.authUid
+      ? await auth.getUser(profile.authUid)
+      : email
+        ? await auth.getUserByEmail(email)
+        : null;
+    if (!authUser) {
+      unmatched.push({ documentId: document.id, email, reason: 'Perfil sem e-mail ou UID para correspondência.' });
+      continue;
+    }
+    if (isCanonicalUserProfile(document.id, profile, authUser.uid)) {
+      alreadyCanonical += 1;
+      continue;
+    }
+    migrations.push({ documentId: document.id, uid: authUser.uid });
+  } catch (error) {
+    const code = (error as { code?: string }).code || 'auth/unknown';
+    unmatched.push({ documentId: document.id, email, reason: code });
+  }
 }
 
-const backupPath = path.resolve(backupArgument);
-const rawBackup = fs.readFileSync(backupPath, 'utf8').trim();
-const jsonText = rawBackup.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-const backup = JSON.parse(jsonText) as { collections?: { users?: BackupUser[] } };
-const users = backup.collections?.users;
-
-if (!Array.isArray(users) || users.length === 0) {
-  throw new Error('Backup inválido: coleção de usuários vazia ou ausente.');
+console.log(`Perfis encontrados: ${profiles.size}.`);
+console.log(`Já padronizados: ${alreadyCanonical}.`);
+console.log(`Prontos para migração: ${migrations.length}.`);
+if (unmatched.length) {
+  console.log('Perfis sem correspondência (nenhum deles será removido):');
+  console.table(unmatched);
 }
 
-const emails = new Set<string>();
-for (const user of users) {
-  const userId = String(user.id || user._id || '').trim();
-  const email = String(user.email || '').trim().toLowerCase();
-  const password = String(user.password || '');
-  if (!userId) throw new Error('Existe usuário sem ID no backup.');
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error(`E-mail inválido no usuário ${userId}.`);
-  if (password.length < 6) throw new Error(`Senha incompatível com Firebase Auth no usuário ${userId}.`);
-  if (emails.has(email)) throw new Error(`E-mail duplicado no usuário ${userId}.`);
-  emails.add(email);
-}
-
-console.log(`Migração validada: ${users.length} contas, sem e-mails duplicados ou senhas incompatíveis.`);
 if (!applyChanges) {
-  console.log('SIMULAÇÃO concluída. Nenhuma conta ou documento foi alterado.');
+  console.log('SIMULAÇÃO concluída. Nenhum documento foi alterado.');
   process.exit(0);
 }
 
-async function callAuth(endpoint: 'signUp' | 'signInWithPassword', email: string, password: string) {
-  const response = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:${endpoint}?key=${firebaseConfig.apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, returnSecureToken: true }),
+let migrated = 0;
+for (const item of migrations) {
+  const legacyRef = db.collection('users').doc(item.documentId);
+  const canonicalRef = db.collection('users').doc(item.uid);
+  await db.runTransaction(async transaction => {
+    const [legacySnapshot, canonicalSnapshot] = await Promise.all([
+      transaction.get(legacyRef),
+      transaction.get(canonicalRef),
+    ]);
+    if (!legacySnapshot.exists) return;
+    const legacyProfile = legacySnapshot.data() as LegacyProfile;
+    const canonicalProfile = canonicalSnapshot.exists ? canonicalSnapshot.data() as LegacyProfile : {};
+    const canonicalEmail = String(canonicalProfile.email || '').trim().toLowerCase();
+    const legacyEmail = String(legacyProfile.email || '').trim().toLowerCase();
+    if (canonicalSnapshot.exists && canonicalEmail && legacyEmail && canonicalEmail !== legacyEmail) {
+      throw new Error(`Conflito: users/${item.uid} pertence a outro e-mail.`);
     }
-  );
-  const payload = await response.json() as AuthResponse & { error?: { message?: string } };
-  if (!response.ok) {
-    const error = new Error(payload.error?.message || `Firebase Auth retornou HTTP ${response.status}.`);
-    (error as Error & { code?: string }).code = payload.error?.message;
-    throw error;
-  }
-  return payload;
+    transaction.set(canonicalRef, buildCanonicalUserProfile(
+      legacyProfile,
+      canonicalProfile,
+      item.documentId,
+      item.uid,
+      new Date().toISOString(),
+      FieldValue.delete(),
+    ), { merge: true });
+    if (legacyRef.path !== canonicalRef.path) transaction.delete(legacyRef);
+  });
+  migrated += 1;
+  console.log(`Migrado ${migrated}/${migrations.length}: ${item.documentId} -> ${item.uid}`);
 }
 
-const app = initializeApp(firebaseConfig, `auth-migration-${Date.now()}`);
-const db = initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId || '(default)');
-let created = 0;
-let existing = 0;
-
-try {
-  for (const [index, user] of users.entries()) {
-    const userId = String(user.id || user._id);
-    const email = String(user.email).trim().toLowerCase();
-    const password = String(user.password);
-    let authUser: AuthResponse;
-
-    try {
-      authUser = await callAuth('signUp', email, password);
-      created += 1;
-    } catch (error) {
-      if ((error as Error & { code?: string }).code !== 'EMAIL_EXISTS') throw error;
-      authUser = await callAuth('signInWithPassword', email, password);
-      existing += 1;
-    }
-
-    await setDoc(doc(db, 'authUsers', authUser.localId), {
-      userId,
-      email,
-      role: user.role || 'BARBER',
-      unit: user.unit ?? null,
-      isActive: user.isActive !== false,
-      migratedAt: new Date().toISOString(),
-    }, { merge: true });
-    await setDoc(doc(db, 'users', userId), {
-      authUid: authUser.localId,
-      password: deleteField(),
-    }, { merge: true });
-    console.log(`Conta ${index + 1}/${users.length} vinculada.`);
-  }
-
-  console.log(`Migração concluída: ${created} contas criadas, ${existing} contas existentes validadas.`);
-  console.log('Os campos de senha legados foram removidos dos documentos migrados.');
-} finally {
-  await deleteApp(app);
-}
+console.log(`Migração concluída: ${migrated} perfil(is) padronizado(s) por UID.`);
+console.log(`${unmatched.length} perfil(is) sem correspondência foram preservados sem alteração.`);

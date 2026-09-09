@@ -50,7 +50,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 4 — Padronizar usuários pelo Firebase UID
 
-- [ ] Fazer com que cada perfil seja persistido em `users/{uid}` e preparar uma migração idempotente para os usuários existentes.
+- [x] Fazer com que cada perfil seja persistido em `users/{uid}` e preparar uma migração idempotente para os usuários existentes.
 
 **Critérios de aprovação**
 

@@ -14,13 +14,11 @@ const isPreviewOrDev =
 export async function seedDatabase() {
   // Query all initial snapshots in parallel to avoid sequential blocking and query throttling
   const [
-    usersSnap,
     categoriesSnap,
     subcategoriesSnap,
     systemUnitsSnap,
     catalogSnap
   ] = await Promise.all([
-    getDocs(collection(db, 'users')),
     getDocs(collection(db, 'categories')),
     getDocs(collection(db, 'subcategories')),
     getDocs(collection(db, 'systemUnits')),
@@ -28,35 +26,6 @@ export async function seedDatabase() {
   ]);
 
   const promises: Promise<void>[] = [];
-
-  if (isPreviewOrDev) {
-    // Dev & Preview Seeding — seed primary admin if no users exist
-    if (usersSnap.empty) {
-      const primaryAdmin = {
-        id: 'prod-admin-1',
-        name: 'Administrador VANS',
-        email: 'karenfeitosa08@gmail.com',
-        role: 'ADMIN',
-        unit: null,
-        isActive: true
-      };
-      promises.push(setDoc(doc(db, 'users', primaryAdmin.id), primaryAdmin));
-    }
-  } else {
-    // Production/Published Seeding (NO example/mock accounts)
-    if (usersSnap.empty) {
-      // If the database is completely empty on initial setup,
-      // seed a single primary Admin account based on the user's email
-      const primaryAdmin = {
-        id: 'prod-admin-1',
-        name: 'Administrador VANS',
-        email: 'karenfeitosa08@gmail.com',
-        role: 'ADMIN',
-        unit: null
-      };
-      promises.push(setDoc(doc(db, 'users', primaryAdmin.id), primaryAdmin));
-    }
-  }
 
   // Common setups (Categories, Subcategories, Items Catalog, and Units)
   if (categoriesSnap.empty) {

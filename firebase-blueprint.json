@@ -8,6 +8,14 @@
         "id": {
           "type": "string"
         },
+        "authUid": {
+          "type": "string",
+          "description": "Firebase Authentication UID; also used as the users document ID"
+        },
+        "legacyId": {
+          "type": "string",
+          "description": "Previous profile ID retained only for migration traceability"
+        },
         "name": {
           "type": "string"
         },
@@ -20,6 +28,7 @@
       },
       "required": [
         "id",
+        "authUid",
         "name",
         "role"
       ]

@@ -31,6 +31,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [authUid, setAuthUid] = useState('');
   const [role, setRole] = useState<Role>(subTab === 'MANAGERS' ? 'ADMIN' : subTab === 'RECEPTION' ? 'RECEPTION' : 'BARBER');
   const [unit, setUnit] = useState<string>(systemUnits?.[0]?.id || 'UNIT_1');
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
@@ -61,6 +62,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     setEditingId(null);
     setName('');
     setEmail('');
+    setAuthUid('');
     setRole(subTab === 'MANAGERS' ? 'ADMIN' : subTab === 'RECEPTION' ? 'RECEPTION' : 'BARBER');
     setUnit(systemUnits?.[0]?.id || 'UNIT_1');
   };
@@ -73,6 +75,10 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     }
     if (!email.trim()) {
       showToast('O e-mail é obrigatório.', 'error');
+      return;
+    }
+    if (!editingId && !authUid.trim()) {
+      showToast('Informe o UID da conta criada no Firebase Authentication.', 'error');
       return;
     }
     const normalizedEmail = email.trim().toLowerCase();
@@ -120,7 +126,8 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     } else {
       try {
         await addUser({
-          id: `user_${crypto.randomUUID()}`,
+          id: authUid.trim(),
+          authUid: authUid.trim(),
           name,
           email: normalizedEmail,
           role: assignedRole,
@@ -140,6 +147,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     setEditingId(u.id);
     setName(u.name);
     setEmail(u.email || '');
+    setAuthUid(u.authUid || u.id);
     setRole(u.role);
     setUnit(u.unit || systemUnits?.[0]?.id || 'UNIT_1');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -402,7 +410,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
              )}
           </div>
           
-          <form onSubmit={handleSaveUser} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+          <form onSubmit={handleSaveUser} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
              <div>
                 <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">Nome</label>
                 <input
@@ -413,6 +421,18 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
                   className="w-full border border-gray-250 dark:border-zinc-800 p-2 text-sm rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-color)] bg-white dark:bg-zinc-900 text-gray-900 dark:text-white placeholder-gray-400 font-medium"
                 />
              </div>
+             {!editingId && (
+               <div>
+                  <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">UID Firebase</label>
+                  <input
+                    type="text"
+                    placeholder="UID da conta autenticada"
+                    value={authUid}
+                    onChange={(e) => setAuthUid(e.target.value)}
+                    className="w-full border border-gray-250 dark:border-zinc-800 p-2 text-sm rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-color)] bg-white dark:bg-zinc-900 text-gray-900 dark:text-white placeholder-gray-400 font-medium"
+                  />
+               </div>
+             )}
              <div>
                 <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">Email</label>
                 <input
