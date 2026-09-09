@@ -26,7 +26,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 2 — Registrar o baseline técnico
 
-- [ ] Documentar versões, scripts de validação, variáveis de ambiente e arquitetura atual em `.docs/ARQUITETURA.md`, referenciando o PRD para as regras de negócio.
+- [x] Documentar versões, scripts de validação, variáveis de ambiente e arquitetura atual em `.docs/ARQUITETURA.md`, referenciando o PRD para as regras de negócio.
 
 **Critérios de aprovação**
 
