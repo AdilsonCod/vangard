@@ -72,7 +72,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 6 — Adicionar testes do fluxo de autenticação
 
-- [ ] Cobrir login, sessão, logout, credenciais inválidas e tentativa de falsificação de identidade.
+- [x] Cobrir login, sessão, logout, credenciais inválidas e tentativa de falsificação de identidade.
 
 **Critérios de aprovação**
 

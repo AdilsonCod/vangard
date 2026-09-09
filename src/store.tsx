@@ -25,6 +25,7 @@ import { db, auth } from './firebase';
 import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { seedDatabase } from './firebase-sync';
+import { authenticatedProfile, endAuthenticatedSession, startAuthenticatedSession } from './services/authSession';
 
 // Mock initial data
 export const DEFAULT_UNITS: SystemUnit[] = [
@@ -171,12 +172,6 @@ const withoutLegacyPassword = (user: User): User => {
   return sanitized;
 };
 
-const canonicalUser = (user: User, uid: string): User => ({
-  ...withoutLegacyPassword(user),
-  id: uid,
-  authUid: uid,
-});
-
 export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [quarterlyRankingVisible, setQuarterlyRankingVisibility] = useState<boolean | null>(null);
@@ -271,7 +266,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       setHasLoadedUsers(false);
       unsubscribeProfile = onSnapshot(doc(db, 'users', fbUser.uid), snapshot => {
         const profile = snapshot.exists()
-          ? canonicalUser(withDocumentId<User>(snapshot), fbUser.uid)
+          ? authenticatedProfile(withoutLegacyPassword(withDocumentId<User>(snapshot)), fbUser.uid)
           : null;
         if (!profile || profile.isActive === false) {
           clearPrivateState();
@@ -436,34 +431,27 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   }, [isDarkMode]);
 
   const login = async (email: string, pass: string) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    try {
-      await signInWithEmailAndPassword(auth, normalizedEmail, pass);
-      const uid = auth.currentUser?.uid;
-      const canonicalSnapshot = uid ? await getDoc(doc(db, 'users', uid)) : null;
-      const u = canonicalSnapshot?.exists()
-        ? canonicalUser(withDocumentId<User>(canonicalSnapshot), uid!)
-        : undefined;
-      if (u && u.isActive !== false) {
-        setCurrentUser(u);
-        return true;
-      }
-      await signOut(auth);
-    } catch (authError) {
-      console.error('Falha na autenticação Firebase:', authError);
-      await signOut(auth).catch(() => undefined);
+    const user = await startAuthenticatedSession({
+      signIn: async (normalizedEmail, password) => {
+        const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+        return { uid: credential.user.uid };
+      },
+      signOut: () => signOut(auth),
+      readProfile: async uid => {
+        const snapshot = await getDoc(doc(db, 'users', uid));
+        return snapshot.exists() ? withoutLegacyPassword(withDocumentId<User>(snapshot)) : null;
+      },
+    }, email, pass);
+    if (!user) {
       clearPrivateState();
+      return false;
     }
-    return false;
+    setCurrentUser(user);
+    return true;
   };
 
   const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error('Erro ao encerrar sessão Firebase Auth:', error);
-    }
-    clearPrivateState();
+    await endAuthenticatedSession(() => signOut(auth), clearPrivateState);
   };
 
   const addEntry = async (entry: DailyEntry) => {

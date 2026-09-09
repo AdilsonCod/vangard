@@ -16,6 +16,5 @@ test('o perfil autenticado é carregado pelo UID informado pelo Firebase Auth', 
 
 test('logout encerra a sessão Firebase e limpa os dados privados em memória', () => {
   assert.match(storeSource, /const logout = async \(\) =>/);
-  assert.match(storeSource, /await signOut\(auth\)/);
-  assert.match(storeSource, /clearPrivateState\(\)/);
+  assert.match(storeSource, /endAuthenticatedSession\(\(\) => signOut\(auth\), clearPrivateState\)/);
 });

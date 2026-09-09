@@ -226,6 +226,7 @@ Para builds reproduzíveis, a referência efetiva é o `package-lock.json`. Atua
 | `npm run auth:migrate:dry` | Simular a padronização dos perfis em `users/{uid}`. |
 | `npm run auth:migrate:apply` | Aplicar a migração transacional de perfis para UID. |
 | `npm run test:auth-session` | Verificar que a identidade da sessão depende do Firebase Auth e não do armazenamento do navegador. |
+| `npm run test:auth-flow` | Executar a suíte de login, restauração, logout, perfil inválido e falsificação de identidade. |
 
 Comandos `*:apply` alteram dados externos e só devem ser executados com ambiente, backup e autorização confirmados.
 
