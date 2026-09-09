@@ -61,7 +61,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 5 — Tornar a sessão dependente apenas do Firebase Auth
 
-- [ ] Remover a restauração de identidade baseada somente no ID salvo em `localStorage` e derivar a sessão do estado autenticado do Firebase.
+- [x] Remover a restauração de identidade baseada somente no ID salvo em `localStorage` e derivar a sessão do estado autenticado do Firebase.
 
 **Critérios de aprovação**
 

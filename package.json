@@ -16,6 +16,7 @@
     "auth:migrate:dry": "tsx scripts/migrate-firebase-auth.ts",
     "auth:migrate:apply": "tsx scripts/migrate-firebase-auth.ts --apply",
     "test:auth-migration": "tsx --test scripts/user-uid-migration.test.ts",
+    "test:auth-session": "tsx --test scripts/auth-session.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

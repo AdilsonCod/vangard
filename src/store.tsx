@@ -155,7 +155,6 @@ interface StoreContextType extends AppState {
 
 const StoreContext = createContext<StoreContextType | null>(null);
 
-const AUTH_SESSION_KEY = 'vans_authenticated_user_id';
 const SHOULD_SEED_DATABASE = (import.meta as any).env?.VITE_ENABLE_DATABASE_SEED === 'true';
 
 // O ID do documento e o ID salvo no conteúdo podem divergir em importações
@@ -211,6 +210,23 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([]);
 
+  const clearPrivateState = () => {
+    setCurrentUser(null);
+    setUsers([]);
+    setEntries([]);
+    setGdvEntries([]);
+    setGdvSettings([]);
+    setTransactions([]);
+    setCashClosings([]);
+    setMonthlyUnitStats([]);
+    setMonthlyBarberStats([]);
+    setTargets({});
+    setPayments([]);
+    setNotifications([]);
+    setAnnouncements([]);
+    setQuarterlyRankingVisibility(null);
+  };
+
   const [themeColor, setThemeColor] = useState<'green' | 'red' | 'blue' | 'orange' | 'purple'>(() => {
     return (localStorage.getItem('barber_theme_color') as any) || 'orange';
   });
@@ -243,58 +259,38 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
-        try {
-          const canonicalSnapshot = await getDoc(doc(db, 'users', fbUser.uid));
-          let u = canonicalSnapshot.exists()
-            ? canonicalUser(withDocumentId<User>(canonicalSnapshot), fbUser.uid)
-            : undefined;
-          if (!u && fbUser.email) {
-            const legacySnapshot = await getDocs(query(collection(db, 'users'), where('email', '==', fbUser.email.toLowerCase())));
-            const legacy = legacySnapshot.docs.map(d => withoutLegacyPassword(withDocumentId<User>(d)))[0];
-            if (legacy) u = { ...legacy, authUid: fbUser.uid };
-          }
-          if (u && u.isActive !== false) {
-            setCurrentUser(u);
-            localStorage.setItem(AUTH_SESSION_KEY, u.id);
-          }
-        } catch (e) {
-          console.error('Erro ao sincronizar usuário do Firebase Auth:', e);
-        }
+    if (isInitializing) return;
+    let unsubscribeProfile = () => {};
+    const unsubscribeAuth = onAuthStateChanged(auth, fbUser => {
+      unsubscribeProfile();
+      clearPrivateState();
+      if (!fbUser) {
+        setHasLoadedUsers(true);
+        return;
       }
-      setHasLoadedUsers(true);
+      setHasLoadedUsers(false);
+      unsubscribeProfile = onSnapshot(doc(db, 'users', fbUser.uid), snapshot => {
+        const profile = snapshot.exists()
+          ? canonicalUser(withDocumentId<User>(snapshot), fbUser.uid)
+          : null;
+        if (!profile || profile.isActive === false) {
+          clearPrivateState();
+          setHasLoadedUsers(true);
+          void signOut(auth);
+          return;
+        }
+        setCurrentUser(profile);
+        setHasLoadedUsers(true);
+      }, error => {
+        console.error('Erro ao carregar o perfil autenticado:', error);
+        clearPrivateState();
+        setHasLoadedUsers(true);
+      });
     });
 
-    if (isInitializing) return;
-
-    const storedUserId = localStorage.getItem(AUTH_SESSION_KEY);
-    if (!storedUserId) {
-      setHasLoadedUsers(true);
-      return () => unsubAuth();
-    }
-
-    const unsubscribe = onSnapshot(
-      doc(db, 'users', storedUserId),
-      snapshot => {
-        const storedUser = snapshot.exists() ? withoutLegacyPassword(withDocumentId<User>(snapshot)) : null;
-        if (!storedUser || storedUser.isActive === false) {
-          localStorage.removeItem(AUTH_SESSION_KEY);
-          setCurrentUser(null);
-        } else {
-          setCurrentUser(storedUser);
-        }
-        setHasLoadedUsers(true);
-      },
-      error => {
-        console.error('Erro ao carregar usuários do Firestore:', error);
-        setHasLoadedUsers(true);
-      }
-    );
-
     return () => {
-      unsubAuth();
-      unsubscribe();
+      unsubscribeAuth();
+      unsubscribeProfile();
     };
   }, [isInitializing]);
 
@@ -323,8 +319,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       setUsers(nextUsers);
       const refreshedUser = nextUsers.find(user => user.id === currentUser.id);
       if (!refreshedUser || refreshedUser.isActive === false) {
-        localStorage.removeItem(AUTH_SESSION_KEY);
-        setCurrentUser(null);
+        clearPrivateState();
+        void signOut(auth);
       } else {
         setCurrentUser(refreshedUser);
       }
@@ -445,21 +441,18 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       await signInWithEmailAndPassword(auth, normalizedEmail, pass);
       const uid = auth.currentUser?.uid;
       const canonicalSnapshot = uid ? await getDoc(doc(db, 'users', uid)) : null;
-      let u = canonicalSnapshot?.exists()
+      const u = canonicalSnapshot?.exists()
         ? canonicalUser(withDocumentId<User>(canonicalSnapshot), uid!)
         : undefined;
-      if (!u) {
-        const snapshot = await getDocs(query(collection(db, 'users'), where('email', '==', normalizedEmail)));
-        const legacy = snapshot.docs.map(document => withoutLegacyPassword(withDocumentId<User>(document)))[0];
-        if (legacy && uid) u = { ...legacy, authUid: uid };
-      }
       if (u && u.isActive !== false) {
         setCurrentUser(u);
-        localStorage.setItem(AUTH_SESSION_KEY, u.id);
         return true;
       }
+      await signOut(auth);
     } catch (authError) {
       console.error('Falha na autenticação Firebase:', authError);
+      await signOut(auth).catch(() => undefined);
+      clearPrivateState();
     }
     return false;
   };
@@ -470,8 +463,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error('Erro ao encerrar sessão Firebase Auth:', error);
     }
-    localStorage.removeItem(AUTH_SESSION_KEY);
-    setCurrentUser(null);
+    clearPrivateState();
   };
 
   const addEntry = async (entry: DailyEntry) => {

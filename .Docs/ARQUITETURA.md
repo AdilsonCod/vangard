@@ -225,6 +225,7 @@ Para builds reproduzíveis, a referência efetiva é o `package-lock.json`. Atua
 | `npm run firestore:import:apply` | Aplicar importação de backup após validação. |
 | `npm run auth:migrate:dry` | Simular a padronização dos perfis em `users/{uid}`. |
 | `npm run auth:migrate:apply` | Aplicar a migração transacional de perfis para UID. |
+| `npm run test:auth-session` | Verificar que a identidade da sessão depende do Firebase Auth e não do armazenamento do navegador. |
 
 Comandos `*:apply` alteram dados externos e só devem ser executados com ambiente, backup e autorização confirmados.
 
@@ -251,7 +252,7 @@ Além dos comandos, alterações de segurança exigem Firebase Emulator; altera�
 
 ## 11. Limitações conhecidas
 
-- A identidade dos perfis usa o UID do Firebase; a restauração de sessão por armazenamento local será removida na Tarefa 5.
+- A identidade dos perfis e a restauração da sessão dependem do Firebase Auth; testes completos dos fluxos de autenticação serão adicionados na Tarefa 6.
 - Regras do Firestore não cobrem com segurança todas as coleções ativas.
 - A autorização por função ainda não está centralizada no servidor.
 - Algumas chamadas do frontend não enviam o token exigido pelas APIs.
