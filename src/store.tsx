@@ -21,8 +21,9 @@ import {
   FinClassification,
   FinSubclassification,
 } from './types';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { collection, doc, setDoc, deleteDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { seedDatabase } from './firebase-sync';
 
 // Mock initial data
@@ -165,6 +166,12 @@ const withDocumentId = <T,>(snapshot: { id: string; data: () => unknown }): T =>
   id: snapshot.id,
 } as T);
 
+const withoutLegacyPassword = (user: User): User => {
+  const sanitized = { ...user } as User & Record<string, unknown>;
+  delete sanitized.password;
+  return sanitized;
+};
+
 export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [quarterlyRankingVisible, setQuarterlyRankingVisibility] = useState<boolean | null>(null);
@@ -230,18 +237,34 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        try {
+          const snap = await getDocs(query(collection(db, 'users'), where('email', '==', fbUser.email?.toLowerCase())));
+          const u = snap.docs.map(d => withoutLegacyPassword(withDocumentId<User>(d)))[0];
+          if (u && u.isActive !== false) {
+            setCurrentUser(u);
+            localStorage.setItem(AUTH_SESSION_KEY, u.id);
+          }
+        } catch (e) {
+          console.error('Erro ao sincronizar usuário do Firebase Auth:', e);
+        }
+      }
+      setHasLoadedUsers(true);
+    });
+
     if (isInitializing) return;
 
     const storedUserId = localStorage.getItem(AUTH_SESSION_KEY);
     if (!storedUserId) {
       setHasLoadedUsers(true);
-      return;
+      return () => unsubAuth();
     }
 
     const unsubscribe = onSnapshot(
       doc(db, 'users', storedUserId),
       snapshot => {
-        const storedUser = snapshot.exists() ? withDocumentId<User>(snapshot) : null;
+        const storedUser = snapshot.exists() ? withoutLegacyPassword(withDocumentId<User>(snapshot)) : null;
         if (!storedUser || storedUser.isActive === false) {
           localStorage.removeItem(AUTH_SESSION_KEY);
           setCurrentUser(null);
@@ -256,11 +279,24 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       }
     );
 
-    return unsubscribe;
+    return () => {
+      unsubAuth();
+      unsubscribe();
+    };
   }, [isInitializing]);
 
   useEffect(() => {
     if (isInitializing || !currentUser) return;
+
+    const userUnit = currentUser.unit || (currentUser as any).unitId;
+    const isAdmin = currentUser.role === 'ADMIN';
+
+    const getUnitScopedQuery = (collName: string) => {
+      if (isAdmin || !userUnit) {
+        return collection(db, collName);
+      }
+      return query(collection(db, collName), where('unitId', '==', userUnit));
+    };
 
     const unsubRankingSettings = onSnapshot(doc(db, 'appSettings', 'rankings'), snapshot => {
       setQuarterlyRankingVisibility(snapshot.data()?.quarterlyRankingVisible !== false);
@@ -270,7 +306,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     });
 
     const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
-      const nextUsers = snap.docs.map(d => withDocumentId<User>(d));
+      const nextUsers = snap.docs.map(d => withoutLegacyPassword(withDocumentId<User>(d)));
       setUsers(nextUsers);
       const refreshedUser = nextUsers.find(user => user.id === currentUser.id);
       if (!refreshedUser || refreshedUser.isActive === false) {
@@ -284,10 +320,10 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unsubCatalog = onSnapshot(collection(db, 'catalog'), snap => {
       setCatalog(snap.docs.map(d => withDocumentId<CatalogItem>(d)));
     });
-    const unsubEntries = onSnapshot(collection(db, 'entries'), snap => {
+    const unsubEntries = onSnapshot(getUnitScopedQuery('entries'), snap => {
       setEntries(snap.docs.map(d => withDocumentId<DailyEntry>(d)));
     });
-    const unsubGdv = onSnapshot(collection(db, 'gdvEntries'), snap => {
+    const unsubGdv = onSnapshot(getUnitScopedQuery('gdvEntries'), snap => {
       setGdvEntries(snap.docs.map(d => withDocumentId<GDVEntry>(d)));
     });
     const unsubGdvSettings = onSnapshot(collection(db, 'gdvSettings'), snap => {
@@ -313,7 +349,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unsubSystemUnits = onSnapshot(collection(db, 'systemUnits'), snap => {
       setSystemUnits(snap.docs.map(d => withDocumentId<SystemUnit>(d)));
     });
-    const unsubPayments = onSnapshot(collection(db, 'payments'), snap => {
+    const unsubPayments = onSnapshot(getUnitScopedQuery('payments'), snap => {
       setPayments(snap.docs.map(d => withDocumentId<PaymentRecord>(d)));
     });
     const unsubNotifications = onSnapshot(collection(db, 'notifications'), snap => {
@@ -322,10 +358,10 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unsubAnnouncements = onSnapshot(collection(db, 'announcements'), snap => {
       setAnnouncements(snap.docs.map(d => withDocumentId<SystemAnnouncement>(d)));
     });
-    const unsubTransactions = onSnapshot(collection(db, 'transactions'), snap => {
+    const unsubTransactions = onSnapshot(getUnitScopedQuery('transactions'), snap => {
       setTransactions(snap.docs.map(d => withDocumentId<FinancialTransaction>(d)));
     });
-    const unsubCashClosings = onSnapshot(collection(db, 'cashClosings'), snap => {
+    const unsubCashClosings = onSnapshot(getUnitScopedQuery('cashClosings'), snap => {
       setCashClosings(snap.docs.map(d => withDocumentId<CashClosing>(d)));
     });
     const unsubFinancialCategories = onSnapshot(collection(db, 'financialCategories'), snap => {
@@ -365,7 +401,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       unsubFinClassifications();
       unsubFinSubclassifications();
     };
-  }, [isInitializing, currentUser?.id]);
+  }, [isInitializing, currentUser?.id, currentUser?.unit, (currentUser as any)?.unitId, currentUser?.role]);
 
   useEffect(() => {
     localStorage.setItem('barber_theme_color', themeColor);
@@ -391,20 +427,30 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   }, [isDarkMode]);
 
   const login = async (email: string, pass: string) => {
-    const normalizedEmail = email.trim();
-    const snapshot = await getDocs(query(collection(db, 'users'), where('email', '==', normalizedEmail)));
-    const u = snapshot.docs
-      .map(document => withDocumentId<User>(document))
-      .find(user => user.password === pass && user.isActive !== false);
-    if (u) {
-      setCurrentUser(u);
-      localStorage.setItem(AUTH_SESSION_KEY, u.id);
-      return true;
+    const normalizedEmail = email.trim().toLowerCase();
+    try {
+      await signInWithEmailAndPassword(auth, normalizedEmail, pass);
+      const snapshot = await getDocs(query(collection(db, 'users'), where('email', '==', normalizedEmail)));
+      const u = snapshot.docs
+        .map(document => withoutLegacyPassword(withDocumentId<User>(document)))
+        .find(user => user.isActive !== false);
+      if (u) {
+        setCurrentUser(u);
+        localStorage.setItem(AUTH_SESSION_KEY, u.id);
+        return true;
+      }
+    } catch (authError) {
+      console.error('Falha na autenticação Firebase:', authError);
     }
     return false;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Erro ao encerrar sessão Firebase Auth:', error);
+    }
     localStorage.removeItem(AUTH_SESSION_KEY);
     setCurrentUser(null);
   };
@@ -693,7 +739,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
   const addUser = async (user: User) => {
     try {
-      const sanitizedUser: any = { ...user };
+      const sanitizedUser: any = withoutLegacyPassword(user);
       Object.keys(sanitizedUser).forEach(key => {
         if (sanitizedUser[key] === undefined) {
           delete sanitizedUser[key];
@@ -708,7 +754,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
   const updateUser = async (user: User) => {
     try {
-      const sanitizedUser: any = { ...user };
+      const sanitizedUser: any = withoutLegacyPassword(user);
       Object.keys(sanitizedUser).forEach(key => {
         if (sanitizedUser[key] === undefined) {
           delete sanitizedUser[key];
@@ -716,7 +762,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       });
       await setDoc(doc(db, 'users', user.id), sanitizedUser);
       if (currentUser?.id === user.id) {
-        setCurrentUser(user);
+        setCurrentUser(withoutLegacyPassword(user));
       }
     } catch(err) {
       console.error("Error updating user:", err);
@@ -727,7 +773,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const deleteUser = async (id: string) => {
     const userToSoftDelete = users.find(u => u.id === id);
     if (userToSoftDelete) {
-      const sanitized: any = { ...userToSoftDelete, isActive: false };
+      const sanitized: any = withoutLegacyPassword({ ...userToSoftDelete, isActive: false });
       Object.keys(sanitized).forEach(k => {
         if (sanitized[k] === undefined) delete sanitized[k];
       });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { deleteApp, initializeApp } from 'firebase/app';
-import { doc, initializeFirestore, setDoc } from 'firebase/firestore';
+import { deleteField, doc, initializeFirestore, setDoc } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 type BackupUser = {
@@ -102,12 +102,15 @@ try {
       isActive: user.isActive !== false,
       migratedAt: new Date().toISOString(),
     }, { merge: true });
-    await setDoc(doc(db, 'users', userId), { authUid: authUser.localId }, { merge: true });
+    await setDoc(doc(db, 'users', userId), {
+      authUid: authUser.localId,
+      password: deleteField(),
+    }, { merge: true });
     console.log(`Conta ${index + 1}/${users.length} vinculada.`);
   }
 
   console.log(`Migração concluída: ${created} contas criadas, ${existing} contas existentes validadas.`);
-  console.log('As senhas legadas foram preservadas temporariamente para permitir reversão segura.');
+  console.log('Os campos de senha legados foram removidos dos documentos migrados.');
 } finally {
   await deleteApp(app);
 }

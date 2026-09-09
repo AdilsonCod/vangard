@@ -38,7 +38,6 @@ export async function seedDatabase() {
         email: 'karenfeitosa08@gmail.com',
         role: 'ADMIN',
         unit: null,
-        password: 'admin123',
         isActive: true
       };
       promises.push(setDoc(doc(db, 'users', primaryAdmin.id), primaryAdmin));
@@ -53,8 +52,7 @@ export async function seedDatabase() {
         name: 'Administrador VANS',
         email: 'karenfeitosa08@gmail.com',
         role: 'ADMIN',
-        unit: null,
-        password: 'admin123'
+        unit: null
       };
       promises.push(setDoc(doc(db, 'users', primaryAdmin.id), primaryAdmin));
     }

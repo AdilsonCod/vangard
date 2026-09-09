@@ -35,7 +35,6 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
   const [unit, setUnit] = useState<string>(systemUnits?.[0]?.id || 'UNIT_1');
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
   const [unitName, setUnitName] = useState<string>('');
-  const [password, setPassword] = useState('');
 
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -64,7 +63,6 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     setEmail('');
     setRole(subTab === 'MANAGERS' ? 'ADMIN' : subTab === 'RECEPTION' ? 'RECEPTION' : 'BARBER');
     setUnit(systemUnits?.[0]?.id || 'UNIT_1');
-    setPassword('');
   };
 
   const handleSaveUser = async (e: React.FormEvent) => {
@@ -113,7 +111,6 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
           email: normalizedEmail,
           role: assignedRole,
           unit: assignedUnit,
-          ...(password ? { password } : {}),
         });
         showToast('Usuário atualizado com sucesso!');
       } catch {
@@ -121,10 +118,6 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
         return;
       }
     } else {
-      if (!password) {
-         showToast('A senha é obrigatória para novos usuários.', 'error');
-         return;
-      }
       try {
         await addUser({
           id: `user_${crypto.randomUUID()}`,
@@ -132,10 +125,9 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
           email: normalizedEmail,
           role: assignedRole,
           unit: assignedUnit,
-          password,
           isActive: true,
         });
-        showToast('Usuário cadastrado com sucesso!');
+        showToast('Perfil cadastrado. O acesso deve ser ativado pelo Firebase Authentication.', 'info');
       } catch {
         showToast('Não foi possível cadastrar o usuário.', 'error');
         return;
@@ -150,7 +142,6 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     setEmail(u.email || '');
     setRole(u.role);
     setUnit(u.unit || systemUnits?.[0]?.id || 'UNIT_1');
-    setPassword('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -474,32 +465,6 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
                </div>
              )}
 
-             <div>
-                {editingId ? (
-                  <>
-                  <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">Senha</label>
-                  <input
-                    type="password"
-                    placeholder="Nova senha (opcional)"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full border border-gray-250 dark:border-zinc-800 p-2 text-sm rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-color)] bg-white dark:bg-zinc-900 text-gray-900 dark:text-white placeholder-gray-400 font-medium"
-                  />
-                  </>
-                ) : (
-                  <>
-                  <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">Senha</label>
-                  <input
-                    type="password"
-                    placeholder="Senha de acesso"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full border border-gray-250 dark:border-zinc-800 p-2 text-sm rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-color)] bg-white dark:bg-zinc-900 text-gray-900 dark:text-white placeholder-gray-400 font-medium"
-                  />
-                  </>
-                )}
-             </div>
-             
              <div className="flex items-end lg:col-span-1 md:col-span-2">
                 <button type="submit" className="w-full bg-gray-900 dark:bg-zinc-800 hover:bg-black dark:hover:bg-zinc-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs">
                    {editingId ? (

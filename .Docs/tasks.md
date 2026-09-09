@@ -39,7 +39,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 3 — Remover senhas dos modelos e formulários
 
-- [ ] Eliminar o campo `password` dos tipos, dados iniciais, formulários administrativos e gravações no Firestore.
+- [x] Eliminar o campo `password` dos tipos, dados iniciais, formulários administrativos e gravações no Firestore.
 
 **Critérios de aprovação**
 

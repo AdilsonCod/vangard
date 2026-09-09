@@ -27,7 +27,6 @@ export interface User {
   email?: string;
   role: Role;
   unit: Unit | null;
-  password?: string;
   notes?: string; 
   barberNotes?: string;
 }
@@ -100,6 +99,7 @@ export interface CommissionConfig {
 export interface DailyEntry {
   id: string;
   userId: string;
+  unitId?: string;
   date: string; // Data de Lancamento (YYYY-MM-DD)
   dueDate?: string; // Data de Vencimento (YYYY-MM-DD)
   createdAt?: string;
@@ -109,6 +109,10 @@ export interface DailyEntry {
   uniqueClientsServed: number;
   items: Record<string, DailyItemEntry>;
   cortesias?: Record<string, DailyItemEntry>;
+  totalAmount?: number;
+  courtesyAmount?: number;
+  internalSaleAmount?: number;
+  commissionAmount?: number;
 }
 
 export interface GDVUnitData {
@@ -156,7 +160,7 @@ export interface MonthlyBarberStats {
   barberId: string;
   unitId: string; // the unit the barber belongs to for this month
   month: string; // YYYY-MM
-  faturamentoTotal: number; // Faturamento Total = Faturamento Avulso + Faturamento Assinatura
+  faturamentoTotal: number; // Faturamento Total = Avulso + Assinaturas + Produtos
   faturamentoAvulso?: number; // Faturamento de atendimentos e serviços avulsos
   faturamentoAssinatura: number; // Faturamento de assinaturas / pote
   comissao: number;

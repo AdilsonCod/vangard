@@ -97,7 +97,7 @@ O diretório `backend/` e alguns scripts Python contêm motores ou protótipos a
 Limitações conhecidas do baseline, acompanhadas nas Tarefas 3 a 14:
 
 - compatibilidade legada com ID armazenado localmente;
-- campos de senha ainda presentes em modelos históricos;
+- documentos legados podem exigir a execução controlada da migração para apagar campos de senha antigos;
 - necessidade de padronizar `users/{uid}`;
 - regras e consultas ainda não cobrem todo o isolamento por perfil e unidade;
 - frontend e rotas protegidas ainda precisam ser alinhados em um cliente HTTP comum.
@@ -248,7 +248,7 @@ Além dos comandos, alterações de segurança exigem Firebase Emulator; altera�
 
 ## 11. Limitações conhecidas
 
-- Autenticação e perfil ainda possuem caminhos legados.
+- Autenticação e perfil ainda possuem caminhos legados de sessão e identificação; modelos e formulários da aplicação já não persistem senha.
 - Regras do Firestore não cobrem com segurança todas as coleções ativas.
 - A autorização por função ainda não está centralizada no servidor.
 - Algumas chamadas do frontend não enviam o token exigido pelas APIs.

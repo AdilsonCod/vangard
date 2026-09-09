@@ -1893,7 +1893,6 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editProfileForm, setEditProfileForm] = useState({
     name: barber.name,
-    password: barber.password,
     unit: barber.unit,
   });
 
@@ -1926,7 +1925,6 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
   useEffect(() => {
     setEditProfileForm({
       name: barber.name,
-      password: barber.password,
       unit: barber.unit,
     });
     setAdminNotes(barber.notes || "");
@@ -1981,23 +1979,6 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
                     })
                   }
                   className="w-full px-3 py-2 border border-gray-300 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-[var(--theme-color)] outline-none bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">
-                  Senha (Pode Redefinir)
-                </label>
-                <input
-                  type="text"
-                  value={editProfileForm.password}
-                  onChange={(e) =>
-                    setEditProfileForm({
-                      ...editProfileForm,
-                      password: e.target.value,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-[var(--theme-color)] outline-none bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 placeholder-gray-400 placeholder-zinc-500"
-                  placeholder="Nova senha"
                 />
               </div>
               <div>
