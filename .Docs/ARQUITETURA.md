@@ -232,6 +232,7 @@ Para builds reproduzíveis, a referência efetiva é o `package-lock.json`. Atua
 | `npm run test:auth-flow` | Executar a suíte de login, restauração, logout, perfil inválido e falsificação de identidade. |
 | `npm run test:permissions-matrix` | Validar a cobertura mínima da matriz normativa de perfis, ações e escopos. |
 | `npm run test:firestore:user-profile` | Iniciar o Firestore Emulator e validar edição pessoal e proteção dos campos privilegiados. |
+| `npm run test:firestore:collections` | Validar permissões explícitas das coleções sensíveis e a negação por padrão no Emulator. |
 
 Comandos `*:apply` alteram dados externos e só devem ser executados com ambiente, backup e autorização confirmados.
 

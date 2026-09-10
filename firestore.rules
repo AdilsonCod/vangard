@@ -18,11 +18,32 @@ service cloud.firestore {
       );
     }
 
+    function hasRole(role) {
+      return isAuthenticated() && (
+        (request.auth.token.keys().hasAny(['role']) && request.auth.token.role == role) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         getUserData().keys().hasAny(['role']) && getUserData().role == role)
+      );
+    }
+
+    function canManageFinance() {
+      return isAdmin() || hasRole('FINANCIAL');
+    }
+
+    function canManageMarketing() {
+      return isAdmin() || hasRole('MARKETING');
+    }
+
+    function canManageCommunication() {
+      return canManageMarketing() || hasRole('RECEPTION');
+    }
+
     function isUserInUnit(unitId) {
       return isAuthenticated() && (
         isAdmin() || 
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         (getUserData().unit == unitId || getUserData().unitId == unitId))
+         ((getUserData().keys().hasAny(['unit']) && getUserData().unit == unitId) ||
+          (getUserData().keys().hasAny(['unitId']) && getUserData().unitId == unitId)))
       );
     }
 
@@ -145,6 +166,96 @@ service cloud.firestore {
     match /appSettings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    // Configurações e rotinas financeiras sensíveis
+    match /commissionConfigs/{unitId} {
+      allow read, write: if canManageFinance() && isUserInUnit(unitId);
+    }
+
+    match /dataImportJobs/{jobId} {
+      allow read, write: if canManageFinance();
+    }
+
+    match /reconciliation_reports/{reportId} {
+      allow read, write: if canManageFinance();
+    }
+
+    match /reports_manual_weeks/{reportId} {
+      allow read, write: if canManageFinance();
+    }
+
+    // Planejamento, produção e métricas de marketing
+    match /marketing_campaigns/{documentId} {
+      allow read, write: if canManageMarketing();
+    }
+
+    match /marketing_traffic/{documentId} {
+      allow read, write: if canManageMarketing();
+    }
+
+    match /marketing_organic/{documentId} {
+      allow read, write: if canManageMarketing();
+    }
+
+    match /social_posts/{documentId} {
+      allow read, write: if canManageMarketing();
+    }
+
+    match /social_library/{documentId} {
+      allow read, write: if canManageMarketing();
+    }
+
+    // Mensagens: marketing e recepção operam; demais perfis não acessam as listas.
+    match /message_contact_lists/{documentId} {
+      allow read, write: if canManageCommunication();
+    }
+
+    match /message_dispatch_history/{documentId} {
+      allow read, write: if canManageCommunication();
+    }
+
+    match /dispatch_audit/{documentId} {
+      allow read, create: if canManageCommunication();
+      allow update, delete: if false;
+    }
+
+    // Links inteligentes são públicos somente para resolução. A administração e
+    // os dados analíticos continuam restritos aos perfis de comunicação.
+    match /smart_links/{linkId} {
+      allow read: if true;
+      allow create, delete: if canManageCommunication();
+      allow update: if canManageCommunication() || (
+        !isAuthenticated() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['totalClicks', 'lastClickAt']) &&
+        request.resource.data.totalClicks == resource.data.totalClicks + 1
+      );
+    }
+
+    match /smart_link_clicks/{clickId} {
+      allow read: if canManageCommunication();
+      allow create: if canManageCommunication() || (
+        !isAuthenticated() &&
+        request.resource.data.keys().hasOnly([
+          'linkId', 'shortCode', 'destinationUrl', 'phase', 'cycleNumber',
+          'timestamp', 'device', 'referrer', 'simulated'
+        ]) &&
+        request.resource.data.simulated == false
+      );
+      allow update, delete: if false;
+    }
+
+    // Logs de auditoria são imutáveis pelo cliente. A gravação deve ocorrer no
+    // backend com Admin SDK, enquanto administradores mantêm acesso de leitura.
+    match /auditLogs/{documentId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Defesa em profundidade: qualquer coleção não inventariada permanece negada.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

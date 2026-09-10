@@ -107,7 +107,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 9 — Cobrir todas as coleções nas regras do Firestore
 
-- [ ] Criar regras explícitas para todas as coleções utilizadas pela aplicação, eliminando permissões genéricas e lacunas.
+- [x] Criar regras explícitas para todas as coleções utilizadas pela aplicação, eliminando permissões genéricas e lacunas.
 
 **Critérios de aprovação**
 
