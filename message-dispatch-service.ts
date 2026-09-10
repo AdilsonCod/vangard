@@ -2,6 +2,9 @@ import type express from 'express';
 import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
+import { addDoc, collection } from 'firebase/firestore';
+import { db } from './src/firebase';
+import { authenticatedUser } from './server-auth';
 
 type DispatchLog = { id:string; time:string; text:string; type:'info'|'success'|'warning' };
 type DispatchError = { contact:string; error:string };
@@ -22,16 +25,6 @@ const addLog=(text:string,type:DispatchLog['type']='info')=>{
   state.logs=state.logs.slice(0,80);
 };
 const pause=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milliseconds));
-const authorized=(req:express.Request)=>{
-  const expected=process.env.MESSAGE_DISPATCH_SECRET;
-  if(!expected)return process.env.NODE_ENV!=='production';
-  return req.header('x-dispatch-secret')===expected;
-};
-const guard=(req:express.Request,res:express.Response)=>{
-  if(authorized(req))return true;
-  res.status(403).json({error:'Informe a chave operacional configurada no servidor.'});
-  return false;
-};
 const publicState=()=>({...state,currentQr:state.currentQr,errorDetails:state.errorDetails.slice(0,100)});
 
 async function connect(){
@@ -56,12 +49,26 @@ async function connect(){
   }catch(error){connecting=false;state.connectionStatus='disconnected';state.currentAction='Falha ao iniciar a conexão.';addLog(error instanceof Error?error.message:'Falha de conexão.','warning');}
 }
 
-export function configureMessageDispatch(app:express.Express){
-  app.get('/api/message-dispatch/status',(req,res)=>{if(!guard(req,res))return;res.json(publicState());});
-  app.post('/api/message-dispatch/connect',async(req,res)=>{if(!guard(req,res))return;void connect();res.json({success:true});});
-  app.post('/api/message-dispatch/stop',(req,res)=>{if(!guard(req,res))return;state.isSending=false;state.campaignStatus='stopped';state.currentAction='Envio interrompido pelo operador.';addLog('Campanha interrompida manualmente.','warning');res.json({success:true});});
-  app.post('/api/message-dispatch/start',async(req,res)=>{
-    if(!guard(req,res))return;
+function auditLog(action: string, userEmail: string, details: Record<string, unknown> = {}) {
+  addDoc(collection(db, 'dispatch_audit'), {
+    action,
+    userEmail,
+    timestamp: new Date().toISOString(),
+    ...details,
+  }).catch(err => console.error('Falha ao registrar auditoria de disparo:', err));
+}
+
+export function configureMessageDispatch(app:express.Express, requireAuth: express.RequestHandler, requireRole: express.RequestHandler){
+  app.get('/api/message-dispatch/status', requireAuth, requireRole, (req,res)=>{res.json(publicState());});
+  app.post('/api/message-dispatch/connect', requireAuth, requireRole, async(req,res)=>{void connect();res.json({success:true});});
+  app.post('/api/message-dispatch/stop', requireAuth, requireRole, (req,res)=>{
+    const userEmail = authenticatedUser(req)?.email || 'unknown';
+    state.isSending=false;state.campaignStatus='stopped';state.currentAction='Envio interrompido pelo operador.';addLog(`Campanha interrompida por ${userEmail}.`,'warning');
+    auditLog('CAMPAIGN_STOPPED', userEmail, { runId: state.runId });
+    res.json({success:true});
+  });
+  app.post('/api/message-dispatch/start', requireAuth, requireRole, async(req,res)=>{
+    const userEmail = authenticatedUser(req)?.email || 'unknown';
     if(state.isSending){res.status(409).json({error:'Já existe uma campanha em andamento.'});return;}
     if(state.connectionStatus!=='connected'||!socket){res.status(409).json({error:'Conecte o WhatsApp antes de iniciar.'});return;}
     const message=typeof req.body?.message==='string'?req.body.message.trim():'';
@@ -75,7 +82,8 @@ export function configureMessageDispatch(app:express.Express){
     if(!contacts.length||contacts.length>MAX_CONTACTS){res.status(400).json({error:`Informe entre 1 e ${MAX_CONTACTS} contatos válidos.`});return;}
     res.json({success:true,total:contacts.length});
     state.isSending=true;state.campaignStatus='running';state.runId=crypto.randomUUID();state.successCount=0;state.errorCount=0;state.errorDetails=[];state.total=contacts.length;state.progress=0;state.logs=[];
-    addLog(`Campanha iniciada com ${contacts.length} destinatário(s).`);
+    addLog(`Campanha iniciada por ${userEmail} com ${contacts.length} destinatário(s).`);
+    auditLog('CAMPAIGN_STARTED', userEmail, { runId: state.runId, totalContacts: contacts.length });
     for(let index=0;index<contacts.length&&state.isSending;index++){
       const contact=contacts[index];
       let jid=`${contact}@s.whatsapp.net`;
@@ -92,7 +100,10 @@ export function configureMessageDispatch(app:express.Express){
       state.progress=index+1;
       if(index<contacts.length-1&&state.isSending){const seconds=Math.floor(Math.random()*(maxDelay-minDelay+1))+minDelay;state.currentAction=`Intervalo operacional de ${seconds}s...`;for(let elapsed=0;elapsed<seconds&&state.isSending;elapsed++)await pause(1000);}
     }
-    if(state.isSending){state.campaignStatus='completed';state.currentAction='Campanha concluída.';addLog('Processamento concluído.','success');}
+    if(state.isSending){
+      state.campaignStatus='completed';state.currentAction='Campanha concluída.';addLog('Processamento concluído.','success');
+      auditLog('CAMPAIGN_COMPLETED', userEmail, { runId: state.runId, success: state.successCount, errors: state.errorCount });
+    }
     state.isSending=false;
   });
 }

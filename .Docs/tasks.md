@@ -118,7 +118,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 10 — Aplicar autorização por função nas APIs
 
-- [ ] Criar middlewares de autorização e aplicá-los às APIs de IA, mensagens, links e demais operações administrativas.
+- [x] Criar middlewares de autorização e aplicá-los às APIs de IA, mensagens, links e demais operações administrativas.
 
 **Critérios de aprovação**
 

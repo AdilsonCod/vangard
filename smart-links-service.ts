@@ -39,8 +39,8 @@ function statusPage(title:string,message:string,status:number){return {status,ht
 
 async function allLinks(){const snapshot=await getDocs(collection(db,'smart_links'));return snapshot.docs.map(item=>({id:item.id,...item.data()} as SmartLink));}
 
-export function configureSmartLinks(app:express.Express){
-  app.get('/api/smart-links/:id/simulate',async(req,res)=>{
+export function configureSmartLinks(app:express.Express, requireAuth: express.RequestHandler, requireRole: express.RequestHandler){
+  app.get('/api/smart-links/:id/simulate', requireAuth, requireRole, async(req,res)=>{
     try{const link=(await allLinks()).find(item=>item.id===req.params.id);if(!link)return res.status(404).json({error:'Link não encontrado.'});const at=req.query.at?new Date(String(req.query.at)):new Date();if(Number.isNaN(at.getTime()))return res.status(400).json({error:'Data inválida.'});res.json(resolveSmartLink(link,at));}catch(error){res.status(500).json({error:error instanceof Error?error.message:'Falha na simulação.'});}
   });
   app.get('/r/:code',smartLinkRedirectHandler);
