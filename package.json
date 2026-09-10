@@ -18,6 +18,7 @@
     "test:auth-migration": "tsx --test scripts/user-uid-migration.test.ts",
     "test:auth-session": "tsx --test scripts/auth-session.test.ts",
     "test:auth-flow": "tsx --test scripts/auth-session.test.ts scripts/authentication-flow.test.ts",
+    "test:permissions-matrix": "tsx --test scripts/permissions-matrix.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

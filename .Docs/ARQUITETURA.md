@@ -227,6 +227,7 @@ Para builds reproduzíveis, a referência efetiva é o `package-lock.json`. Atua
 | `npm run auth:migrate:apply` | Aplicar a migração transacional de perfis para UID. |
 | `npm run test:auth-session` | Verificar que a identidade da sessão depende do Firebase Auth e não do armazenamento do navegador. |
 | `npm run test:auth-flow` | Executar a suíte de login, restauração, logout, perfil inválido e falsificação de identidade. |
+| `npm run test:permissions-matrix` | Validar a cobertura mínima da matriz normativa de perfis, ações e escopos. |
 
 Comandos `*:apply` alteram dados externos e só devem ser executados com ambiente, backup e autorização confirmados.
 
@@ -273,3 +274,4 @@ Essas limitações correspondem às tarefas ainda abertas em [tasks.md](./tasks.
 - [Cálculo de Comissão](./CALCULO_COMISSAO.md)
 - [Relatório de testes de comissão](./RELATORIO_TESTES_COMISSAO.md)
 - [Migração dos perfis para UID](./MIGRACAO_UID.md)
+- [Matriz de permissões](./PERMISSOES.md)

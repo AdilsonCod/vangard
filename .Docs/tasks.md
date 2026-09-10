@@ -85,7 +85,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 7 — Definir a matriz de permissões
 
-- [ ] Registrar em `.docs/PERMISSOES.md` as permissões de administrador, gerência, financeiro, marketing, recepção e barbeiro, vinculadas aos requisitos do PRD.
+- [x] Registrar em `.docs/PERMISSOES.md` as permissões de administrador, gerência, financeiro, marketing, recepção e barbeiro, vinculadas aos requisitos do PRD.
 
 **Critérios de aprovação**
 
