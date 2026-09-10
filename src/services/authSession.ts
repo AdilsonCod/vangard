@@ -1,11 +1,11 @@
 import type { User } from '../types';
 
-export type AuthIdentity = { uid: string };
+export type AuthIdentity = { uid: string; email?: string | null };
 
 export type AuthSessionGateway = {
   signIn: (email: string, password: string) => Promise<AuthIdentity>;
   signOut: () => Promise<void>;
-  readProfile: (uid: string) => Promise<User | null>;
+  readProfile: (uid: string, email?: string | null) => Promise<User | null>;
 };
 
 export const authenticatedProfile = (profile: User | null, uid: string): User | null => {
@@ -18,7 +18,7 @@ export const restoreAuthenticatedSession = async (
   readProfile: AuthSessionGateway['readProfile'],
 ): Promise<User | null> => {
   if (!identity) return null;
-  return authenticatedProfile(await readProfile(identity.uid), identity.uid);
+  return authenticatedProfile(await readProfile(identity.uid, identity.email), identity.uid);
 };
 
 export const startAuthenticatedSession = async (

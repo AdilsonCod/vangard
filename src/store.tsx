@@ -22,7 +22,7 @@ import {
   FinSubclassification,
 } from './types';
 import { db, auth } from './firebase';
-import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { seedDatabase } from './firebase-sync';
 import { authenticatedProfile, endAuthenticatedSession, startAuthenticatedSession } from './services/authSession';
@@ -172,6 +172,35 @@ const withoutLegacyPassword = (user: User): User => {
   return sanitized;
 };
 
+const findAuthenticatedProfile = async (uid: string, authenticatedEmail?: string | null) => {
+  const canonical = await getDoc(doc(db, 'users', uid));
+  if (canonical.exists()) {
+    return { documentId: canonical.id, profile: withoutLegacyPassword(withDocumentId<User>(canonical)) };
+  }
+
+  const byAuthUid = await getDocs(query(collection(db, 'users'), where('authUid', '==', uid), limit(1)));
+  if (!byAuthUid.empty) {
+    const match = byAuthUid.docs[0];
+    return { documentId: match.id, profile: withoutLegacyPassword(withDocumentId<User>(match)) };
+  }
+
+  const normalizedEmail = authenticatedEmail?.trim().toLowerCase();
+  if (!normalizedEmail) return null;
+  const exactEmail = await getDocs(query(collection(db, 'users'), where('email', '==', normalizedEmail), limit(1)));
+  if (!exactEmail.empty) {
+    const match = exactEmail.docs[0];
+    return { documentId: match.id, profile: withoutLegacyPassword(withDocumentId<User>(match)) };
+  }
+
+  const profiles = await getDocs(collection(db, 'users'));
+  const caseInsensitiveMatch = profiles.docs.find(item =>
+    String(item.data().email || '').trim().toLowerCase() === normalizedEmail
+  );
+  return caseInsensitiveMatch
+    ? { documentId: caseInsensitiveMatch.id, profile: withoutLegacyPassword(withDocumentId<User>(caseInsensitiveMatch)) }
+    : null;
+};
+
 export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [quarterlyRankingVisible, setQuarterlyRankingVisibility] = useState<boolean | null>(null);
@@ -256,7 +285,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (isInitializing) return;
     let unsubscribeProfile = () => {};
-    const unsubscribeAuth = onAuthStateChanged(auth, fbUser => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async fbUser => {
       unsubscribeProfile();
       clearPrivateState();
       if (!fbUser) {
@@ -264,7 +293,15 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
       setHasLoadedUsers(false);
-      unsubscribeProfile = onSnapshot(doc(db, 'users', fbUser.uid), snapshot => {
+      try {
+        const resolved = await findAuthenticatedProfile(fbUser.uid, fbUser.email);
+        if (!resolved) {
+          clearPrivateState();
+          setHasLoadedUsers(true);
+          await signOut(auth);
+          return;
+        }
+        unsubscribeProfile = onSnapshot(doc(db, 'users', resolved.documentId), snapshot => {
         const profile = snapshot.exists()
           ? authenticatedProfile(withoutLegacyPassword(withDocumentId<User>(snapshot)), fbUser.uid)
           : null;
@@ -281,6 +318,11 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
         clearPrivateState();
         setHasLoadedUsers(true);
       });
+      } catch (error) {
+        console.error('Erro ao localizar o perfil autenticado:', error);
+        clearPrivateState();
+        setHasLoadedUsers(true);
+      }
     });
 
     return () => {
@@ -312,12 +354,16 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
       const nextUsers = snap.docs.map(d => withoutLegacyPassword(withDocumentId<User>(d)));
       setUsers(nextUsers);
-      const refreshedUser = nextUsers.find(user => user.id === currentUser.id);
+      const refreshedUser = nextUsers.find(user =>
+        user.id === currentUser.id ||
+        user.authUid === currentUser.id ||
+        user.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()
+      );
       if (!refreshedUser || refreshedUser.isActive === false) {
         clearPrivateState();
         void signOut(auth);
       } else {
-        setCurrentUser(refreshedUser);
+        setCurrentUser(authenticatedProfile(refreshedUser, currentUser.id));
       }
     });
 
@@ -434,13 +480,11 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const user = await startAuthenticatedSession({
       signIn: async (normalizedEmail, password) => {
         const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
-        return { uid: credential.user.uid };
+        return { uid: credential.user.uid, email: credential.user.email };
       },
       signOut: () => signOut(auth),
-      readProfile: async uid => {
-        const snapshot = await getDoc(doc(db, 'users', uid));
-        return snapshot.exists() ? withoutLegacyPassword(withDocumentId<User>(snapshot)) : null;
-      },
+      readProfile: async (uid, authenticatedEmail) =>
+        (await findAuthenticatedProfile(uid, authenticatedEmail))?.profile || null,
     }, email, pass);
     if (!user) {
       clearPrivateState();

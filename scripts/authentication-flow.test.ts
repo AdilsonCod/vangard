@@ -50,6 +50,22 @@ test('recarregamento restaura uma sessão Firebase válida pelo UID', async () =
   assert.equal(canAccessProtectedContent(session), true);
 });
 
+test('o e-mail confirmado pelo Firebase é repassado para localizar perfil legado', async () => {
+  let receivedUid = '';
+  let receivedEmail: string | null | undefined;
+  const session = await restoreAuthenticatedSession(
+    { uid: 'firebase-uid', email: 'pessoa@exemplo.com' },
+    async (uid, email) => {
+      receivedUid = uid;
+      receivedEmail = email;
+      return profile('perfil-legado');
+    },
+  );
+  assert.equal(receivedUid, 'firebase-uid');
+  assert.equal(receivedEmail, 'pessoa@exemplo.com');
+  assert.equal(session?.id, 'firebase-uid');
+});
+
 test('adulterar armazenamento local não troca a identidade autenticada', async () => {
   const browserStorage = new Map([['vans_authenticated_user_id', 'uid-atacante']]);
   const session = await restoreAuthenticatedSession({ uid: 'uid-real' }, async uid => profile(uid));

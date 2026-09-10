@@ -11,7 +11,8 @@ test('a identidade da sessão não é lida nem gravada no armazenamento do naveg
 
 test('o perfil autenticado é carregado pelo UID informado pelo Firebase Auth', () => {
   assert.match(storeSource, /onAuthStateChanged\(auth/);
-  assert.match(storeSource, /doc\(db, 'users', fbUser\.uid\)/);
+  assert.match(storeSource, /findAuthenticatedProfile\(fbUser\.uid, fbUser\.email\)/);
+  assert.match(storeSource, /getDoc\(doc\(db, 'users', uid\)\)/);
 });
 
 test('logout encerra a sessão Firebase e limpa os dados privados em memória', () => {
