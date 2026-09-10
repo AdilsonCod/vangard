@@ -7,6 +7,7 @@ import { AppPageHeader } from './ui/AppPrimitives';
 import { MarketingOperations } from './MarketingOperations';
 import { MarketingPerformance } from './MarketingPerformance';
 import { MarketingIntelligence } from './MarketingIntelligence';
+import { authenticatedApi } from '../services/apiClient';
 
 interface AlertaGargalo {
   tipo: 'TRAFEGO' | 'CONTEUDO' | 'OPERACIONAL';
@@ -104,7 +105,7 @@ export function MarketingDashboard() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/analyze-marketing', {
+      const data = await authenticatedApi.json<MarketingResponse>('/api/analyze-marketing', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -115,9 +116,6 @@ export function MarketingDashboard() {
           contexto,
         }),
       });
-      
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao analisar os dados de marketing.');
       
       setAnalysis(data);
     } catch (e: any) {

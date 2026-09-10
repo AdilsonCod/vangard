@@ -234,6 +234,7 @@ Para builds reproduzíveis, a referência efetiva é o `package-lock.json`. Atua
 | `npm run test:firestore:user-profile` | Iniciar o Firestore Emulator e validar edição pessoal e proteção dos campos privilegiados. |
 | `npm run test:firestore:collections` | Validar permissões explícitas das coleções sensíveis e a negação por padrão no Emulator. |
 | `npm run test:api-authorization` | Validar respostas 401/403 e o acesso permitido por função nas APIs administrativas. |
+| `npm run test:api-client` | Validar envio e renovação do Firebase ID Token pelo cliente HTTP do frontend. |
 
 Comandos `*:apply` alteram dados externos e só devem ser executados com ambiente, backup e autorização confirmados.
 

@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { db } from "../firebase";
+import { authenticatedApi } from "../services/apiClient";
 import { useStore } from "../store";
 import {
   resolveSmartLink,
@@ -1053,7 +1054,32 @@ function Simulator({
   set: (x: { link: SmartLink; at: string }) => void;
   close: () => void;
 }) {
-  const r = resolveSmartLink(value.link, new Date(value.at));
+  const [r, setResolution] = useState(() => resolveSmartLink(value.link, new Date(value.at)));
+  const [simulationError, setSimulationError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    const selectedDate = new Date(value.at);
+    if (Number.isNaN(selectedDate.getTime())) {
+      setSimulationError("Informe uma data válida para a simulação.");
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      authenticatedApi.json<ReturnType<typeof resolveSmartLink>>(
+        `/api/smart-links/${encodeURIComponent(value.link.id)}/simulate?at=${encodeURIComponent(selectedDate.toISOString())}`,
+      ).then(result => {
+        if (!cancelled) {
+          setResolution(result);
+          setSimulationError("");
+        }
+      }).catch(error => {
+        if (!cancelled) setSimulationError(error instanceof Error ? error.message : "Não foi possível simular o link.");
+      });
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [value.at, value.link.id]);
   const record = () =>
     addDoc(collection(db, "smart_link_clicks"), {
       linkId: value.link.id,
@@ -1085,6 +1111,7 @@ function Simulator({
       <div className="mt-3 rounded-xl bg-gray-50 p-4 dark:bg-zinc-800">
         <p className="break-all font-bold">{r.url || "Sem destino ativo"}</p>
         <p className="mt-2 text-xs text-gray-500">{r.reason}</p>
+        {simulationError && <p className="mt-2 text-xs font-bold text-red-500">{simulationError}</p>}
       </div>
       <AppButton
         className="mt-4"

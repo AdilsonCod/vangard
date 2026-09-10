@@ -129,7 +129,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 11 — Enviar Firebase ID Token pelo frontend
 
-- [ ] Centralizar as chamadas autenticadas em um cliente HTTP que envie `Authorization: Bearer <ID token>`.
+- [x] Centralizar as chamadas autenticadas em um cliente HTTP que envie `Authorization: Bearer <ID token>`.
 
 **Critérios de aprovação**
 

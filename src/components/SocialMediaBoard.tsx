@@ -4,6 +4,7 @@ import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query } from
 import { Plus, GripVertical, Trash2, Calendar, Youtube, Instagram, Twitter, MessageCircle, X, Sparkles, Loader2, LayoutGrid, Library, CheckSquare, Clock, Filter, UserRoundCheck, History, ShieldCheck } from 'lucide-react';
 import { useStore } from '../store';
 import { SystemUnit, User } from '../types';
+import { authenticatedApi } from '../services/apiClient';
 
 type PostStatus = 'Ideia' | 'Briefing' | 'Roteiro' | 'Aprovação' | 'Gravação' | 'Edição' | 'Revisão' | 'Agendado' | 'Publicado' | 'Mensurado' | 'Cancelado';
 type PostPriority = 'BAIXA' | 'NORMAL' | 'ALTA' | 'URGENTE';
@@ -504,12 +505,11 @@ function PostModal({ post, onClose, users, campaigns, systemUnits, currentUser }
     if (!aiPrompt) return alert("Digite um tema para a IA gerar a ideia.");
     setAiGenerating(true);
     try {
-      const res = await fetch("/api/generate-post-idea", {
+      const data = await authenticatedApi.json<{ titulo?: string; roteiro?: string; plataforma?: string; formato?: string }>("/api/generate-post-idea", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tema: aiPrompt })
       });
-      const data = await res.json();
       if (data && data.titulo) {
         setForm({
           ...form,
