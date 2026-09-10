@@ -96,7 +96,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 8 — Restringir o documento do próprio usuário
 
-- [ ] Alterar as regras do Firestore para impedir que um usuário modifique função, unidade, status ou permissões do próprio perfil.
+- [x] Alterar as regras do Firestore para impedir que um usuário modifique função, unidade, status ou permissões do próprio perfil.
 
 **Critérios de aprovação**
 

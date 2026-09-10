@@ -202,6 +202,9 @@ Versões declaradas ou observadas no ambiente desta validação:
 | Express | 5.2.1 |
 | Firebase Web SDK | 12.13.0 |
 | Firebase Admin SDK | 13.5.x, restrito a scripts/servidor |
+| Firebase Rules Unit Testing | 5.x |
+| Firebase CLI / Emulator | 15.x |
+| Java para Firestore Emulator | 21 |
 | Baileys | 7.0.0-rc14 |
 | Recharts | 3.8.1 |
 | PDF.js | 6.3.289 |
@@ -228,6 +231,7 @@ Para builds reproduzíveis, a referência efetiva é o `package-lock.json`. Atua
 | `npm run test:auth-session` | Verificar que a identidade da sessão depende do Firebase Auth e não do armazenamento do navegador. |
 | `npm run test:auth-flow` | Executar a suíte de login, restauração, logout, perfil inválido e falsificação de identidade. |
 | `npm run test:permissions-matrix` | Validar a cobertura mínima da matriz normativa de perfis, ações e escopos. |
+| `npm run test:firestore:user-profile` | Iniciar o Firestore Emulator e validar edição pessoal e proteção dos campos privilegiados. |
 
 Comandos `*:apply` alteram dados externos e só devem ser executados com ambiente, backup e autorização confirmados.
 

@@ -19,6 +19,7 @@
     "test:auth-session": "tsx --test scripts/auth-session.test.ts",
     "test:auth-flow": "tsx --test scripts/auth-session.test.ts scripts/authentication-flow.test.ts",
     "test:permissions-matrix": "tsx --test scripts/permissions-matrix.test.ts",
+    "test:firestore:user-profile": "firebase emulators:exec --only firestore --project vans-task-8-rules \"tsx --test scripts/firestore-user-profile-rules.test.ts\"",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -57,5 +58,9 @@
     "typescript": "^5.9.3",
     "vite": "^6.4.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase-tools": "^15.30.0"
   }
 }

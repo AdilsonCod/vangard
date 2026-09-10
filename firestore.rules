@@ -1,10 +1,150 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Basic rules for the development phase without Firebase Auth
-    match /{document=**} {
-      allow read, write: if request.time < timestamp.date(2027, 1, 1);
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.keys().hasAny(['role']) && request.auth.token.role == 'ADMIN') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         getUserData().keys().hasAny(['role']) && getUserData().role == 'ADMIN')
+      );
+    }
+
+    function isUserInUnit(unitId) {
+      return isAuthenticated() && (
+        isAdmin() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         (getUserData().unit == unitId || getUserData().unitId == unitId))
+      );
+    }
+
+    // Coleções de Sistema
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'notes', 'barberNotes'])
+      );
+    }
+
+    match /authUsers/{authId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /systemUnits/{unitId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /catalog/{itemId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /categories/{catId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /subcategories/{subId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /financialCategories/{catId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /suppliers/{supId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /finClassifications/{classId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /finSubclassifications/{subId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /targets/{targetId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Coleções Operacionais (com isolamento por unidade)
+    match /entries/{entryId} {
+      allow read: if isAuthenticated() && (isAdmin() || resource == null || isUserInUnit(resource.data.unitId));
+      allow create, update: if isAuthenticated() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow delete: if isAdmin();
+    }
+
+    match /gdvEntries/{gdvId} {
+      allow read: if isAuthenticated() && (isAdmin() || resource == null || isUserInUnit(resource.data.unitId));
+      allow create, update: if isAuthenticated() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow delete: if isAdmin();
+    }
+
+    match /gdvSettings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /monthlyUnitStats/{statId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /monthlyBarberStats/{statId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /transactions/{transId} {
+      allow read: if isAuthenticated() && (isAdmin() || resource == null || isUserInUnit(resource.data.unitId));
+      allow create, update: if isAuthenticated() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow delete: if isAdmin();
+    }
+
+    match /cashClosings/{closingId} {
+      allow read: if isAuthenticated() && (isAdmin() || resource == null || isUserInUnit(resource.data.unitId));
+      allow create, update: if isAuthenticated() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow delete: if isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && (isAdmin() || resource == null || isUserInUnit(resource.data.unitId));
+      allow create, update: if isAuthenticated() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /appSettings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
   }
 }
-
