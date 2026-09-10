@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { StoreProvider, useStore } from './store';
 import Login from './components/Login';
-import AdminDashboard from './components/AdminDashboard';
-import BarberDashboard from './components/BarberDashboard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import PublicLinkRedirect from './components/PublicLinkRedirect';
+
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
+const BarberDashboard = React.lazy(() => import('./components/BarberDashboard'));
 
 const THEME_COLORS: Record<string, { main: string; strong: string; soft: string }> = {
   green: { main: '#22c55e', strong: '#16a34a', soft: '#dcfce7' },
@@ -13,6 +14,17 @@ const THEME_COLORS: Record<string, { main: string; strong: string; soft: string 
   orange: { main: '#f97316', strong: '#ea580c', soft: '#ffedd5' },
   purple: { main: '#a855f7', strong: '#9333ea', soft: '#f3e8ff' },
 };
+
+function LoadingFallback() {
+  return (
+    <div className="flex min-h-[100dvh] items-center justify-center bg-transparent">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-3 border-gray-300 border-t-[var(--theme-color)] dark:border-zinc-700 dark:border-t-[var(--theme-color)]" />
+        <p className="text-sm text-gray-500 dark:text-zinc-400 font-sans">Carregando...</p>
+      </div>
+    </div>
+  );
+}
 
 function AppContent() {
   const { currentUser, isDarkMode, themeColor, themeLightBg, themeDarkBg } = useStore();
@@ -57,9 +69,11 @@ function AppContent() {
 
   if (!currentUser) return <Login />;
   
-  if (currentUser.role === 'ADMIN' || currentUser.role === 'FINANCIAL' || currentUser.role === 'MARKETING' || currentUser.role === 'RECEPTION') return <AdminDashboard />;
+  if (currentUser.role === 'ADMIN' || currentUser.role === 'FINANCIAL' || currentUser.role === 'MARKETING' || currentUser.role === 'RECEPTION') {
+    return <Suspense fallback={<LoadingFallback />}><AdminDashboard /></Suspense>;
+  }
   
-  return <BarberDashboard />;
+  return <Suspense fallback={<LoadingFallback />}><BarberDashboard /></Suspense>;
 }
 
 export default function App() {

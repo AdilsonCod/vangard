@@ -1,9 +1,9 @@
 import type express from 'express';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { addDoc, collection, doc, getDocs, increment, updateDoc } from 'firebase/firestore';
-import { db } from './src/firebase';
+import { FieldValue } from 'firebase-admin/firestore';
 import { findSmartLinkByCode, resolveSmartLink, type SmartLink } from './src/smartLinks';
+import { adminDb } from './server-firebase-admin';
 
 const escapeHtml=(value:string)=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]||char));
 const device=(agent='')=>/ipad|tablet/i.test(agent)?'tablet':/mobile|android|iphone/i.test(agent)?'mobile':'desktop';
@@ -37,7 +37,7 @@ async function fetchPublicHtml(raw:string){
 
 function statusPage(title:string,message:string,status:number){return {status,html:`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#09090b;color:#fafafa;font:15px system-ui;padding:20px;box-sizing:border-box}.c{max-width:480px;padding:34px;border:1px solid #3f3f46;border-radius:22px;background:#18181b;text-align:center}h1{font-size:22px}p{color:#a1a1aa;line-height:1.6}</style></head><body><div class="c"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></div></body></html>`};}
 
-async function allLinks(){const snapshot=await getDocs(collection(db,'smart_links'));return snapshot.docs.map(item=>({id:item.id,...item.data()} as SmartLink));}
+async function allLinks(){const snapshot=await adminDb.collection('smart_links').get();return snapshot.docs.map(item=>({id:item.id,...item.data()} as SmartLink));}
 
 export function configureSmartLinks(app:express.Express, requireAuth: express.RequestHandler, requireRole: express.RequestHandler){
   app.get('/api/smart-links/:id/simulate', requireAuth, requireRole, async(req,res)=>{
@@ -54,8 +54,8 @@ export async function smartLinkRedirectHandler(req:express.Request,res:express.R
       if(!resolution.url){const page=statusPage(resolution.label,link.expiredMessage||resolution.reason,resolution.expiredSlug?410:404);return res.status(page.status).send(page.html);}
       await assertPublicUrl(resolution.url);
       await Promise.allSettled([
-        updateDoc(doc(db,'smart_links',link.id),{totalClicks:increment(1),lastClickAt:new Date().toISOString()}),
-        addDoc(collection(db,'smart_link_clicks'),{linkId:link.id,shortCode:req.params.code,destinationUrl:resolution.url,phase:resolution.phase,cycleNumber:resolution.cycleNumber||null,timestamp:new Date().toISOString(),device:device(req.headers['user-agent']),referrer:req.headers.referer||'',simulated:false}),
+        adminDb.collection('smart_links').doc(link.id).update({totalClicks:FieldValue.increment(1),lastClickAt:new Date().toISOString()}),
+        adminDb.collection('smart_link_clicks').add({linkId:link.id,unitId:link.unitId,shortCode:req.params.code,destinationUrl:resolution.url,phase:resolution.phase,cycleNumber:resolution.cycleNumber||null,timestamp:new Date().toISOString(),device:device(req.headers['user-agent']),referrer:req.headers.referer||'',simulated:false}),
       ]);
       if(!link.maskUrl||req.query.direct==='1')return res.redirect(302,resolution.url);
       const result=await fetchPublicHtml(resolution.url);if(!result)return res.redirect(302,resolution.url);

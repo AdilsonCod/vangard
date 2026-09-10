@@ -1,65 +1,13 @@
 import "dotenv/config";
 import express from "express";
 import path from "path";
-import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { configureMessageDispatch } from "./message-dispatch-service";
 import { configureSmartLinks } from "./smart-links-service";
-import firebaseConfig from './firebase-applet-config.json';
-import { createRequireAuth, requireRoles, type VerifiedFirebaseUser } from './server-auth';
+import { createRequireAuth, requireRoles } from './server-auth';
+import { verifyFirebaseIdToken } from './server-firebase-admin';
 
-// ─── Firebase ID Token Verification (no Admin SDK) ───
-
-interface DecodedToken extends VerifiedFirebaseUser {}
-
-let cachedKeys: Record<string, string> = {};
-let keyCacheExpiry = 0;
-
-async function getGooglePublicKeys(): Promise<Record<string, string>> {
-  if (Date.now() < keyCacheExpiry && Object.keys(cachedKeys).length > 0) return cachedKeys;
-  const res = await fetch('https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com');
-  if (!res.ok) throw new Error(`Falha ao buscar chaves públicas do Google: HTTP ${res.status}`);
-  const cacheControl = res.headers.get('cache-control') || '';
-  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
-  keyCacheExpiry = Date.now() + (maxAgeMatch ? parseInt(maxAgeMatch[1], 10) * 1000 : 3600_000);
-  cachedKeys = await res.json() as Record<string, string>;
-  return cachedKeys;
-}
-
-function base64UrlDecode(str: string): Buffer {
-  return Buffer.from(str.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-}
-
-async function verifyIdToken(token: string): Promise<DecodedToken> {
-  const parts = token.split('.');
-  if (parts.length !== 3) throw new Error('Token JWT malformado.');
-
-  const header = JSON.parse(base64UrlDecode(parts[0]).toString()) as { alg: string; kid: string };
-  const payload = JSON.parse(base64UrlDecode(parts[1]).toString()) as DecodedToken & {
-    aud?: string; iss?: string; exp?: number; iat?: number; sub?: string;
-  };
-
-  if (header.alg !== 'RS256') throw new Error('Algoritmo JWT não suportado.');
-
-  const now = Math.floor(Date.now() / 1000);
-  if (!payload.exp || payload.exp < now) throw new Error('Token expirado.');
-  if (!payload.iat || payload.iat > now + 300) throw new Error('Token emitido no futuro.');
-  if (payload.aud !== firebaseConfig.projectId) throw new Error('Audience do token não confere.');
-  if (payload.iss !== `https://securetoken.google.com/${firebaseConfig.projectId}`) throw new Error('Issuer do token não confere.');
-  if (!payload.sub) throw new Error('Token sem subject.');
-
-  const keys = await getGooglePublicKeys();
-  const pem = keys[header.kid];
-  if (!pem) throw new Error('Chave pública não encontrada para o kid do token.');
-
-  const verifier = crypto.createVerify('RSA-SHA256');
-  verifier.update(`${parts[0]}.${parts[1]}`);
-  if (!verifier.verify(pem, base64UrlDecode(parts[2]))) throw new Error('Assinatura do token inválida.');
-
-  return { uid: payload.sub, email: payload.email, role: payload.role };
-}
-
-const requireAuth = createRequireAuth(verifyIdToken);
+const requireAuth = createRequireAuth(verifyFirebaseIdToken);
 const requireMarketingAccess = requireRoles('ADMIN', 'MARKETING');
 const requireCommunicationAccess = requireRoles('ADMIN', 'MARKETING', 'RECEPTION');
 

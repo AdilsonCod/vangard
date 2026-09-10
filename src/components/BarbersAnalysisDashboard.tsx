@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Users, TrendingUp, ChevronDown, ChevronUp, C
 import { MonthlyBarberStats, User } from '../types';
 import { ResponsiveContainer, BarChart, Bar, Tooltip, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from 'recharts';
 import { AppPageHeader, appControlClass } from './ui/AppPrimitives';
+import { calculateTotalRevenue, inferStandaloneRevenue } from '../services/financialEngine';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -146,12 +147,12 @@ export function BarbersAnalysisDashboard() {
 
             faturamentoAvulso = Math.floor(prevAvulso * (1 + growth) * (0.97 + Math.random() * 0.06));
             faturamentoAssinatura = Math.floor(prevAssinatura * (1 + growth * 1.1) * (0.96 + Math.random() * 0.08));
-            faturamentoTotal = faturamentoAvulso + faturamentoAssinatura;
+            vendaProdutosValor = Math.floor(prevStats.vendaProdutosValor * (1 + growth * 1.25) * (0.95 + Math.random() * 0.1));
+            faturamentoTotal = calculateTotalRevenue(faturamentoAvulso, faturamentoAssinatura, vendaProdutosValor);
 
             clientesAtendidos = Math.floor(prevStats.clientesAtendidos * (1 + growth * 0.7) * (0.97 + Math.random() * 0.06));
             servicosRealizados = Math.floor(clientesAtendidos * (1.1 + Math.random() * 0.25));
             comissao = Math.floor(faturamentoTotal * (0.45 + Math.random() * 0.05));
-            vendaProdutosValor = Math.floor(prevStats.vendaProdutosValor * (1 + growth * 1.25) * (0.95 + Math.random() * 0.1));
             vendasProdutosQtd = Math.max(1, Math.floor(vendaProdutosValor / (25 + Math.random() * 15)));
             taxaRetorno = Math.min(95, Math.max(30, Math.floor(prevStats.taxaRetorno * (1 + (Math.random() * 0.04 - 0.02)))));
             clientesNovos = Math.max(2, Math.floor(prevStats.clientesNovos * (1 + (Math.random() * 0.1 - 0.04))));
@@ -167,12 +168,12 @@ export function BarbersAnalysisDashboard() {
             // Fallback baseline for the first simulation
             faturamentoAvulso = Math.floor(4000 + Math.random() * 6500);
             faturamentoAssinatura = Math.floor(500 + Math.random() * 1000);
-            faturamentoTotal = faturamentoAvulso + faturamentoAssinatura;
+            vendaProdutosValor = Math.floor(150 + Math.random() * 600);
+            faturamentoTotal = calculateTotalRevenue(faturamentoAvulso, faturamentoAssinatura, vendaProdutosValor);
 
             clientesAtendidos = Math.floor(100 + Math.random() * 80);
             servicosRealizados = Math.floor(clientesAtendidos * (1.1 + Math.random() * 0.22)); 
             comissao = Math.floor(faturamentoTotal * (0.45 + Math.random() * 0.05));
-            vendaProdutosValor = Math.floor(150 + Math.random() * 600);
             vendasProdutosQtd = Math.max(1, Math.floor(vendaProdutosValor / (20 + Math.random() * 20)));
             taxaRetorno = Math.floor(50 + Math.random() * 30);
             clientesNovos = Math.floor(10 + Math.random() * 15);
@@ -304,8 +305,8 @@ export function BarbersAnalysisDashboard() {
     const existingAssinatura = existing?.faturamentoAssinatura || 0;
     const existingAvulso = existing?.faturamentoAvulso !== undefined
       ? existing.faturamentoAvulso
-      : Math.max(0, (existing?.faturamentoTotal || 0) - existingAssinatura);
-    const existingTotal = existing?.faturamentoTotal || (existingAvulso + existingAssinatura);
+      : inferStandaloneRevenue(existing?.faturamentoTotal, existingAssinatura, existing?.vendaProdutosValor);
+    const existingTotal = calculateTotalRevenue(existingAvulso, existingAssinatura, existing?.vendaProdutosValor);
 
     const updatePayload: any = {
       id: statsId,
@@ -341,13 +342,16 @@ export function BarbersAnalysisDashboard() {
       }
     } else if (field === 'faturamentoAvulso') {
       updatePayload.faturamentoAvulso = val;
-      updatePayload.faturamentoTotal = val + (updatePayload.faturamentoAssinatura || 0);
+      updatePayload.faturamentoTotal = calculateTotalRevenue(val, updatePayload.faturamentoAssinatura, updatePayload.vendaProdutosValor);
     } else if (field === 'faturamentoAssinatura') {
       updatePayload.faturamentoAssinatura = val;
-      updatePayload.faturamentoTotal = (updatePayload.faturamentoAvulso || 0) + val;
+      updatePayload.faturamentoTotal = calculateTotalRevenue(updatePayload.faturamentoAvulso, val, updatePayload.vendaProdutosValor);
     } else if (field === 'faturamentoTotal') {
       updatePayload.faturamentoTotal = val;
-      updatePayload.faturamentoAvulso = Math.max(0, val - (updatePayload.faturamentoAssinatura || 0));
+      updatePayload.faturamentoAvulso = inferStandaloneRevenue(val, updatePayload.faturamentoAssinatura, updatePayload.vendaProdutosValor);
+    } else if (field === 'vendaProdutosValor') {
+      updatePayload.vendaProdutosValor = val;
+      updatePayload.faturamentoTotal = calculateTotalRevenue(updatePayload.faturamentoAvulso, updatePayload.faturamentoAssinatura, val);
     } else if (['comissaoServicos', 'comissaoProdutos', 'comissaoAssinatura'].includes(field)) {
       updatePayload[field] = val;
       updatePayload.comissao = (updatePayload.comissaoServicos || 0)
@@ -699,10 +703,8 @@ export function BarbersAnalysisDashboard() {
                           const fatAssinatura = bStats.faturamentoAssinatura || 0;
                           const fatAvulso = bStats.faturamentoAvulso !== undefined
                             ? bStats.faturamentoAvulso
-                            : Math.max(0, (bStats.faturamentoTotal || 0) - fatAssinatura);
-                          const fatTotal = (bStats.faturamentoTotal !== undefined && bStats.faturamentoTotal > 0)
-                            ? bStats.faturamentoTotal
-                            : (fatAvulso + fatAssinatura);
+                            : inferStandaloneRevenue(bStats.faturamentoTotal, fatAssinatura, bStats.vendaProdutosValor);
+                          const fatTotal = calculateTotalRevenue(fatAvulso, fatAssinatura, bStats.vendaProdutosValor);
 
                           const ticketMedio = bStats.clientesAtendidos > 0 ? (fatTotal / bStats.clientesAtendidos) : 0;
                           const geracaoDemanda = (bStats.clientesNovos || 0) + (bStats.clientesSemPreferencia || 0);
@@ -732,10 +734,10 @@ export function BarbersAnalysisDashboard() {
                                 {!!expandedBarbers[`${monthStr}_${barber.id}`] && (
                                   <div className="p-4 border-t border-gray-100 dark:border-zinc-800/80">
                                     <h5 className="text-3xs font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500 mb-3 flex items-center gap-1.5">
-                                      Indicadores Principais (Faturamento Total = Avulso + Assinaturas)
+                                      Indicadores Principais (Faturamento Total = Avulso + Assinaturas + Produtos)
                                     </h5>
                                     <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-                                      <CardInput label="Fat. Total (Avulso+Assin)" value={fatTotal} onChange={v => handleUpdate(barber.id, monthStr, 'faturamentoTotal', v)} prefix="R$" />
+                                      <CardInput label="Fat. Total" value={fatTotal} onChange={v => handleUpdate(barber.id, monthStr, 'faturamentoTotal', v)} prefix="R$" />
                                       <CardInput label="Fat. Avulso" value={fatAvulso} onChange={v => handleUpdate(barber.id, monthStr, 'faturamentoAvulso', v)} prefix="R$" />
                                       <CardInput label="Fat. Assinaturas" value={fatAssinatura} onChange={v => handleUpdate(barber.id, monthStr, 'faturamentoAssinatura', v)} prefix="R$" />
                                       <CardInput label="% Fat. Assinaturas" value={bStats.percentualAssinatura || 0} onChange={v => handleUpdate(barber.id, monthStr, 'percentualAssinatura', v)} suffix="%" />

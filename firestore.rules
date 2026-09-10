@@ -38,18 +38,57 @@ service cloud.firestore {
       return canManageMarketing() || hasRole('RECEPTION');
     }
 
+    function canReadFinancialOperation() {
+      return canManageFinance() || hasRole('RECEPTION');
+    }
+
     function isUserInUnit(unitId) {
       return isAuthenticated() && (
         isAdmin() || 
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          ((getUserData().keys().hasAny(['unit']) && getUserData().unit == unitId) ||
-          (getUserData().keys().hasAny(['unitId']) && getUserData().unitId == unitId)))
+          (getUserData().keys().hasAny(['unitId']) && getUserData().unitId == unitId) ||
+          (getUserData().keys().hasAny(['unitIds']) && unitId in getUserData().unitIds)))
       );
+    }
+
+    function isOwnProfile(userId) {
+      return isAuthenticated() && (
+        request.auth.uid == userId ||
+        (resource != null && resource.data.keys().hasAny(['authUid']) && resource.data.authUid == request.auth.uid)
+      );
+    }
+
+    function isProfessional() {
+      return hasRole('BARBER') || hasRole('MANICURE');
+    }
+
+    function ownsProfessionalRecord(data) {
+      return isAuthenticated() && (
+        (data.keys().hasAny(['userId']) && data.userId == request.auth.uid) ||
+        (data.keys().hasAny(['barberId']) && data.barberId == request.auth.uid) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         getUserData().keys().hasAny(['legacyId']) &&
+         ((data.keys().hasAny(['userId']) && data.userId == getUserData().legacyId) ||
+          (data.keys().hasAny(['barberId']) && data.barberId == getUserData().legacyId)))
+      );
+    }
+
+    function periodIsOpen(unitId, period) {
+      let lockPath = /databases/$(database)/documents/financialPeriodLocks/$(unitId + '_' + period);
+      return !exists(lockPath) || get(lockPath).data.active != true;
+    }
+
+    function dateIsOpen(unitId, date) {
+      return periodIsOpen(unitId, date);
     }
 
     // Coleções de Sistema
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isAdmin() || isOwnProfile(userId) ||
+        (isAuthenticated() && !isProfessional() && resource != null &&
+         ((resource.data.keys().hasAny(['unit']) && isUserInUnit(resource.data.unit)) ||
+          (resource.data.keys().hasAny(['unitId']) && isUserInUnit(resource.data.unitId))));
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || (
         isAuthenticated() &&
@@ -84,35 +123,40 @@ service cloud.firestore {
     }
 
     match /financialCategories/{catId} {
-      allow read: if isAuthenticated();
+      allow read: if canReadFinancialOperation();
       allow write: if isAdmin();
     }
 
     match /suppliers/{supId} {
-      allow read: if isAuthenticated();
+      allow read: if canReadFinancialOperation();
       allow write: if isAdmin();
     }
 
     match /finClassifications/{classId} {
-      allow read: if isAuthenticated();
+      allow read: if canReadFinancialOperation();
       allow write: if isAdmin();
     }
 
     match /finSubclassifications/{subId} {
-      allow read: if isAuthenticated();
+      allow read: if canReadFinancialOperation();
       allow write: if isAdmin();
     }
 
     match /targets/{targetId} {
-      allow read: if isAuthenticated();
+      allow read: if isAdmin() || (isProfessional() && (
+        targetId == request.auth.uid ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         getUserData().keys().hasAny(['legacyId']) && targetId == getUserData().legacyId)
+      ));
       allow write: if isAdmin();
     }
 
     // Coleções Operacionais (com isolamento por unidade)
     match /entries/{entryId} {
-      allow read: if isAuthenticated() && (isAdmin() || resource == null || isUserInUnit(resource.data.unitId));
-      allow create, update: if isAuthenticated() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
-      allow delete: if isAdmin();
+      allow read: if isAuthenticated() && (isAdmin() || (isUserInUnit(resource.data.unitId) && (!isProfessional() || ownsProfessionalRecord(resource.data))));
+      allow create: if isAuthenticated() && dateIsOpen(request.resource.data.unitId, request.resource.data.date) && (isAdmin() || (isUserInUnit(request.resource.data.unitId) && (!isProfessional() || ownsProfessionalRecord(request.resource.data))));
+      allow update: if dateIsOpen(resource.data.unitId, resource.data.date) && dateIsOpen(request.resource.data.unitId, request.resource.data.date) && isAuthenticated() && (isAdmin() || (isUserInUnit(request.resource.data.unitId) && (!isProfessional() || ownsProfessionalRecord(request.resource.data))));
+      allow delete: if isAdmin() && dateIsOpen(resource.data.unitId, resource.data.date);
     }
 
     match /gdvEntries/{gdvId} {
@@ -127,39 +171,71 @@ service cloud.firestore {
     }
 
     match /monthlyUnitStats/{statId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if isAuthenticated() && !isProfessional() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if isAdmin() && periodIsOpen(request.resource.data.unitId, request.resource.data.month);
+      allow update: if isAdmin() && periodIsOpen(resource.data.unitId, resource.data.month) && periodIsOpen(request.resource.data.unitId, request.resource.data.month);
+      allow delete: if isAdmin() && periodIsOpen(resource.data.unitId, resource.data.month);
     }
 
     match /monthlyBarberStats/{statId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if isAuthenticated() && (isAdmin() || (isUserInUnit(resource.data.unitId) && (canManageFinance() || (isProfessional() && ownsProfessionalRecord(resource.data)))));
+      allow create: if isAdmin() && periodIsOpen(request.resource.data.unitId, request.resource.data.month);
+      allow update: if isAdmin() && periodIsOpen(resource.data.unitId, resource.data.month) && periodIsOpen(request.resource.data.unitId, request.resource.data.month);
+      allow delete: if isAdmin() && periodIsOpen(resource.data.unitId, resource.data.month);
     }
 
     match /transactions/{transId} {
-      allow read: if isAuthenticated() && (isAdmin() || resource == null || isUserInUnit(resource.data.unitId));
-      allow create, update: if isAuthenticated() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
-      allow delete: if isAdmin();
+      allow read: if canReadFinancialOperation() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canReadFinancialOperation() && dateIsOpen(request.resource.data.unitId, request.resource.data.date) && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canReadFinancialOperation() && dateIsOpen(resource.data.unitId, resource.data.date) && dateIsOpen(request.resource.data.unitId, request.resource.data.date) && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow delete: if isAdmin() && dateIsOpen(resource.data.unitId, resource.data.date);
     }
 
     match /cashClosings/{closingId} {
-      allow read: if isAuthenticated() && (isAdmin() || resource == null || isUserInUnit(resource.data.unitId));
-      allow create, update: if isAuthenticated() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow read: if canReadFinancialOperation() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canReadFinancialOperation() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if (
+        canManageFinance() && request.resource.data.status == 'REOPENED' &&
+        request.resource.data.reopeningReason is string && request.resource.data.reopeningReason.size() >= 10 &&
+        (isAdmin() || isUserInUnit(request.resource.data.unitId))
+      ) || (
+        resource.data.status == 'REOPENED' && canReadFinancialOperation() &&
+        request.resource.data.status != 'REOPENED' && (isAdmin() || isUserInUnit(request.resource.data.unitId))
+      );
       allow delete: if isAdmin();
     }
 
     match /payments/{paymentId} {
-      allow read: if isAuthenticated() && (isAdmin() || resource == null || isUserInUnit(resource.data.unitId));
-      allow create, update: if isAuthenticated() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
-      allow delete: if isAdmin();
+      allow read: if isAuthenticated() && (isAdmin() || (isUserInUnit(resource.data.unitId) && ((canManageFinance()) || (isProfessional() && ownsProfessionalRecord(resource.data)))));
+      allow create: if canManageFinance() && dateIsOpen(request.resource.data.unitId, request.resource.data.date) && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageFinance() && dateIsOpen(resource.data.unitId, resource.data.date) && dateIsOpen(request.resource.data.unitId, request.resource.data.date) && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow delete: if isAdmin() && dateIsOpen(resource.data.unitId, resource.data.date);
+    }
+
+    match /financialPeriodLocks/{lockId} {
+      allow read: if canReadFinancialOperation() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create, update: if canReadFinancialOperation() &&
+        request.resource.data.closingId is string &&
+        (isAdmin() || isUserInUnit(request.resource.data.unitId)) &&
+        getAfter(/databases/$(database)/documents/cashClosings/$(request.resource.data.closingId)).data.unitId == request.resource.data.unitId &&
+        request.resource.data.active == (getAfter(/databases/$(database)/documents/cashClosings/$(request.resource.data.closingId)).data.status != 'REOPENED');
+      allow delete: if false;
+    }
+
+    match /financialPeriodEvents/{eventId} {
+      allow read: if canReadFinancialOperation() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canReadFinancialOperation() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update, delete: if false;
     }
 
     match /notifications/{notificationId} {
-      allow read, write: if isAuthenticated();
+      allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow delete: if false;
     }
 
     match /announcements/{announcementId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (isAdmin() || resource.data.unitId == 'ALL' || isUserInUnit(resource.data.unitId));
       allow write: if isAdmin();
     }
 
@@ -174,75 +250,95 @@ service cloud.firestore {
     }
 
     match /dataImportJobs/{jobId} {
-      allow read, write: if canManageFinance();
+      allow read: if canManageFinance() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageFinance() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageFinance() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageFinance() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     match /reconciliation_reports/{reportId} {
-      allow read, write: if canManageFinance();
+      allow read: if canManageFinance() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageFinance() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageFinance() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageFinance() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     match /reports_manual_weeks/{reportId} {
-      allow read, write: if canManageFinance();
+      allow read: if canManageFinance() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageFinance() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageFinance() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageFinance() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     // Planejamento, produção e métricas de marketing
     match /marketing_campaigns/{documentId} {
-      allow read, write: if canManageMarketing();
+      allow read: if canManageMarketing() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageMarketing() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageMarketing() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageMarketing() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     match /marketing_traffic/{documentId} {
-      allow read, write: if canManageMarketing();
+      allow read: if canManageMarketing() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageMarketing() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageMarketing() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageMarketing() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     match /marketing_organic/{documentId} {
-      allow read, write: if canManageMarketing();
+      allow read: if canManageMarketing() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageMarketing() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageMarketing() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageMarketing() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     match /social_posts/{documentId} {
-      allow read, write: if canManageMarketing();
+      allow read: if canManageMarketing() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageMarketing() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageMarketing() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageMarketing() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     match /social_library/{documentId} {
-      allow read, write: if canManageMarketing();
+      allow read: if canManageMarketing() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageMarketing() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageMarketing() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageMarketing() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     // Mensagens: marketing e recepção operam; demais perfis não acessam as listas.
     match /message_contact_lists/{documentId} {
-      allow read, write: if canManageCommunication();
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageCommunication() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageCommunication() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     match /message_dispatch_history/{documentId} {
-      allow read, write: if canManageCommunication();
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageCommunication() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageCommunication() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     match /dispatch_audit/{documentId} {
-      allow read, create: if canManageCommunication();
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageCommunication() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
       allow update, delete: if false;
     }
 
     // Links inteligentes são públicos somente para resolução. A administração e
     // os dados analíticos continuam restritos aos perfis de comunicação.
     match /smart_links/{linkId} {
-      allow read: if true;
-      allow create, delete: if canManageCommunication();
-      allow update: if canManageCommunication() || (
-        !isAuthenticated() &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['totalClicks', 'lastClickAt']) &&
-        request.resource.data.totalClicks == resource.data.totalClicks + 1
-      );
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageCommunication() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageCommunication() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
     }
 
     match /smart_link_clicks/{clickId} {
-      allow read: if canManageCommunication();
-      allow create: if canManageCommunication() || (
-        !isAuthenticated() &&
-        request.resource.data.keys().hasOnly([
-          'linkId', 'shortCode', 'destinationUrl', 'phase', 'cycleNumber',
-          'timestamp', 'device', 'referrer', 'simulated'
-        ]) &&
-        request.resource.data.simulated == false
-      );
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageCommunication() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
       allow update, delete: if false;
     }
 

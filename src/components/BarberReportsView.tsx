@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { ChevronLeft, ChevronRight, FileSearch, HelpCircle } from 'lucide-react';
+import { calculateTotalRevenue, inferStandaloneRevenue } from '../services/financialEngine';
 
 export function BarberReportsView() {
   const { currentUser, monthlyBarberStats, catalog } = useStore();
@@ -103,10 +104,8 @@ export function BarberReportsView() {
             const fatAssinatura = currentStats.faturamentoAssinatura || 0;
             const fatAvulso = currentStats.faturamentoAvulso !== undefined
               ? currentStats.faturamentoAvulso
-              : Math.max(0, (currentStats.faturamentoTotal || 0) - fatAssinatura);
-            const fatTotal = (currentStats.faturamentoTotal !== undefined && currentStats.faturamentoTotal > 0)
-              ? currentStats.faturamentoTotal
-              : (fatAvulso + fatAssinatura);
+              : inferStandaloneRevenue(currentStats.faturamentoTotal, fatAssinatura, currentStats.vendaProdutosValor);
+            const fatTotal = calculateTotalRevenue(fatAvulso, fatAssinatura, currentStats.vendaProdutosValor);
 
             return (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

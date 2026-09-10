@@ -29,6 +29,7 @@ export interface User {
   email?: string;
   role: Role;
   unit: Unit | null;
+  unitIds?: string[];
   notes?: string; 
   barberNotes?: string;
 }
@@ -64,6 +65,7 @@ export interface PotServiceData {
 export interface PaymentRecord {
   id: string;
   userId: string; // The barber being paid
+  unitId?: string; // Unidade do profissional no momento do pagamento
   date: string; // System sortable date, e.g. YYYY-MM-DD
   
   commissionAvulso: number;
@@ -289,10 +291,25 @@ export interface CashClosing {
   expectedBalance: number;
   countedBalance: number;
   difference: number;
-  status: 'CLOSED' | 'DIVERGENT';
+  status: 'CLOSED' | 'DIVERGENT' | 'REOPENED';
   notes?: string;
   closedAt: string;
   closedBy?: string;
+  reopenedAt?: string;
+  reopenedBy?: string;
+  reopeningReason?: string;
+}
+
+export interface FinancialPeriodEvent {
+  id: string;
+  action: 'CLOSED' | 'REOPENED';
+  unitId: string;
+  date: string;
+  actorId: string;
+  actorRole: Role;
+  reason?: string;
+  createdAt: string;
+  closingSnapshot: CashClosing;
 }
 export interface FinancialCategory {
   id: string;

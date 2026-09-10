@@ -5,6 +5,7 @@ import { GDVEntry, GDVUnitData, GDVSettings } from '../types';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, BarChart, Bar } from 'recharts';
 import { AppPageHeader } from './ui/AppPrimitives';
 import { SVAOverview } from './SVAOverview';
+import { calculateTotalRevenue } from '../services/financialEngine';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -110,7 +111,7 @@ export function GDVDashboard() {
       let dayRecorrencia = 0;
       units.forEach(unit => {
         const u = dayData.units[unit];
-        u.total = (u.servicos || 0) + (u.produtos || 0) + (u.assinaturas || 0);
+        u.total = calculateTotalRevenue(u.servicos, u.assinaturas, u.produtos);
         daySva += u.total;
         dayRecorrencia += (u.assinaturas || 0);
       });

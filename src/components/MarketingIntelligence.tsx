@@ -4,6 +4,7 @@ import { AlertTriangle, BarChart3, CheckCircle2, CircleDollarSign, Download, Fla
 import { db } from '../firebase';
 import { useStore } from '../store';
 import { AppBadge, AppButton, AppCard, AppEmptyState, AppSectionHeader, appControlClass } from './ui/AppPrimitives';
+import { scopedCollectionQuery } from '../services/firestoreScope';
 
 type Campaign = {
   id:string; name:string; unitId?:string; status?:string; budget?:number; startDate?:string; endDate?:string;
@@ -21,7 +22,7 @@ const ratio=(value:number,base:number)=>base>0?value/base:0;
 const csvCell=(value:unknown)=>`"${String(value??'').replace(/"/g,'""')}"`;
 
 export function MarketingIntelligence(){
-  const {systemUnits,users}=useStore();
+  const {systemUnits,users,currentUser}=useStore();
   const [campaigns,setCampaigns]=useState<Campaign[]>([]);
   const [traffic,setTraffic]=useState<Traffic[]>([]);
   const [organic,setOrganic]=useState<Organic[]>([]);
@@ -29,10 +30,10 @@ export function MarketingIntelligence(){
   const [period,setPeriod]=useState(currentPeriod());
   const [unit,setUnit]=useState('ALL');
 
-  useEffect(()=>onSnapshot(collection(db,'marketing_campaigns'),snapshot=>setCampaigns(snapshot.docs.map(item=>({id:item.id,...item.data()} as Campaign)))),[]);
-  useEffect(()=>onSnapshot(collection(db,'marketing_traffic'),snapshot=>setTraffic(snapshot.docs.map(item=>item.data() as Traffic))),[]);
-  useEffect(()=>onSnapshot(collection(db,'marketing_organic'),snapshot=>setOrganic(snapshot.docs.map(item=>item.data() as Organic))),[]);
-  useEffect(()=>onSnapshot(collection(db,'social_posts'),snapshot=>setPosts(snapshot.docs.map(item=>({id:item.id,...item.data()} as Post)))),[]);
+  useEffect(()=>onSnapshot(scopedCollectionQuery('marketing_campaigns',currentUser),snapshot=>setCampaigns(snapshot.docs.map(item=>({id:item.id,...item.data()} as Campaign)))),[currentUser]);
+  useEffect(()=>onSnapshot(scopedCollectionQuery('marketing_traffic',currentUser),snapshot=>setTraffic(snapshot.docs.map(item=>item.data() as Traffic))),[currentUser]);
+  useEffect(()=>onSnapshot(scopedCollectionQuery('marketing_organic',currentUser),snapshot=>setOrganic(snapshot.docs.map(item=>item.data() as Organic))),[currentUser]);
+  useEffect(()=>onSnapshot(scopedCollectionQuery('social_posts',currentUser),snapshot=>setPosts(snapshot.docs.map(item=>({id:item.id,...item.data()} as Post)))),[currentUser]);
 
   const inUnit=(unitId?:string)=>unit==='ALL'||unitId===unit||unitId==='ALL'||!unitId;
   const periodTraffic=traffic.filter(item=>item.date?.startsWith(period)&&inUnit(item.unitId));

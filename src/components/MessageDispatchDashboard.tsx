@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { authenticatedApi } from '../services/apiClient';
 import { useStore } from '../store';
 import { AppBadge, AppButton, AppCard, AppEmptyState, AppPageHeader, AppSectionHeader, appControlClass } from './ui/AppPrimitives';
+import { defaultUnitFor, scopedCollectionQuery } from '../services/firestoreScope';
 
 type LogEntry={id:string;time:string;text:string;type:'info'|'success'|'warning'};
 type BackendState={enabled:boolean;connectionStatus:'disconnected'|'connecting'|'qr'|'connected';currentQr:string;isSending:boolean;progress:number;total:number;currentAction:string;logs:LogEntry[];campaignStatus:'idle'|'running'|'completed'|'stopped';successCount:number;errorCount:number;errorDetails:{contact:string;error:string}[];runId:string};
@@ -29,7 +30,7 @@ export default function MessageDispatchDashboard(){
   const [maxDelay,setMaxDelay]=useState(35);
   const [simulateTyping,setSimulateTyping]=useState(true);
   const [confirmedOptIn,setConfirmedOptIn]=useState(false);
-  const [unitId,setUnitId]=useState('ALL');
+  const [unitId,setUnitId]=useState(()=>defaultUnitFor(currentUser));
   const [backend,setBackend]=useState(initialBackend);
   const [lists,setLists]=useState<ContactList[]>([]);
   const [history,setHistory]=useState<DispatchHistory[]>([]);
@@ -39,8 +40,8 @@ export default function MessageDispatchDashboard(){
   const parsed=useMemo(()=>normalizeContacts(contacts),[contacts]);
   const percentage=backend.total?Math.round(backend.progress/backend.total*100):0;
 
-  useEffect(()=>onSnapshot(collection(db,'message_contact_lists'),snapshot=>setLists(snapshot.docs.map(item=>({id:item.id,...item.data()} as ContactList)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))),[]);
-  useEffect(()=>onSnapshot(collection(db,'message_dispatch_history'),snapshot=>setHistory(snapshot.docs.map(item=>({id:item.id,...item.data()} as DispatchHistory)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,20))),[]);
+  useEffect(()=>onSnapshot(scopedCollectionQuery('message_contact_lists',currentUser),snapshot=>setLists(snapshot.docs.map(item=>({id:item.id,...item.data()} as ContactList)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))),[currentUser]);
+  useEffect(()=>onSnapshot(scopedCollectionQuery('message_dispatch_history',currentUser),snapshot=>setHistory(snapshot.docs.map(item=>({id:item.id,...item.data()} as DispatchHistory)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,20))),[currentUser]);
   useEffect(()=>{
     let cancelled=false;
     const poll=async()=>{try{const data=await authenticatedApi.json<BackendState>('/api/message-dispatch/status');if(!cancelled){setBackend(data);setApiError('');}}catch(error){if(!cancelled)setApiError(error instanceof Error?error.message:'Não foi possível consultar o serviço.');}};

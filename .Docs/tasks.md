@@ -140,7 +140,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 12 — Migrar o servidor para Firebase Admin SDK
 
-- [ ] Substituir o SDK cliente e a verificação manual de token no servidor pelo Firebase Admin SDK.
+- [x] Substituir o SDK cliente e a verificação manual de token no servidor pelo Firebase Admin SDK.
 
 **Critérios de aprovação**
 
@@ -151,7 +151,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 13 — Completar o isolamento por unidade nas consultas
 
-- [ ] Aplicar filtros de unidade e usuário a todas as consultas privadas, conforme a matriz de permissões.
+- [x] Aplicar filtros de unidade e usuário a todas as consultas privadas, conforme a matriz de permissões.
 
 **Critérios de aprovação**
 
@@ -162,7 +162,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 14 — Migrar documentos legados para `unitId`
 
-- [ ] Criar migração idempotente para preencher `unitId` nos documentos privados antigos que ainda não possuem essa informação.
+- [x] Criar migração idempotente para preencher `unitId` nos documentos privados antigos que ainda não possuem essa informação.
 
 **Critérios de aprovação**
 
@@ -175,7 +175,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 15 — Formalizar e testar as fórmulas financeiras centrais
 
-- [ ] Consolidar em serviços puros as fórmulas definidas no PRD, incluindo faturamento total, caixa, comissões, taxas, descontos e repasses.
+- [x] Consolidar em serviços puros as fórmulas definidas no PRD, incluindo faturamento total, caixa, comissões, taxas, descontos e repasses.
 
 **Critérios de aprovação**
 
@@ -186,7 +186,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 16 — Integrar o motor financeiro em todas as telas
 
-- [ ] Substituir cálculos duplicados em visão geral, financeiro, relatórios, análises, conciliação e pagamentos pelo serviço central.
+- [x] Substituir cálculos duplicados em visão geral, financeiro, relatórios, análises, conciliação e pagamentos pelo serviço central.
 
 **Critérios de aprovação**
 
@@ -197,7 +197,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 17 — Implementar bloqueio e reabertura de períodos
 
-- [ ] Impedir alterações financeiras em períodos fechados e criar reabertura formal apenas para perfis autorizados.
+- [x] Impedir alterações financeiras em períodos fechados e criar reabertura formal apenas para perfis autorizados.
 
 **Critérios de aprovação**
 

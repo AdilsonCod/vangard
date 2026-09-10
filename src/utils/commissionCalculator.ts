@@ -1,4 +1,5 @@
 import type { CommissionBracket } from "../types";
+import { calculateCommissionByRevenue } from "../services/financialEngine";
 
 export type CommissionValidationResult = { valid: true } | { valid: false; message: string };
 
@@ -34,8 +35,7 @@ export function findCommissionBracket(revenue: number, brackets: CommissionBrack
 }
 
 export function calculateCommission(revenue: number, brackets: CommissionBracket[]) {
-  const bracket = findCommissionBracket(revenue, brackets);
-  return { bracket, percentage: bracket?.percentage || 0, commission: bracket ? Number((revenue * bracket.percentage / 100).toFixed(2)) : 0 };
+  return calculateCommissionByRevenue(revenue, brackets);
 }
 
 export function canAccessCommissionUnit(role: string, userUnit: string | null, requestedUnit: string) {

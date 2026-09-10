@@ -12,6 +12,8 @@ import {
 import { db } from '../firebase';
 import { doc, setDoc, onSnapshot, collection, query, where } from 'firebase/firestore';
 import { AppPageHeader, appControlClass } from './ui/AppPrimitives';
+import { scopedCollectionQuery } from '../services/firestoreScope';
+import { applyCommercialDiscount, calculateTotalRevenue } from '../services/financialEngine';
 
 export interface WeekInterval {
   id: string;
@@ -62,6 +64,7 @@ export function ReportsTab() {
     subcategories, 
     users, 
     systemUnits,
+    currentUser,
     updateCategories 
   } = useStore();
 
@@ -205,11 +208,10 @@ export function ReportsTab() {
   // Read and listen to weekly manual overrides from Firestore in real-time
   useEffect(() => {
     if (selectedUnit === 'ALL') {
-      const q = query(
-        collection(db, 'reports_manual_weeks'),
+      const q = scopedCollectionQuery('reports_manual_weeks', currentUser, { constraints: [
         where('year', '==', selectedYear),
-        where('month', '==', selectedMonth)
-      );
+        where('month', '==', selectedMonth),
+      ] });
       const unsub = onSnapshot(q, (snapshot) => {
         let aggregatedWeeks: any = {};
         let unitsDocMap: Record<string, any> = {};
@@ -290,6 +292,7 @@ export function ReportsTab() {
         id: docId,
         year: selectedYear,
         month: selectedMonth,
+        unitId: selectedUnit,
         unit: selectedUnit,
         weeks: updatedWeeks,
         updatedAt: new Date().toISOString()
@@ -652,8 +655,8 @@ export function ReportsTab() {
         });
       });
 
-      const faturamentoBruto = rawServiceTotal + productTotal + subscriptionTotal;
-      const faturamentoTotal = Math.max(0, faturamentoBruto - courtesyCommissionTotal);
+      const faturamentoBruto = calculateTotalRevenue(rawServiceTotal, subscriptionTotal, productTotal);
+      const faturamentoTotal = applyCommercialDiscount(faturamentoBruto, courtesyCommissionTotal);
       const ticketMedio = distinctClients > 0 ? faturamentoTotal / distinctClients : 0;
 
       return {
@@ -673,8 +676,8 @@ export function ReportsTab() {
       };
     } else {
       const uStats = computeSingleUnitStats(selectedUnit);
-      const faturamentoBruto = uStats.rawServiceTotal + uStats.productTotal + uStats.subscriptionTotal;
-      const faturamentoTotal = Math.max(0, faturamentoBruto - uStats.courtesyCommissionTotal);
+      const faturamentoBruto = calculateTotalRevenue(uStats.rawServiceTotal, uStats.subscriptionTotal, uStats.productTotal);
+      const faturamentoTotal = applyCommercialDiscount(faturamentoBruto, uStats.courtesyCommissionTotal);
       const ticketMedio = uStats.distinctClients > 0 ? faturamentoTotal / uStats.distinctClients : 0;
 
       return {

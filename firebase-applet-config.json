@@ -1,12 +1,12 @@
 {
-  "projectId": "gen-lang-client-0595576094",
-  "appId": "1:840151771043:web:ce866e491e4313faaa5c16",
-  "apiKey": "AIzaSyCA3DoNDB8xR6cmZBM-SbIM8PzB4B9yOxY",
-  "authDomain": "gen-lang-client-0595576094.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-vansguard-16394f26-85fa-4c3e-a3d9-b85f6d25ecce",
-  "storageBucket": "gen-lang-client-0595576094.firebasestorage.app",
-  "messagingSenderId": "840151771043",
-  "measurementId": "",
-  "oAuthClientId": "840151771043-ajaau37no5jf24cs1qdps5hbmieuq5jg.apps.googleusercontent.com",
+  "projectId": "vansmanagement-6ab54",
+  "appId": "1:149969396754:web:bbdec51ca2e064e172a4cb",
+  "apiKey": "AIzaSyD0zd7LvCqjsvvDAYd32tL3bEmeN6xDImw",
+  "authDomain": "vansmanagement-6ab54.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "vansmanagement-6ab54.firebasestorage.app",
+  "messagingSenderId": "149969396754",
+  "measurementId": "G-ZHGCSL1NV2",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }

@@ -4,6 +4,7 @@ import { PaymentRecord, PotServiceData } from '../types';
 import { FileText, Plus, Save, Trash2, Check, X, DollarSign, User as UserIcon, Edit2, ChevronDown, ChevronRight } from 'lucide-react';
 import { AppEmptyState, AppPageHeader } from './ui/AppPrimitives';
 import { createBarberPaymentNotification } from '../notificationService';
+import { calculatePaymentTotals } from '../services/financialEngine';
 
 export function PaymentsTab() {
   const { users, payments, addPayment, updatePayment, deletePayment, addTransaction, deleteTransaction, catalog, systemUnits, addNotification } = useStore();
@@ -142,7 +143,8 @@ export function PaymentsTab() {
      ]);
   };
 
-  const totalDiscount = discountsList.reduce((sum, d) => sum + (d.value || 0), 0);
+  const paymentCalculation = calculatePaymentTotals({ commissionAvulso: comAvulso, commissionProductGeneral: comProdGeral, commissionProductAvant: comProdAvant, commissionSubscriptions: comAssinaturas, discount: 0, discounts: discountsList });
+  const totalDiscount = paymentCalculation.discounts;
 
   const getCommissionTransactionId = (paymentId: string) => `commission_payment_${paymentId}`;
 
@@ -275,8 +277,8 @@ export function PaymentsTab() {
       setPotServices(prev => prev.filter(s => s.id !== id));
   };
   
-  const totalPagamentoBruto = comAvulso + comProdGeral + comProdAvant + comAssinaturas;
-  const totalLiquidoCalculado = totalPagamentoBruto - totalDiscount;
+  const totalPagamentoBruto = paymentCalculation.grossCommission;
+  const totalLiquidoCalculado = paymentCalculation.netPayment;
 
   return (
     <div className="space-y-6">

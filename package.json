@@ -23,6 +23,11 @@
     "test:firestore:collections": "firebase emulators:exec --only firestore --project vans-task-9-rules \"tsx --test scripts/firestore-sensitive-collections-rules.test.ts\"",
     "test:api-authorization": "tsx --test scripts/server-authorization.test.ts",
     "test:api-client": "tsx --test scripts/api-client.test.ts",
+    "unit-ids:migrate:dry": "tsx scripts/migrate-unit-ids.ts",
+    "unit-ids:migrate:apply": "tsx scripts/migrate-unit-ids.ts --apply",
+    "test:unit-id-migration": "tsx --test scripts/unit-id-migration.test.ts",
+    "test:financial-engine": "tsx --test scripts/financial-engine.test.ts scripts/commission-calculator.test.ts",
+    "test:financial-period-lock": "tsx --test scripts/financial-period-lock.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

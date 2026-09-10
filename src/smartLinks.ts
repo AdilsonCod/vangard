@@ -4,6 +4,7 @@ export type SmartDestination = { id: string; name: string; url: string; duration
 export type SmartTimelineStep = { id: string; name: string; url: string; startDate: string; endDate?: string; maxClicks?: number; clickCount?: number };
 export type SmartLink = {
   id: string; title: string; shortCode: string; baseSlug: string; mode: SmartLinkMode; slugType: SmartSlugType;
+  unitId: string;
   customSlugs: string[]; expireOldLinks: boolean; destinationUrl: string; destinations: SmartDestination[];
   rotationIntervalMinutes: number; rotationStartedAt: string; phaseOneUrl: string; phaseTwoUrl: string; switchDate: string;
   timelineSteps: SmartTimelineStep[]; fallbackUrl: string; expiredMessage: string; maskUrl: boolean; maskTitle: string;

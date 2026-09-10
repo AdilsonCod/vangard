@@ -4,6 +4,7 @@ import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, Edit3, Fla
 import { db } from '../firebase';
 import { useStore } from '../store';
 import { AppBadge, AppButton, AppCard, AppEmptyState, AppSectionHeader, appControlClass } from './ui/AppPrimitives';
+import { scopedCollectionQuery } from '../services/firestoreScope';
 
 export type MarketingCampaignStatus = 'PLANEJADA' | 'ATIVA' | 'PAUSADA' | 'CONCLUIDA' | 'CANCELADA';
 
@@ -47,7 +48,7 @@ const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currenc
 const shortDate = (value?: string) => value ? value.split('-').reverse().join('/') : 'Sem data';
 
 export function MarketingOperations({ view, onNavigate }: { view: 'OVERVIEW' | 'CAMPAIGNS'; onNavigate: (view: 'CAMPAIGNS' | 'PRODUCTION') => void }) {
-  const { systemUnits, users } = useStore();
+  const { systemUnits, users, currentUser } = useStore();
   const [campaigns, setCampaigns] = useState<MarketingCampaign[]>([]);
   const [posts, setPosts] = useState<SocialPostSummary[]>([]);
   const [editing, setEditing] = useState<MarketingCampaign | null>(null);
@@ -55,12 +56,12 @@ export function MarketingOperations({ view, onNavigate }: { view: 'OVERVIEW' | '
   const [error, setError] = useState('');
   const today = new Date().toISOString().slice(0, 10);
 
-  useEffect(() => onSnapshot(collection(db, 'marketing_campaigns'), snapshot => {
+  useEffect(() => onSnapshot(scopedCollectionQuery('marketing_campaigns', currentUser), snapshot => {
     setCampaigns(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as MarketingCampaign)));
-  }), []);
-  useEffect(() => onSnapshot(collection(db, 'social_posts'), snapshot => {
+  }), [currentUser]);
+  useEffect(() => onSnapshot(scopedCollectionQuery('social_posts', currentUser), snapshot => {
     setPosts(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as SocialPostSummary)));
-  }), []);
+  }), [currentUser]);
 
   const activeCampaigns = campaigns.filter(item => item.status === 'ATIVA');
   const overduePosts = posts.filter(item => (item.dueDate || item.scheduledDate) && String(item.dueDate || item.scheduledDate) < today && !['Publicado', 'Mensurado', 'Cancelado'].includes(item.status));

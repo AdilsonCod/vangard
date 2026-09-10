@@ -5,6 +5,7 @@ import { db } from "../firebase";
 import { useStore } from "../store";
 import type { CommissionBracket, CommissionConfig, MonthlyBarberStats, PaymentRecord } from "../types";
 import { calculateCommission, canAccessCommissionUnit, validateCommissionBrackets } from "../utils/commissionCalculator";
+import { calculatePaymentTotals } from "../services/financialEngine";
 import { AppCard, AppPageHeader, appControlClass } from "./ui/AppPrimitives";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -96,7 +97,7 @@ export default function CommissionCalculationView() {
           commissionSubscriptions: existing?.commissionSubscriptions || 0,
           discount: existing?.discount || 0, discountDescription: existing?.discountDescription || "",
           discounts: existing?.discounts || [], status: existing?.status || "PENDENTE", isPaid: existing?.isPaid || false,
-          amountToBePaid: Math.max(0, result.commission + (existing?.commissionProductGeneral || 0) + (existing?.commissionProductAvant || 0) + (existing?.commissionSubscriptions || 0) - (existing?.discount || 0)),
+          amountToBePaid: calculatePaymentTotals({ commissionAvulso: result.commission, commissionProductGeneral: existing?.commissionProductGeneral || 0, commissionProductAvant: existing?.commissionProductAvant || 0, commissionSubscriptions: existing?.commissionSubscriptions || 0, discount: existing?.discount || 0, discounts: existing?.discounts || [] }).netPayment,
           potData: existing?.potData || [], ...(existing?.potPercentage !== undefined ? { potPercentage: existing.potPercentage } : {}),
         };
         batch.set(doc(db, "payments", payment.id), payment);

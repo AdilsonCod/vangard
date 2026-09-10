@@ -13,6 +13,7 @@ import {
   RotateCcw
 } from "lucide-react";
 import { AppPageHeader } from "./ui/AppPrimitives";
+import { accountErrorMessage, createFirebaseUserWithProfile, requestPasswordReset } from "../services/userAccountService";
 
 export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" | "MANAGERS" | "UNITS" }) {
   const { 
@@ -23,6 +24,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     deleteSystemUnit, 
     addUser, 
     updateUser, 
+    attachUserAuthentication,
     deleteUser
   } = useStore();
 
@@ -31,11 +33,15 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [authUid, setAuthUid] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSavingUser, setIsSavingUser] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [role, setRole] = useState<Role>(subTab === 'MANAGERS' ? 'ADMIN' : subTab === 'RECEPTION' ? 'RECEPTION' : 'BARBER');
   const [unit, setUnit] = useState<string>(systemUnits?.[0]?.id || 'UNIT_1');
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
   const [unitName, setUnitName] = useState<string>('');
+  const editingUser = editingId ? users.find((user) => user.id === editingId) : undefined;
+  const needsAccessCreation = Boolean(editingUser && !editingUser.authUid);
 
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -62,7 +68,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     setEditingId(null);
     setName('');
     setEmail('');
-    setAuthUid('');
+    setPassword('');
     setRole(subTab === 'MANAGERS' ? 'ADMIN' : subTab === 'RECEPTION' ? 'RECEPTION' : 'BARBER');
     setUnit(systemUnits?.[0]?.id || 'UNIT_1');
   };
@@ -77,8 +83,12 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
       showToast('O e-mail é obrigatório.', 'error');
       return;
     }
-    if (!editingId && !authUid.trim()) {
-      showToast('Informe o UID da conta criada no Firebase Authentication.', 'error');
+    if (!editingId && password.length < 6) {
+      showToast('A senha temporária precisa ter pelo menos 6 caracteres.', 'error');
+      return;
+    }
+    if (needsAccessCreation && password.length > 0 && password.length < 6) {
+      showToast('A senha temporária precisa ter pelo menos 6 caracteres.', 'error');
       return;
     }
     const normalizedEmail = email.trim().toLowerCase();
@@ -99,10 +109,13 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
        }
     }
 
-    const assignedUnit = ['ADMIN', 'FINANCIAL', 'MARKETING'].includes(assignedRole)
-      ? (unit || null)
-      : (unit || systemUnits?.[0]?.id || 'UNIT_1');
+    const assignedUnit = assignedRole === 'ADMIN' ? null : unit;
+    if (assignedRole !== 'ADMIN' && !assignedUnit) {
+      showToast('Selecione a unidade vinculada a este usuário.', 'error');
+      return;
+    }
 
+    setIsSavingUser(true);
     if (editingId) {
       const existingUser = users.find((user) => user.id === editingId);
       if (!existingUser) {
@@ -117,37 +130,64 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
           email: normalizedEmail,
           role: assignedRole,
           unit: assignedUnit,
+          unitIds: assignedUnit ? [assignedUnit] : [],
         });
-        showToast('Usuário atualizado com sucesso!');
+        if (needsAccessCreation && password) {
+          await createFirebaseUserWithProfile(normalizedEmail, password, authUid =>
+            attachUserAuthentication(existingUser.id, authUid)
+          );
+        }
+        showToast(needsAccessCreation && password ? 'Cadastro atualizado e acesso criado com sucesso!' : 'Usuário atualizado com sucesso!');
       } catch {
         showToast('Não foi possível atualizar o usuário.', 'error');
+        setIsSavingUser(false);
         return;
       }
     } else {
       try {
-        await addUser({
-          id: authUid.trim(),
-          authUid: authUid.trim(),
-          name,
-          email: normalizedEmail,
-          role: assignedRole,
-          unit: assignedUnit,
-          isActive: true,
-        });
-        showToast('Perfil cadastrado. O acesso deve ser ativado pelo Firebase Authentication.', 'info');
-      } catch {
-        showToast('Não foi possível cadastrar o usuário.', 'error');
+        await createFirebaseUserWithProfile(normalizedEmail, password, createdAuthUid =>
+          addUser({
+            id: createdAuthUid,
+            authUid: createdAuthUid,
+            name,
+            email: normalizedEmail,
+            role: assignedRole,
+            unit: assignedUnit,
+            unitIds: assignedUnit ? [assignedUnit] : [],
+            isActive: true,
+          })
+        );
+        showToast('Usuário e acesso cadastrados com sucesso!');
+      } catch (error) {
+        showToast(accountErrorMessage(error), 'error');
+        setIsSavingUser(false);
         return;
       }
     }
+    setIsSavingUser(false);
     resetForm();
+  };
+
+  const handlePasswordReset = async () => {
+    if (!email.trim()) {
+      showToast('Informe o e-mail do usuário.', 'error');
+      return;
+    }
+    setIsResettingPassword(true);
+    try {
+      await requestPasswordReset(email.trim().toLowerCase());
+      showToast('Link para alteração de senha enviado por e-mail.', 'info');
+    } catch (error) {
+      showToast(accountErrorMessage(error), 'error');
+    } finally {
+      setIsResettingPassword(false);
+    }
   };
 
   const handleEdit = (u: any) => {
     setEditingId(u.id);
     setName(u.name);
     setEmail(u.email || '');
-    setAuthUid(u.authUid || u.id);
     setRole(u.role);
     setUnit(u.unit || systemUnits?.[0]?.id || 'UNIT_1');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -421,14 +461,16 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
                   className="w-full border border-gray-250 dark:border-zinc-800 p-2 text-sm rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-color)] bg-white dark:bg-zinc-900 text-gray-900 dark:text-white placeholder-gray-400 font-medium"
                 />
              </div>
-             {!editingId && (
+             {(!editingId || needsAccessCreation) && (
                <div>
-                  <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">UID Firebase</label>
+                  <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">Senha temporária</label>
                   <input
-                    type="text"
-                    placeholder="UID da conta autenticada"
-                    value={authUid}
-                    onChange={(e) => setAuthUid(e.target.value)}
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={6}
+                    placeholder="Mínimo de 6 caracteres"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     className="w-full border border-gray-250 dark:border-zinc-800 p-2 text-sm rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-color)] bg-white dark:bg-zinc-900 text-gray-900 dark:text-white placeholder-gray-400 font-medium"
                   />
                </div>
@@ -470,10 +512,11 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
                 </select>
              </div>
              
-             {!['ADMIN', 'FINANCIAL', 'MARKETING'].includes(role) && (
+             {role !== 'ADMIN' ? (
                <div>
-                  <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">Unidade</label>
+                  <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">Unidade obrigatória</label>
                   <select
+                    required
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
                     className="w-full border border-gray-250 dark:border-zinc-800 p-2 text-sm rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-color)] bg-white dark:bg-zinc-900 text-gray-900 dark:text-white font-semibold"
@@ -483,11 +526,22 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
                     ))}
                   </select>
                </div>
+             ) : (
+               <div className="flex items-end">
+                 <div className="w-full rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-700 dark:border-purple-900/50 dark:bg-purple-950/20 dark:text-purple-300">
+                   Acesso a todas as unidades
+                 </div>
+               </div>
              )}
 
-             <div className="flex items-end lg:col-span-1 md:col-span-2">
-                <button type="submit" className="w-full bg-gray-900 dark:bg-zinc-800 hover:bg-black dark:hover:bg-zinc-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs">
-                   {editingId ? (
+             <div className="flex items-end gap-2 lg:col-span-1 md:col-span-2">
+                {editingId && !needsAccessCreation && (
+                  <button type="button" disabled={isResettingPassword} onClick={handlePasswordReset} className="w-full border border-[var(--theme-color)] text-[var(--theme-color)] font-semibold py-2 px-3 rounded-lg transition-colors disabled:opacity-50">
+                    {isResettingPassword ? 'Enviando...' : 'Alterar senha'}
+                  </button>
+                )}
+                <button type="submit" disabled={isSavingUser} className="w-full bg-gray-900 dark:bg-zinc-800 hover:bg-black dark:hover:bg-zinc-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:cursor-wait disabled:opacity-60">
+                   {isSavingUser ? 'Salvando...' : editingId ? (
                      <span key="edit" className="flex items-center gap-2"><Edit2 className="w-4 h-4" /> Salvar</span>
                    ) : (
                      <span key="add" className="flex items-center gap-2"><UserPlus className="w-4 h-4" /> Cadastrar</span>
@@ -526,7 +580,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
                              {u.role === 'ADMIN' ? 'Gerente' : u.role === 'FINANCIAL' ? 'Financeiro' : u.role === 'MARKETING' ? 'Marketing' : u.role === 'RECEPTION' ? 'Recepção' : u.role === 'MANICURE' ? 'Manicure' : 'Barbeiro'}
                            </span>
                          </td>
-                         <td className="px-4 py-3 font-medium">{['ADMIN', 'FINANCIAL', 'MARKETING'].includes(u.role) && !u.unit ? '-' : getUnitLabel(u.unit)}</td>
+                         <td className="px-4 py-3 font-medium">{u.role === 'ADMIN' ? 'Todas as unidades' : getUnitLabel(u.unit)}</td>
                          <td className="px-4 py-3 text-right">
                             <button
                                onClick={() => handleEdit(u)}
@@ -602,7 +656,11 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
                     }`}>
                       {u.role === 'ADMIN' ? 'Gerente' : u.role === 'FINANCIAL' ? 'Financeiro' : u.role === 'MARKETING' ? 'Marketing' : u.role === 'RECEPTION' ? 'Recepção' : u.role === 'MANICURE' ? 'Manicure' : 'Barbeiro'}
                     </span>
-                    {(!['ADMIN', 'FINANCIAL', 'MARKETING'].includes(u.role) || u.unit) && (
+                    {u.role === 'ADMIN' ? (
+                      <span className="px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 text-[10px] font-bold uppercase tracking-wider">
+                        Todas as unidades
+                      </span>
+                    ) : (
                       <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-850 text-gray-600 dark:text-zinc-400 text-[10px] font-bold uppercase tracking-wider">
                         {getUnitLabel(u.unit)}
                       </span>

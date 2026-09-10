@@ -30,6 +30,7 @@ import {
 import { db } from "../firebase";
 import { authenticatedApi } from "../services/apiClient";
 import { useStore } from "../store";
+import { defaultUnitFor, scopedCollectionQuery } from "../services/firestoreScope";
 import {
   resolveSmartLink,
   rotatingStatus,
@@ -155,11 +156,11 @@ export default function SmartLinksDashboard() {
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, "smart_links"), orderBy("createdAt", "desc")),
+        scopedCollectionQuery("smart_links", currentUser, { constraints: [orderBy("createdAt", "desc")] }),
         (s) =>
           setLinks(s.docs.map((x) => ({ id: x.id, ...x.data() }) as SmartLink)),
       ),
-    [],
+    [currentUser],
   );
   const visible = useMemo(
     () =>
@@ -249,6 +250,7 @@ export default function SmartLinksDashboard() {
         clean = (v: string) => (v.trim() ? url(v) : "");
       const payload = {
         ...draft,
+        unitId: editing?.unitId || defaultUnitFor(currentUser),
         title: draft.title.trim(),
         shortCode,
         baseSlug,
@@ -314,7 +316,7 @@ export default function SmartLinksDashboard() {
   };
   const showAnalytics = async (x: SmartLink) => {
     const s = await getDocs(
-      query(collection(db, "smart_link_clicks"), where("linkId", "==", x.id)),
+      query(collection(db, "smart_link_clicks"), where("unitId", "==", x.unitId), where("linkId", "==", x.id)),
     );
     setAnalytics({
       link: x,
@@ -1083,6 +1085,7 @@ function Simulator({
   const record = () =>
     addDoc(collection(db, "smart_link_clicks"), {
       linkId: value.link.id,
+      unitId: value.link.unitId,
       shortCode: r.activeShortCode,
       destinationUrl: r.url,
       phase: r.phase,

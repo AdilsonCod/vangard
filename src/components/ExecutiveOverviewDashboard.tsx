@@ -39,6 +39,7 @@ import {
 import { useStore } from "../store";
 import type { CashClosing, FinancialTransaction } from "../types";
 import { AppBadge, AppEmptyState, appControlClass, cn } from "./ui/AppPrimitives";
+import { roundMoney, summarizeCashMovements } from "../services/financialEngine";
 
 type ExecutiveOverviewDashboardProps = {
   selectedUnit: string;
@@ -256,9 +257,10 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onUnitChange, onNavig
   );
 
   const summarize = (items: FinancialTransaction[]) => {
-    const income = items.filter(item => item.type === "INCOME" && item.status === "RECEBIDO").reduce((sum, item) => sum + item.amount, 0);
-    const expense = items.filter(item => item.type === "EXPENSE" && item.status === "PAGO").reduce((sum, item) => sum + item.amount, 0);
-    return { income, expense, balance: income - expense };
+    const summary = summarizeCashMovements(items);
+    const income = Math.max(0, summary.recognizedRevenue - summary.commercialDiscounts);
+    const expense = summary.recognizedExpenses;
+    return { income, expense, balance: roundMoney(income - expense) };
   };
 
   const totals = useMemo(() => summarize(periodTransactions), [periodTransactions]);
@@ -271,8 +273,9 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onUnitChange, onNavig
 
   const quickClosingPreview = useMemo(() => {
     const movements = transactions.filter(item => item.unitId === selectedUnit && item.date === quickClosingDate && (item.sourceChannel === 'CASH' || item.paymentMethod === 'CASH'));
-    const cashIncome = movements.filter(item => item.type === 'INCOME' && item.status === 'RECEBIDO' && !['NON_FINANCIAL', 'COMMERCIAL_DISCOUNT'].includes(item.movementNature || '')).reduce((sum, item) => sum + item.amount, 0);
-    const cashOutflow = movements.filter(item => item.type === 'EXPENSE' && item.status === 'PAGO' && !['NON_FINANCIAL', 'COMMERCIAL_DISCOUNT'].includes(item.movementNature || '')).reduce((sum, item) => sum + item.amount, 0);
+    const cash = summarizeCashMovements(movements);
+    const cashIncome = cash.cashIn;
+    const cashOutflow = cash.cashOut;
     const openingBalance = parseMoneyInput(quickOpeningBalance);
     const countedBalance = parseMoneyInput(quickCountedBalance);
     const expectedBalance = Number((openingBalance + cashIncome - cashOutflow).toFixed(2));
@@ -291,7 +294,13 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onUnitChange, onNavig
   const submitQuickClosing = async () => {
     if (!selectedUnit || selectedUnit === 'ALL' || selectedUnit === '__SEM_UNIDADE__') return;
     const closing: CashClosing = { id: `cash_closing_${selectedUnit}_${quickClosingDate}`, unitId: selectedUnit, date: quickClosingDate, openingBalance: quickClosingPreview.openingBalance, cashIncome: Number(quickClosingPreview.cashIncome.toFixed(2)), cashOutflow: Number(quickClosingPreview.cashOutflow.toFixed(2)), expectedBalance: quickClosingPreview.expectedBalance, countedBalance: quickClosingPreview.countedBalance, difference: quickClosingPreview.difference, status: Math.abs(quickClosingPreview.difference) <= 0.01 ? 'CLOSED' : 'DIVERGENT', notes: quickClosingNotes.trim() || undefined, closedAt: new Date().toISOString(), closedBy: currentUser?.id };
-    try { setIsSavingQuickClosing(true); await saveCashClosing(closing); setIsQuickClosingOpen(false); } finally { setIsSavingQuickClosing(false); }
+    try {
+      setIsSavingQuickClosing(true);
+      await saveCashClosing(closing);
+      setIsQuickClosingOpen(false);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Não foi possível salvar o fechamento.');
+    } finally { setIsSavingQuickClosing(false); }
   };
 
   const openQuickEntry = (preset: (typeof RECEPTION_QUICK_ENTRIES)[number]) => {
@@ -332,8 +341,8 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onUnitChange, onNavig
       setIsSavingQuickEntry(true);
       await addTransaction(transaction);
       setQuickEntryPreset(null);
-    } catch {
-      window.alert('Não foi possível salvar o lançamento. Verifique sua conexão e tente novamente.');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Não foi possível salvar o lançamento. Verifique sua conexão e tente novamente.');
     } finally {
       setIsSavingQuickEntry(false);
     }
@@ -345,8 +354,9 @@ export function ExecutiveOverviewDashboard({ selectedUnit, onUnitChange, onNavig
       const day = String(index + 1).padStart(2, "0");
       const date = `${selectedPeriod}-${day}`;
       const dayItems = periodTransactions.filter(item => item.date === date);
-      const income = dayItems.filter(item => item.type === "INCOME" && item.status === "RECEBIDO").reduce((sum, item) => sum + item.amount, 0);
-      const expense = dayItems.filter(item => item.type === "EXPENSE" && item.status === "PAGO").reduce((sum, item) => sum + item.amount, 0);
+      const cash = summarizeCashMovements(dayItems);
+      const income = cash.cashIn;
+      const expense = cash.cashOut;
       return { day, entradas: income, saidas: -expense, saldo: income - expense };
     });
   }, [periodTransactions, selectedDate, selectedPeriod]);

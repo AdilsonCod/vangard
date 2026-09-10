@@ -2,9 +2,8 @@ import type express from 'express';
 import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
-import { addDoc, collection } from 'firebase/firestore';
-import { db } from './src/firebase';
 import { authenticatedUser } from './server-auth';
+import { adminDb } from './server-firebase-admin';
 
 type DispatchLog = { id:string; time:string; text:string; type:'info'|'success'|'warning' };
 type DispatchError = { contact:string; error:string };
@@ -50,7 +49,7 @@ async function connect(){
 }
 
 function auditLog(action: string, userEmail: string, details: Record<string, unknown> = {}) {
-  addDoc(collection(db, 'dispatch_audit'), {
+  adminDb.collection('dispatch_audit').add({
     action,
     userEmail,
     timestamp: new Date().toISOString(),

@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { hydrateXlsxSharedStrings } from './xlsxSharedStrings';
+import { calculateFee } from '../services/financialEngine';
 import { 
   PDVMovimentacao, 
   GatewayClubeTransacao, 
@@ -1710,7 +1711,8 @@ export function getBarbeariaDemoData() {
 
       // Adiciona na Rede com taxa MDR de 2.39%
       const taxa = 2.39;
-      const mdr = Number(((valor * taxa) / 100).toFixed(2));
+      const fee = calculateFee(valor, taxa);
+      const mdr = fee.fee;
       redePagamentos.push({
         id: `rede_${redeIdCounter++}`,
         dataRecebimento: addDays(dataDia, 30),
@@ -1718,7 +1720,7 @@ export function getBarbeariaDemoData() {
         valorBruto: valor,
         taxaMdrPerc: taxa,
         valorMdr: mdr,
-        valorLiquido: Number((valor - mdr).toFixed(2)),
+        valorLiquido: fee.net,
         tid: `TID-${diaStr}${c}`,
         nsuCv: `NSU${diaStr}0${c}`,
         numAutorizacao: `AUT${diaStr}${c}`,
@@ -1746,7 +1748,8 @@ export function getBarbeariaDemoData() {
 
       // No dia 15/08, simula 1 transação a mais na Rede (Sobra na Rede)
       const taxa = 1.19;
-      const mdr = Number(((valor * taxa) / 100).toFixed(2));
+      const fee = calculateFee(valor, taxa);
+      const mdr = fee.fee;
       redePagamentos.push({
         id: `rede_${redeIdCounter++}`,
         dataRecebimento: addDays(dataDia, 1),
@@ -1754,7 +1757,7 @@ export function getBarbeariaDemoData() {
         valorBruto: valor,
         taxaMdrPerc: taxa,
         valorMdr: mdr,
-        valorLiquido: Number((valor - mdr).toFixed(2)),
+        valorLiquido: fee.net,
         tid: `TID-D-${diaStr}${d}`,
         nsuCv: `NSU-D${diaStr}${d}`,
         numAutorizacao: `AUT-D${diaStr}${d}`,

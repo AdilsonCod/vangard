@@ -46,6 +46,7 @@ import * as XLSX from 'xlsx';
 import { collection, doc, getDocs, query, setDoc } from 'firebase/firestore';
 import { useStore } from '../store';
 import { db } from '../firebase';
+import { scopedCollectionQuery } from '../services/firestoreScope';
 import { 
   PDVMovimentacao, 
   GatewayClubeTransacao, 
@@ -750,6 +751,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
         id: sessionId,
         name: sessionName || suggestedName,
         updatedAt: new Date().toISOString(),
+        unitId: selectedUnidade,
         unidade: selectedUnidade,
         items,
         batches,
@@ -782,7 +784,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const handleFetchSessions = async () => {
     setShowSessionsModal(true);
     try {
-      const q = query(collection(db, 'reconciliation_reports'));
+      const q = scopedCollectionQuery('reconciliation_reports', currentUser);
       const snapshot = await getDocs(q);
       const fetched: any[] = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
       // Sort desc by createdAt
@@ -824,7 +826,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     let cancelled = false;
     const restoreLatestReport = async () => {
       try {
-        const snapshot = await getDocs(query(collection(db, 'reconciliation_reports')));
+        const snapshot = await getDocs(scopedCollectionQuery('reconciliation_reports', currentUser));
         const targetUnit = currentUser.unit || selectedUnidade;
         const reports: any[] = snapshot.docs
           .map(document => ({ ...document.data(), id: document.id } as any))

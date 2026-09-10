@@ -20,12 +20,14 @@ import {
   Supplier,
   FinClassification,
   FinSubclassification,
+  FinancialPeriodEvent,
 } from './types';
 import { db, auth } from './firebase';
-import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, documentId, setDoc, deleteDoc, getDoc, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { seedDatabase } from './firebase-sync';
 import { authenticatedProfile, endAuthenticatedSession, startAuthenticatedSession } from './services/authSession';
+import { assertFinancialPeriodOpen, validateReopening } from './services/financialPeriodLock';
 
 // Mock initial data
 export const DEFAULT_UNITS: SystemUnit[] = [
@@ -90,6 +92,7 @@ interface AppState {
   updateTransaction: (t: FinancialTransaction) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   saveCashClosing: (closing: CashClosing) => Promise<void>;
+  reopenCashClosing: (closingId: string, reason: string) => Promise<void>;
   addFinancialCategory: (cat: FinancialCategory) => Promise<void>;
   deleteFinancialCategory: (id: string) => Promise<void>;
   addSupplier: (supplier: Supplier) => Promise<void>;
@@ -116,6 +119,7 @@ interface StoreContextType extends AppState {
   logout: () => void;
   addUser: (user: User) => Promise<void>;
   updateUser: (user: User) => Promise<void>;
+  attachUserAuthentication: (profileId: string, authUid: string) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   addEntry: (entry: DailyEntry) => void;
   updateEntry: (entry: DailyEntry) => void;
@@ -336,12 +340,24 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
     const userUnit = currentUser.unit || (currentUser as any).unitId;
     const isAdmin = currentUser.role === 'ADMIN';
+    const isProfessional = currentUser.role === 'BARBER' || currentUser.role === 'MANICURE';
+    const canReadFinance = isAdmin || currentUser.role === 'FINANCIAL';
+    const canReadUnitOperation = canReadFinance || currentUser.role === 'RECEPTION';
+    const professionalId = currentUser.legacyId || currentUser.id;
+    const noSubscription = () => {};
 
     const getUnitScopedQuery = (collName: string) => {
-      if (isAdmin || !userUnit) {
+      if (isAdmin) {
         return collection(db, collName);
       }
+      if (!userUnit) throw new Error(`O perfil ${currentUser.id} não possui unidade para consultar ${collName}.`);
       return query(collection(db, collName), where('unitId', '==', userUnit));
+    };
+
+    const getUnitOrGlobalQuery = (collName: string) => {
+      if (isAdmin) return collection(db, collName);
+      if (!userUnit) throw new Error(`O perfil ${currentUser.id} não possui unidade para consultar ${collName}.`);
+      return query(collection(db, collName), where('unitId', 'in', [userUnit, 'ALL']));
     };
 
     const unsubRankingSettings = onSnapshot(doc(db, 'appSettings', 'rankings'), snapshot => {
@@ -351,7 +367,12 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       setQuarterlyRankingVisibility(null);
     });
 
-    const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
+    const usersSource = isAdmin
+      ? collection(db, 'users')
+      : isProfessional
+        ? query(collection(db, 'users'), where('authUid', '==', currentUser.id), limit(1))
+        : query(collection(db, 'users'), where('unit', '==', userUnit), limit(250));
+    const unsubUsers = onSnapshot(usersSource, snap => {
       const nextUsers = snap.docs.map(d => withoutLegacyPassword(withDocumentId<User>(d)));
       setUsers(nextUsers);
       const refreshedUser = nextUsers.find(user =>
@@ -370,26 +391,37 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unsubCatalog = onSnapshot(collection(db, 'catalog'), snap => {
       setCatalog(snap.docs.map(d => withDocumentId<CatalogItem>(d)));
     });
-    const unsubEntries = onSnapshot(getUnitScopedQuery('entries'), snap => {
+    const entriesSource = isProfessional
+      ? query(collection(db, 'entries'), where('unitId', '==', userUnit), where('userId', '==', professionalId))
+      : getUnitScopedQuery('entries');
+    const unsubEntries = onSnapshot(entriesSource, snap => {
       setEntries(snap.docs.map(d => withDocumentId<DailyEntry>(d)));
     });
-    const unsubGdv = onSnapshot(getUnitScopedQuery('gdvEntries'), snap => {
+    const unsubGdv = isAdmin ? onSnapshot(collection(db, 'gdvEntries'), snap => {
       setGdvEntries(snap.docs.map(d => withDocumentId<GDVEntry>(d)));
-    });
-    const unsubGdvSettings = onSnapshot(collection(db, 'gdvSettings'), snap => {
+    }) : noSubscription;
+    const unsubGdvSettings = isAdmin ? onSnapshot(collection(db, 'gdvSettings'), snap => {
       setGdvSettings(snap.docs.map(d => withDocumentId<GDVSettings>(d)));
-    });
-    const unsubMonthlyStats = onSnapshot(collection(db, 'monthlyUnitStats'), snap => {
+    }) : noSubscription;
+    const unsubMonthlyStats = !isProfessional ? onSnapshot(getUnitScopedQuery('monthlyUnitStats'), snap => {
       setMonthlyUnitStats(snap.docs.map(d => withDocumentId<MonthlyUnitStats>(d)));
-    });
-    const unsubMonthlyBarberStats = onSnapshot(collection(db, 'monthlyBarberStats'), snap => {
+    }) : noSubscription;
+    const barberStatsSource = isProfessional
+      ? query(collection(db, 'monthlyBarberStats'), where('unitId', '==', userUnit), where('barberId', '==', professionalId))
+      : getUnitScopedQuery('monthlyBarberStats');
+    const unsubMonthlyBarberStats = onSnapshot(barberStatsSource, snap => {
       setMonthlyBarberStats(snap.docs.map(d => withDocumentId<MonthlyBarberStats>(d)));
     });
-    const unsubTargets = onSnapshot(collection(db, 'targets'), snap => {
+    const targetsSource = isAdmin
+      ? collection(db, 'targets')
+      : isProfessional
+        ? query(collection(db, 'targets'), where(documentId(), '==', professionalId))
+        : null;
+    const unsubTargets = targetsSource ? onSnapshot(targetsSource, snap => {
       const tg: Record<string, Target> = {};
       snap.docs.forEach(d => tg[d.id] = d.data() as Target);
       setTargets(tg);
-    });
+    }) : noSubscription;
     const unsubCategories = onSnapshot(collection(db, 'categories'), snap => {
       setCategories(snap.docs.map(d => withDocumentId<Category>(d)));
     });
@@ -399,33 +431,36 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unsubSystemUnits = onSnapshot(collection(db, 'systemUnits'), snap => {
       setSystemUnits(snap.docs.map(d => withDocumentId<SystemUnit>(d)));
     });
-    const unsubPayments = onSnapshot(getUnitScopedQuery('payments'), snap => {
+    const paymentsSource = isProfessional
+      ? query(collection(db, 'payments'), where('unitId', '==', userUnit), where('userId', '==', professionalId))
+      : getUnitScopedQuery('payments');
+    const unsubPayments = (canReadFinance || isProfessional) ? onSnapshot(paymentsSource, snap => {
       setPayments(snap.docs.map(d => withDocumentId<PaymentRecord>(d)));
-    });
-    const unsubNotifications = onSnapshot(collection(db, 'notifications'), snap => {
+    }) : noSubscription;
+    const unsubNotifications = onSnapshot(query(collection(db, 'notifications'), where('userId', '==', currentUser.id)), snap => {
       setNotifications(snap.docs.map(d => withDocumentId<SystemNotification>(d)));
     });
-    const unsubAnnouncements = onSnapshot(collection(db, 'announcements'), snap => {
+    const unsubAnnouncements = onSnapshot(getUnitOrGlobalQuery('announcements'), snap => {
       setAnnouncements(snap.docs.map(d => withDocumentId<SystemAnnouncement>(d)));
     });
-    const unsubTransactions = onSnapshot(getUnitScopedQuery('transactions'), snap => {
+    const unsubTransactions = canReadUnitOperation ? onSnapshot(getUnitScopedQuery('transactions'), snap => {
       setTransactions(snap.docs.map(d => withDocumentId<FinancialTransaction>(d)));
-    });
-    const unsubCashClosings = onSnapshot(getUnitScopedQuery('cashClosings'), snap => {
+    }) : noSubscription;
+    const unsubCashClosings = canReadUnitOperation ? onSnapshot(getUnitScopedQuery('cashClosings'), snap => {
       setCashClosings(snap.docs.map(d => withDocumentId<CashClosing>(d)));
-    });
-    const unsubFinancialCategories = onSnapshot(collection(db, 'financialCategories'), snap => {
+    }) : noSubscription;
+    const unsubFinancialCategories = canReadUnitOperation ? onSnapshot(collection(db, 'financialCategories'), snap => {
       setFinancialCategories(snap.docs.map(d => withDocumentId<FinancialCategory>(d)));
-    });
-    const unsubSuppliers = onSnapshot(collection(db, 'suppliers'), snap => {
+    }) : noSubscription;
+    const unsubSuppliers = canReadUnitOperation ? onSnapshot(collection(db, 'suppliers'), snap => {
       setSuppliers(snap.docs.map(d => withDocumentId<Supplier>(d)));
-    });
-    const unsubFinClassifications = onSnapshot(collection(db, 'finClassifications'), snap => {
+    }) : noSubscription;
+    const unsubFinClassifications = canReadUnitOperation ? onSnapshot(collection(db, 'finClassifications'), snap => {
       setFinClassifications(snap.docs.map(d => withDocumentId<FinClassification>(d)));
-    });
-    const unsubFinSubclassifications = onSnapshot(collection(db, 'finSubclassifications'), snap => {
+    }) : noSubscription;
+    const unsubFinSubclassifications = canReadUnitOperation ? onSnapshot(collection(db, 'finSubclassifications'), snap => {
       setFinSubclassifications(snap.docs.map(d => withDocumentId<FinSubclassification>(d)));
-    });
+    }) : noSubscription;
 
     return () => {
       unsubRankingSettings();
@@ -499,10 +534,12 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const addEntry = async (entry: DailyEntry) => {
+    if (entry.unitId) assertFinancialPeriodOpen(entry.unitId, entry.date, cashClosings);
     await setDoc(doc(db, 'entries', entry.id), entry);
   };
 
   const updateEntry = async (entry: DailyEntry) => {
+    if (entry.unitId) assertFinancialPeriodOpen(entry.unitId, entry.date, cashClosings);
     await setDoc(doc(db, 'entries', entry.id), entry);
   };
 
@@ -514,13 +551,42 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   };
   
   const addTransaction = async (t: FinancialTransaction) => {
+    assertFinancialPeriodOpen(t.unitId, t.date, cashClosings);
     await setDoc(doc(db, 'transactions', t.id), cleanUndefined(t));
   };
   const updateTransaction = async (t: FinancialTransaction) => {
+    const previous = transactions.find(item => item.id === t.id);
+    if (previous) assertFinancialPeriodOpen(previous.unitId, previous.date, cashClosings);
+    assertFinancialPeriodOpen(t.unitId, t.date, cashClosings);
     await setDoc(doc(db, 'transactions', t.id), cleanUndefined(t));
   };
   const saveCashClosing = async (closing: CashClosing) => {
-    await setDoc(doc(db, 'cashClosings', closing.id), cleanUndefined(closing));
+    const existing = cashClosings.find(item => item.id === closing.id);
+    if (existing && existing.status !== 'REOPENED') throw new Error('Este período já está fechado. Reabra-o antes de realizar um novo fechamento.');
+    const now = new Date().toISOString();
+    const event: FinancialPeriodEvent = { id: `period_event_${Date.now()}_${crypto.randomUUID()}`, action: 'CLOSED', unitId: closing.unitId, date: closing.date, actorId: currentUser?.id || 'unknown', actorRole: currentUser?.role || 'RECEPTION', createdAt: now, closingSnapshot: cleanUndefined(closing) as CashClosing };
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'cashClosings', closing.id), cleanUndefined(closing));
+    batch.set(doc(db, 'financialPeriodEvents', event.id), cleanUndefined(event));
+    batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date}`), { unitId: closing.unitId, period: closing.date, closingId: closing.id, active: true, updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
+    batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date.slice(0, 7)}`), { unitId: closing.unitId, period: closing.date.slice(0, 7), closingId: closing.id, active: true, updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
+    await batch.commit();
+  };
+  const reopenCashClosing = async (closingId: string, reason: string) => {
+    const closing = cashClosings.find(item => item.id === closingId);
+    if (!closing) throw new Error('Fechamento não encontrado. Atualize a página e tente novamente.');
+    if (closing.status === 'REOPENED') throw new Error('Este período já está reaberto.');
+    validateReopening(currentUser?.role, reason);
+    const now = new Date().toISOString();
+    const reopened: CashClosing = { ...closing, status: 'REOPENED', reopenedAt: now, reopenedBy: currentUser?.id, reopeningReason: reason.trim() };
+    const event: FinancialPeriodEvent = { id: `period_event_${Date.now()}_${crypto.randomUUID()}`, action: 'REOPENED', unitId: closing.unitId, date: closing.date, actorId: currentUser?.id || 'unknown', actorRole: currentUser?.role || 'FINANCIAL', reason: reason.trim(), createdAt: now, closingSnapshot: cleanUndefined(reopened) as CashClosing };
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'cashClosings', closing.id), cleanUndefined(reopened));
+    batch.set(doc(db, 'financialPeriodEvents', event.id), cleanUndefined(event));
+    batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date}`), { unitId: closing.unitId, period: closing.date, closingId: closing.id, active: false, updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
+    const otherClosedDay = cashClosings.find(item => item.id !== closing.id && item.unitId === closing.unitId && item.date.startsWith(closing.date.slice(0, 7)) && item.status !== 'REOPENED');
+    batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date.slice(0, 7)}`), { unitId: closing.unitId, period: closing.date.slice(0, 7), closingId: otherClosedDay?.id || closing.id, active: Boolean(otherClosedDay), updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
+    await batch.commit();
   };
   const addFinancialCategory = async (cat: FinancialCategory) => {
       try {
@@ -570,10 +636,14 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const deleteTransaction = async (id: string) => {
+    const existing = transactions.find(item => item.id === id);
+    if (existing) assertFinancialPeriodOpen(existing.unitId, existing.date, cashClosings);
     await deleteDoc(doc(db, 'transactions', id));
   };
   
   const deleteEntry = async (id: string) => {
+    const existing = entries.find(item => item.id === id);
+    if (existing?.unitId) assertFinancialPeriodOpen(existing.unitId, existing.date, cashClosings);
     await deleteDoc(doc(db, 'entries', id));
   };
 
@@ -582,22 +652,29 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const updateGDVEntry = async (entry: GDVEntry) => {
+    Object.keys(entry.units || {}).forEach(unitId => assertFinancialPeriodOpen(unitId, entry.date, cashClosings));
     await setDoc(doc(db, 'gdvEntries', entry.id), entry);
   };
 
   const updateMonthlyUnitStats = async (stats: MonthlyUnitStats) => {
+    assertFinancialPeriodOpen(stats.unitId, stats.month, cashClosings);
     await setDoc(doc(db, 'monthlyUnitStats', stats.id), stats);
   };
 
   const updateMonthlyBarberStats = async (stats: MonthlyBarberStats) => {
+    assertFinancialPeriodOpen(stats.unitId, stats.month, cashClosings);
     await setDoc(doc(db, 'monthlyBarberStats', stats.id), stats);
   };
 
   const deleteMonthlyBarberStats = async (id: string) => {
+    const existing = monthlyBarberStats.find(item => item.id === id);
+    if (existing) assertFinancialPeriodOpen(existing.unitId, existing.month, cashClosings);
     await deleteDoc(doc(db, 'monthlyBarberStats', id));
   };
 
   const deleteMonthlyUnitStats = async (id: string) => {
+    const existing = monthlyUnitStats.find(item => item.id === id);
+    if (existing) assertFinancialPeriodOpen(existing.unitId, existing.month, cashClosings);
     await deleteDoc(doc(db, 'monthlyUnitStats', id));
   };
 
@@ -819,6 +896,10 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const attachUserAuthentication = async (profileId: string, authUid: string) => {
+    await setDoc(doc(db, 'users', profileId), { authUid, legacyId: profileId }, { merge: true });
+  };
+
   const deleteUser = async (id: string) => {
     const userToSoftDelete = users.find(u => u.id === id);
     if (userToSoftDelete) {
@@ -835,14 +916,22 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const addPayment = async (payment: PaymentRecord) => {
-    await setDoc(doc(db, 'payments', payment.id), cleanUndefined(payment));
+    const unitId = payment.unitId || users.find(user => user.id === payment.userId)?.unit || 'ALL';
+    assertFinancialPeriodOpen(unitId, payment.date, cashClosings);
+    await setDoc(doc(db, 'payments', payment.id), cleanUndefined({ ...payment, unitId }));
   };
 
   const updatePayment = async (payment: PaymentRecord) => {
-    await setDoc(doc(db, 'payments', payment.id), cleanUndefined(payment));
+    const previous = payments.find(item => item.id === payment.id);
+    const unitId = payment.unitId || users.find(user => user.id === payment.userId)?.unit || 'ALL';
+    if (previous) assertFinancialPeriodOpen(previous.unitId || users.find(user => user.id === previous.userId)?.unit || 'ALL', previous.date, cashClosings);
+    assertFinancialPeriodOpen(unitId, payment.date, cashClosings);
+    await setDoc(doc(db, 'payments', payment.id), cleanUndefined({ ...payment, unitId }));
   };
 
   const deletePayment = async (id: string) => {
+    const existing = payments.find(item => item.id === id);
+    if (existing) assertFinancialPeriodOpen(existing.unitId || users.find(user => user.id === existing.userId)?.unit || 'ALL', existing.date, cashClosings);
     await deleteDoc(doc(db, 'payments', id));
   };
 
@@ -913,7 +1002,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     <StoreContext.Provider value={{ 
       quarterlyRankingVisible, setQuarterlyRankingVisible,
       financialCategories, suppliers, finClassifications, finSubclassifications, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
-      login, logout, addUser, updateUser, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
+      login, logout, addUser, updateUser, attachUserAuthentication, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
       updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, addNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, addAnnouncement, updateAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
       isDarkMode, setIsDarkMode
     }}>

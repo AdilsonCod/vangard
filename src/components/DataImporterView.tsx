@@ -21,6 +21,7 @@ import { hydrateXlsxSharedStrings } from "../utils/xlsxSharedStrings";
 import { parseDPotePDF, DPoteReport, parseDPoteSpreadsheet } from "../DPoteParser";
 import { parseCashbarberProductsSpreadsheet, parseCashbarberProductsPDF, CashbarberProductReport } from "../CashbarberParser";
 import { AppCard, AppPageHeader, appControlClass } from "./ui/AppPrimitives";
+import { calculatePaymentTotals, calculateTotalRevenue, inferStandaloneRevenue } from "../services/financialEngine";
 
 export default function DataImporterView() {
   const {
@@ -696,10 +697,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
         discount,
         discountDescription: existing?.discountDescription || "",
         discounts: existing?.discounts || [],
-        amountToBePaid: Math.max(
-          0,
-          commissionAvulso + commissionProductGeneral + commissionProductAvant + commissionSubscriptions - discount,
-        ),
+        amountToBePaid: calculatePaymentTotals({ commissionAvulso, commissionProductGeneral, commissionProductAvant, commissionSubscriptions, discount, discounts: existing?.discounts || [] }).netPayment,
         status: existing?.status || "PENDENTE",
         isPaid: existing?.isPaid || false,
         ...((values.potPercentage ?? existing?.potPercentage) !== undefined
@@ -967,8 +965,9 @@ if (importType === "CASHBARBER_PRODUTOS") {
             const fatAssinatura =
               (barber.potPercentage / 100) * dpoteReport.totalAssinaturas;
 
+            const currentProducts = currentStat.vendaProdutosValor || 0;
             const currentAvulso = currentStat.faturamentoAvulso
-              ?? Math.max(0, (currentStat.faturamentoTotal || 0) - (currentStat.faturamentoAssinatura || 0));
+              ?? inferStandaloneRevenue(currentStat.faturamentoTotal, currentStat.faturamentoAssinatura, currentProducts);
             const commissionServices = currentStat.comissaoServicos
               ?? Math.max(0, (currentStat.comissao || 0) - (currentStat.comissaoProdutos || 0) - (currentStat.comissaoAssinatura || 0));
             const commissionProducts = currentStat.comissaoProdutos || 0;
@@ -977,7 +976,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
               ...currentStat,
               faturamentoAvulso: currentAvulso,
               faturamentoAssinatura: fatAssinatura,
-              faturamentoTotal: currentAvulso + fatAssinatura,
+              faturamentoTotal: calculateTotalRevenue(currentAvulso, fatAssinatura, currentProducts),
               comissaoAssinatura: barber.commission,
               comissao: commissionServices + commissionProducts + barber.commission,
               servicosAssinatura: barber.totalServices,
@@ -1060,10 +1059,13 @@ if (importType === "CASHBARBER_PRODUTOS") {
             const commissionServices = currentStat.comissaoServicos
               ?? Math.max(0, (currentStat.comissao || 0) - (currentStat.comissaoProdutos || 0) - (currentStat.comissaoAssinatura || 0));
             const commissionSubscriptions = currentStat.comissaoAssinatura || 0;
+            const standaloneRevenue = currentStat.faturamentoAvulso
+              ?? inferStandaloneRevenue(currentStat.faturamentoTotal, currentStat.faturamentoAssinatura, currentStat.vendaProdutosValor);
             await updateMonthlyBarberStats({
               ...currentStat,
               vendaProdutosValor: barber.totalSales,
               vendasProdutosQtd: barber.totalProducts,
+              faturamentoTotal: calculateTotalRevenue(standaloneRevenue, currentStat.faturamentoAssinatura, barber.totalSales),
               comissaoProdutos: barber.totalCommission,
               comissao: commissionServices + commissionSubscriptions + barber.totalCommission,
             });
@@ -1351,13 +1353,16 @@ if (importType === "CASHBARBER_PRODUTOS") {
 
             if (importType === "SERVICOS") {
               updated.faturamentoAvulso = group.valorTotal;
-              updated.faturamentoTotal = group.valorTotal + (current.faturamentoAssinatura || 0);
+              updated.faturamentoTotal = calculateTotalRevenue(group.valorTotal, current.faturamentoAssinatura, current.vendaProdutosValor);
               updated.servicosRealizados = group.quantidade;
               updated.comissaoServicos = group.valorComissao;
               updated.comissao = group.valorComissao + (current.comissaoProdutos || 0) + (current.comissaoAssinatura || 0);
             } else {
               updated.vendaProdutosValor = group.valorTotal;
               updated.vendasProdutosQtd = group.quantidade;
+              const standaloneRevenue = current.faturamentoAvulso
+                ?? inferStandaloneRevenue(current.faturamentoTotal, current.faturamentoAssinatura, current.vendaProdutosValor);
+              updated.faturamentoTotal = calculateTotalRevenue(standaloneRevenue, current.faturamentoAssinatura, group.valorTotal);
               updated.comissaoProdutos = group.valorComissao;
               updated.comissao = (current.comissaoServicos || 0) + group.valorComissao + (current.comissaoAssinatura || 0);
             }

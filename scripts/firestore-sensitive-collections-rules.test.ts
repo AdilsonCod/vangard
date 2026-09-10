@@ -7,7 +7,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, where, writeBatch } from 'firebase/firestore';
 
 const projectId = 'vans-task-9-rules';
 let environment: RulesTestEnvironment;
@@ -30,10 +30,17 @@ before(async () => {
       { id: 'marketing', role: 'MARKETING', unitId: 'unit-a' },
       { id: 'reception', role: 'RECEPTION', unitId: 'unit-a' },
       { id: 'barber', role: 'BARBER', unitId: 'unit-a' },
+      { id: 'finance-b', role: 'FINANCIAL', unitId: 'unit-b' },
+      { id: 'marketing-b', role: 'MARKETING', unitId: 'unit-b' },
+      { id: 'reception-b', role: 'RECEPTION', unitId: 'unit-b' },
     ]) {
       await setDoc(doc(db, 'users', profile.id), profile);
     }
     await setDoc(doc(db, 'auditLogs', 'seed'), { action: 'SEEDED_FOR_TEST' });
+    const closing = { id: 'cash_closing_unit-a_2026-09-10', unitId: 'unit-a', date: '2026-09-10', status: 'CLOSED', openingBalance: 0, cashIncome: 100, cashOutflow: 0, expectedBalance: 100, countedBalance: 100, difference: 0, closedAt: new Date(0).toISOString(), closedBy: 'finance' };
+    await setDoc(doc(db, 'cashClosings', closing.id), closing);
+    await setDoc(doc(db, 'financialPeriodLocks', 'unit-a_2026-09-10'), { unitId: 'unit-a', period: '2026-09-10', closingId: closing.id, active: true });
+    await setDoc(doc(db, 'financialPeriodLocks', 'unit-a_2026-09'), { unitId: 'unit-a', period: '2026-09', closingId: closing.id, active: true });
   });
 });
 
@@ -62,6 +69,26 @@ test('coleções financeiras permitem Financeiro e negam Barbeiro', async () => 
       marker: collectionName,
     }));
   }
+});
+
+test('período fechado bloqueia alterações e reabertura exige financeiro, justificativa e lote atômico', async () => {
+  const finance = authDb('finance', 'FINANCIAL');
+  const reception = authDb('reception', 'RECEPTION');
+  const transactionData = { unitId: 'unit-a', date: '2026-09-10', type: 'INCOME', status: 'RECEBIDO', amount: 100, category: 'Venda', description: 'Venda', movementNature: 'REVENUE' };
+  await assertFails(setDoc(doc(finance, 'transactions', 'locked'), transactionData));
+
+  const invalidBatch = writeBatch(reception);
+  invalidBatch.update(doc(reception, 'cashClosings', 'cash_closing_unit-a_2026-09-10'), { status: 'REOPENED', reopeningReason: 'Correção necessária', reopenedBy: 'reception' });
+  invalidBatch.update(doc(reception, 'financialPeriodLocks', 'unit-a_2026-09-10'), { active: false });
+  await assertFails(invalidBatch.commit());
+
+  const batch = writeBatch(finance);
+  batch.update(doc(finance, 'cashClosings', 'cash_closing_unit-a_2026-09-10'), { status: 'REOPENED', reopeningReason: 'Correção do saldo contado', reopenedBy: 'finance', reopenedAt: new Date().toISOString() });
+  batch.update(doc(finance, 'financialPeriodLocks', 'unit-a_2026-09-10'), { active: false });
+  batch.update(doc(finance, 'financialPeriodLocks', 'unit-a_2026-09'), { active: false });
+  batch.set(doc(finance, 'financialPeriodEvents', 'reopen-test'), { action: 'REOPENED', unitId: 'unit-a', date: '2026-09-10', actorId: 'finance', actorRole: 'FINANCIAL', reason: 'Correção do saldo contado', createdAt: new Date().toISOString() });
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(setDoc(doc(finance, 'transactions', 'unlocked'), transactionData));
 });
 
 test('coleções de marketing permitem Marketing e negam Barbeiro', async () => {
@@ -114,6 +141,7 @@ test('links inteligentes preservam resolução pública e restringem a gestão',
   const anonymous = environment.unauthenticatedContext().firestore();
 
   await assertSucceeds(setDoc(doc(marketing, 'smart_links', 'promo'), {
+    unitId: 'unit-a',
     shortCode: 'promo',
     destinationUrl: 'https://example.com',
     totalClicks: 0,
@@ -123,10 +151,11 @@ test('links inteligentes preservam resolução pública e restringem a gestão',
     shortCode: 'denied',
     destinationUrl: 'https://example.com',
   }));
-  await assertSucceeds(getDoc(doc(anonymous, 'smart_links', 'promo')));
+  await assertFails(getDoc(doc(anonymous, 'smart_links', 'promo')));
 
   const click = {
     linkId: 'promo',
+    unitId: 'unit-a',
     shortCode: 'promo',
     destinationUrl: 'https://example.com',
     phase: 'ACTIVE',
@@ -138,6 +167,36 @@ test('links inteligentes preservam resolução pública e restringem a gestão',
   };
   await assertSucceeds(setDoc(doc(marketing, 'smart_link_clicks', 'allowed'), click));
   await assertFails(getDoc(doc(barber, 'smart_link_clicks', 'allowed')));
+});
+
+test('perfis da Unidade B não acessam documentos privados da Unidade A', async () => {
+  const financeA = authDb('finance', 'FINANCIAL');
+  const financeB = authDb('finance-b', 'FINANCIAL');
+  const marketingA = authDb('marketing', 'MARKETING');
+  const marketingB = authDb('marketing-b', 'MARKETING');
+  const receptionA = authDb('reception', 'RECEPTION');
+  const receptionB = authDb('reception-b', 'RECEPTION');
+
+  await assertSucceeds(setDoc(doc(financeA, 'reconciliation_reports', 'unit-a-report'), { unitId: 'unit-a' }));
+  await assertFails(getDoc(doc(financeB, 'reconciliation_reports', 'unit-a-report')));
+  await assertSucceeds(setDoc(doc(financeB, 'reconciliation_reports', 'unit-b-report'), { unitId: 'unit-b' }));
+  const ownReports = await assertSucceeds(getDocs(query(collection(financeB, 'reconciliation_reports'), where('unitId', '==', 'unit-b'))));
+  assert.deepEqual(ownReports.docs.map(item => item.id), ['unit-b-report']);
+  await assertFails(getDocs(collection(financeB, 'reconciliation_reports')));
+
+  await assertSucceeds(setDoc(doc(marketingA, 'marketing_campaigns', 'unit-a-campaign'), { unitId: 'unit-a' }));
+  await assertFails(getDoc(doc(marketingB, 'marketing_campaigns', 'unit-a-campaign')));
+
+  await assertSucceeds(setDoc(doc(receptionA, 'message_contact_lists', 'unit-a-list'), { unitId: 'unit-a' }));
+  await assertFails(getDoc(doc(receptionB, 'message_contact_lists', 'unit-a-list')));
+});
+
+test('administrador mantém visão consolidada das unidades autorizadas globalmente', async () => {
+  const admin = authDb('admin', 'ADMIN');
+  const reports = await assertSucceeds(getDocs(collection(admin, 'reconciliation_reports')));
+  const ids = reports.docs.map(item => item.id);
+  assert.equal(ids.includes('unit-a-report'), true);
+  assert.equal(ids.includes('unit-b-report'), true);
 });
 
 test('auditoria permite leitura administrativa, nega leitura comum e toda escrita cliente', async () => {

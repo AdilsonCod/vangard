@@ -4,6 +4,7 @@ import { AlertTriangle, BarChart3, CircleDollarSign, Edit3, Eye, Megaphone, Mous
 import { db } from '../firebase';
 import { useStore } from '../store';
 import { AppBadge, AppButton, AppCard, AppEmptyState, AppSectionHeader, appControlClass } from './ui/AppPrimitives';
+import { scopedCollectionQuery } from '../services/firestoreScope';
 
 type TrafficRecord = {
   id:string; date:string; campaignId:string; unitId:string; platform:string; investment:number; otherCosts:number;
@@ -27,7 +28,7 @@ const dayMs=86_400_000;
 const dateAtNoon=(value:string)=>new Date(`${value}T12:00:00`).getTime();
 
 export function MarketingPerformance({view}:{view:'TRAFFIC'|'RESULTS'}) {
-  const {systemUnits}=useStore();
+  const {systemUnits,currentUser}=useStore();
   const [traffic,setTraffic]=useState<TrafficRecord[]>([]);
   const [organic,setOrganic]=useState<OrganicRecord[]>([]);
   const [campaigns,setCampaigns]=useState<Campaign[]>([]);
@@ -40,10 +41,10 @@ export function MarketingPerformance({view}:{view:'TRAFFIC'|'RESULTS'}) {
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
 
-  useEffect(()=>onSnapshot(collection(db,'marketing_traffic'),snapshot=>setTraffic(snapshot.docs.map(item=>({id:item.id,...item.data()} as TrafficRecord)))),[]);
-  useEffect(()=>onSnapshot(collection(db,'marketing_organic'),snapshot=>setOrganic(snapshot.docs.map(item=>({id:item.id,...item.data()} as OrganicRecord)))),[]);
-  useEffect(()=>onSnapshot(collection(db,'marketing_campaigns'),snapshot=>setCampaigns(snapshot.docs.map(item=>({id:item.id,...item.data()} as Campaign)))),[]);
-  useEffect(()=>onSnapshot(collection(db,'social_posts'),snapshot=>setContents(snapshot.docs.map(item=>({id:item.id,...item.data()} as Content)))),[]);
+  useEffect(()=>onSnapshot(scopedCollectionQuery('marketing_traffic',currentUser),snapshot=>setTraffic(snapshot.docs.map(item=>({id:item.id,...item.data()} as TrafficRecord)))),[currentUser]);
+  useEffect(()=>onSnapshot(scopedCollectionQuery('marketing_organic',currentUser),snapshot=>setOrganic(snapshot.docs.map(item=>({id:item.id,...item.data()} as OrganicRecord)))),[currentUser]);
+  useEffect(()=>onSnapshot(scopedCollectionQuery('marketing_campaigns',currentUser),snapshot=>setCampaigns(snapshot.docs.map(item=>({id:item.id,...item.data()} as Campaign)))),[currentUser]);
+  useEffect(()=>onSnapshot(scopedCollectionQuery('social_posts',currentUser),snapshot=>setContents(snapshot.docs.map(item=>({id:item.id,...item.data()} as Content)))),[currentUser]);
 
   const unitName=(id:string)=>id==='ALL'?'Todas as unidades':systemUnits.find(item=>item.id===id)?.name||'Unidade';
   const campaignName=(id:string)=>campaigns.find(item=>item.id===id)?.name||'Campanha não encontrada';

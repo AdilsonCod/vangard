@@ -6,6 +6,8 @@ export interface VerifiedFirebaseUser {
   uid: string;
   email?: string;
   role?: string;
+  unitId?: string;
+  profileId?: string;
   [key: string]: unknown;
 }
 

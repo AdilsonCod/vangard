@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { appControlClass, cn } from './ui/AppPrimitives';
 import { useProfessionalGoal } from './useProfessionalGoal';
+import { calculateTotalRevenue, inferStandaloneRevenue } from '../services/financialEngine';
 
 export function OverviewBarberDashboard({ onNavigate }: { onNavigate: (page: 'AUTOGESTAO' | 'PAGAMENTOS' | 'METAS' | 'AVISOS') => void }) {
   const { currentUser, entries, catalog, monthlyBarberStats, announcements, payments } = useStore();
@@ -52,16 +53,14 @@ export function OverviewBarberDashboard({ onNavigate }: { onNavigate: (page: 'AU
              const comm = itemVal.commission || 0;
              const amt = itemVal.amount || 0;
              
-             if (catItem.name.toLowerCase().includes('assinatura')) {
-                faturamentoAssinatura += comm;
-             } else {
-                faturamentoAvulso += comm;
-             }
-
              if (catItem.type === 'PRODUCT') {
                 vendaProdutosValor += comm;
                 vendasProdutosQtd += amt;
                 if (amt > 0) hasProduct = true;
+             } else if (catItem.name.toLowerCase().includes('assinatura')) {
+                faturamentoAssinatura += comm;
+             } else {
+                faturamentoAvulso += comm;
              }
              if (catItem.type === 'EXTRA_SERVICE') {
                 extraCounts[catItem.id] = (extraCounts[catItem.id] || 0) + amt;
@@ -80,7 +79,7 @@ export function OverviewBarberDashboard({ onNavigate }: { onNavigate: (page: 'AU
        const histAssinatura = histStat.faturamentoAssinatura || 0;
        const histAvulso = histStat.faturamentoAvulso !== undefined
          ? histStat.faturamentoAvulso
-         : Math.max(0, (histStat.faturamentoTotal || 0) - histAssinatura);
+         : inferStandaloneRevenue(histStat.faturamentoTotal, histAssinatura, histStat.vendaProdutosValor);
 
        faturamentoAssinatura += histAssinatura;
        faturamentoAvulso += histAvulso;
@@ -95,7 +94,7 @@ export function OverviewBarberDashboard({ onNavigate }: { onNavigate: (page: 'AU
        }
     }
 
-    const faturamentoTotal = faturamentoAvulso + faturamentoAssinatura;
+    const faturamentoTotal = calculateTotalRevenue(faturamentoAvulso, faturamentoAssinatura, vendaProdutosValor);
     const ticketMedio = clientesAtendidos > 0 ? faturamentoTotal / clientesAtendidos : 0;
     const penetrationProdutos = workedDaysCount > 0 ? (entriesWithProducts / workedDaysCount) * 100 : 0;
     const penetrationExtras = workedDaysCount > 0 ? (entriesWithExtras / workedDaysCount) * 100 : 0;
@@ -205,7 +204,7 @@ export function OverviewBarberDashboard({ onNavigate }: { onNavigate: (page: 'AU
         <div className={panel}>
           <p className="text-sm text-gray-600 dark:text-zinc-400">Faturamento do período</p>
           <p className="mt-2 break-words text-2xl font-black">{hasProduction ? money(currentStats.faturamentoTotal) : 'Sem dados'}</p>
-          <p className="mt-2 text-xs text-gray-600 dark:text-zinc-400">{hasProduction ? 'Avulso + assinaturas registrados' : 'Aguardando lançamentos ou importação'}</p>
+          <p className="mt-2 text-xs text-gray-600 dark:text-zinc-400">{hasProduction ? 'Avulso + assinaturas + produtos registrados' : 'Aguardando lançamentos ou importação'}</p>
         </div>
         <button onClick={() => onNavigate('PAGAMENTOS')} className={cn(panel, 'text-left transition hover:border-[var(--theme-color)]')}>
           <p className="text-sm text-gray-600 dark:text-zinc-400">Comissão prevista · bruta</p>

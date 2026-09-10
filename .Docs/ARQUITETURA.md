@@ -2,6 +2,10 @@
 
 Baseline observado em 9 de setembro de 2026. As regras de negócio pertencem ao [PRD](./prd.md); este documento descreve somente a implementação e a operação atuais.
 
+## Motor financeiro canônico
+
+As fórmulas descritas nas seções 5 e 6 do [PRD](./prd.md) ficam centralizadas em `src/services/financialEngine.ts`. O módulo é puro e cobre faturamento total, substituição de componentes importados, descontos, taxas, comissões, pagamentos, estornos e a separação entre caixa, receita, despesa, repasse e transferência interna. `src/utils/revenue.ts` existe somente como reexportação compatível; novas fórmulas financeiras não devem ser criadas em componentes.
+
 ## 1. Visão geral
 
 ```text
@@ -182,10 +186,11 @@ Somente nomes e finalidades são documentados. Valores reais devem permanecer no
 | `GENERATE_SOURCEMAP` | Build | Habilitar sourcemaps quando explicitamente necessário. |
 | `DISABLE_HMR` | Desenvolvimento | Desabilitar HMR e observação de arquivos em ambientes especiais. |
 | `VITE_ENABLE_DATABASE_SEED` | Frontend/build | Chave histórica para impedir carga automática de dados de exemplo em bancos reais. Deve permanecer desativada fora de ambientes controlados. |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Migração local | Caminho local para a credencial administrativa usada na migração de UID. Nunca deve ser versionada. |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | Migração local | Alternativa em JSON para a credencial administrativa, fornecida somente pelo ambiente seguro. |
+| `FIREBASE_PROJECT_ID` | Servidor | Identificar o projeto validado pelo Firebase Admin SDK. Não é segredo. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Servidor/migração local | Caminho local para a credencial administrativa. Nunca deve ser versionada. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Servidor em produção | Conta de serviço administrativa em JSON, fornecida somente pelo gerenciador de segredos. |
 
-`MESSAGE_DISPATCH_SECRET` ainda aparece no `.env.example`, mas não é consumida pelo servidor atual. Ela pertence ao fluxo legado de chave operacional e deve ser removida quando a autenticação das APIs for concluída nas Tarefas 10 e 11.
+O servidor valida o ID token pelo Firebase Admin SDK e obtém função e unidade do perfil persistido em `users`. Nenhuma função enviada no corpo da requisição é considerada para autorização. Mensagens, links inteligentes e auditorias usam o cliente administrativo do Firestore e não dependem da sessão do navegador para gravar.
 
 ## 7. Versões do baseline
 

@@ -31,6 +31,7 @@ import { CashClosing, FinancialTransaction } from '../types';
 import { getLatestFinancialPeriod } from '../utils/financialPeriods';
 import { isValidFinancialAmountInput, parseFinancialAmount } from '../utils/financialAmount';
 import { AppBadge, AppEmptyState, AppPageHeader, appControlClass } from './ui/AppPrimitives';
+import { calculateTotalRevenue, summarizeCashMovements } from '../services/financialEngine';
 
 const BankReconciliation = lazy(() => import('./BankReconciliation').then(module => ({ default: module.BankReconciliation })));
 const ReceivablesReconciliation = lazy(() => import('./ReceivablesReconciliation').then(module => ({ default: module.ReceivablesReconciliation })));
@@ -120,7 +121,7 @@ function formatTransactionDate(value?: string): string {
 }
 
 export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'DESPESAS' | 'CONCILIACAO_FINTECH' }) {
-  const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, cashClosings, currentUser, addTransaction, updateTransaction, deleteTransaction, saveCashClosing } = useStore();
+  const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, cashClosings, currentUser, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing } = useStore();
   
   const activeTab = currentTab;
   
@@ -542,6 +543,18 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     }
   };
 
+  const handleReopenCashClosing = async () => {
+    if (!selectedCashClosing || selectedCashClosing.status === 'REOPENED') return;
+    const reason = window.prompt('Informe a justificativa para reabrir este período (mínimo de 10 caracteres):');
+    if (reason === null) return;
+    try {
+      await reopenCashClosing(selectedCashClosing.id, reason);
+      setTransactionFeedback({ type: 'success', message: 'Período reaberto. As alterações financeiras estão liberadas novamente.' });
+    } catch (error) {
+      setTransactionFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Não foi possível reabrir o período.' });
+    }
+  };
+
   const handleAddClass = async () => {
     if (!newClassName.trim()) return;
     await addFinClassification({ id: `class_${Date.now()}`, name: newClassName.trim(), type: newClassType });
@@ -717,22 +730,9 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
       transaction.date === operationsDate &&
       inferSourceChannel(transaction) === 'CASH'
     );
-    const cashIncome = movements
-      .filter(transaction =>
-        transaction.type === 'INCOME' &&
-        transaction.status === 'RECEBIDO' &&
-        transaction.movementNature !== 'NON_FINANCIAL' &&
-        transaction.movementNature !== 'COMMERCIAL_DISCOUNT'
-      )
-      .reduce((sum, transaction) => sum + transaction.amount, 0);
-    const cashOutflow = movements
-      .filter(transaction =>
-        transaction.type === 'EXPENSE' &&
-        transaction.status === 'PAGO' &&
-        transaction.movementNature !== 'NON_FINANCIAL' &&
-        transaction.movementNature !== 'COMMERCIAL_DISCOUNT'
-      )
-      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const cash = summarizeCashMovements(movements);
+    const cashIncome = cash.cashIn;
+    const cashOutflow = cash.cashOut;
     const openingBalance = parseFinancialAmount(cashOpeningBalance);
     const countedBalance = parseFinancialAmount(cashCountedBalance);
     const expectedBalance = Number((openingBalance + cashIncome - cashOutflow).toFixed(2));
@@ -830,19 +830,13 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
 
     // 3. Transactions for the month
     const mTrans = (transactions || []).filter(t => t.date && t.date.startsWith(monthStr));
-    let tExpenses = 0;
-    let tIncomes = 0;
-    
-    mTrans.forEach(t => {
-      const isAutomaticCommission = t.id.startsWith('commission_payment_');
-      const nature = t.movementNature || (t.type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
-      if (t.type === 'EXPENSE') {
-        if (!isAutomaticCommission && nature === 'EXPENSE') tExpenses += t.amount;
-        if (!isAutomaticCommission && nature === 'EXPENSE' && t.unitId !== 'ALL' && unitMap.has(t.unitId)) {
-          unitMap.get(t.unitId)!.expenses += t.amount;
-        }
-      } else if (nature === 'REVENUE') {
-        tIncomes += t.amount;
+    const nonCommissionTransactions = mTrans.filter(t => !t.id.startsWith('commission_payment_'));
+    const transactionSummary = summarizeCashMovements(nonCommissionTransactions);
+    const tExpenses = transactionSummary.recognizedExpenses;
+    const tIncomes = Math.max(0, transactionSummary.recognizedRevenue - transactionSummary.commercialDiscounts);
+    nonCommissionTransactions.forEach(t => {
+      if (t.unitId !== 'ALL' && unitMap.has(t.unitId)) {
+        unitMap.get(t.unitId)!.expenses += summarizeCashMovements([t]).recognizedExpenses;
       }
     });
 
@@ -860,13 +854,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     // Calculate Account Balances (All time up to now)
     const accBalances = new Map<string, number>();
     transactions.forEach(t => {
-      if (t.status === 'PAGO' || t.status === 'RECEBIDO') {
-        if (!accBalances.has(t.category)) accBalances.set(t.category, 0);
-        let curr = accBalances.get(t.category) || 0;
-        if (t.type === 'INCOME') curr += t.amount;
-        else curr -= t.amount;
-        accBalances.set(t.category, curr);
-      }
+      const effect = summarizeCashMovements([t]).cashBalance;
+      if (effect !== 0) accBalances.set(t.category, (accBalances.get(t.category) || 0) + effect);
     });
 
     const accountBalancesArray = Array.from(accBalances.entries()).map(([name, balance]) => {
@@ -901,7 +890,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
       if (dailyMap.has(day)) {
         let faturamentoDia = 0;
         Object.values(g.units || {}).forEach(u => {
-          faturamentoDia += (u.servicos || 0) + (u.produtos || 0) + (u.assinaturas || 0);
+          faturamentoDia += calculateTotalRevenue(u.servicos, u.assinaturas, u.produtos);
         });
         faturamentoDia += (g.recorrencia || 0);
         dailyMap.get(day)!.entradas += faturamentoDia;
@@ -1260,9 +1249,14 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                   {operationsUnit === 'ALL'
                     ? 'Selecione uma unidade'
                     : selectedCashClosing
-                      ? `${selectedCashClosing.status === 'CLOSED' ? 'Fechado' : 'Com divergência'} · ${selectedCashClosing.countedBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+                      ? `${selectedCashClosing.status === 'CLOSED' ? 'Fechado' : selectedCashClosing.status === 'DIVERGENT' ? 'Com divergência' : 'Reaberto'} · ${selectedCashClosing.countedBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
                       : 'Ainda não realizado'}
                 </p>
+                {selectedCashClosing && selectedCashClosing.status !== 'REOPENED' && (currentUser?.role === 'ADMIN' || currentUser?.role === 'FINANCIAL') && (
+                  <button type="button" onClick={handleReopenCashClosing} className="mt-2 rounded-lg border border-amber-300 px-2.5 py-1 text-[10px] font-black uppercase text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/40">
+                    Reabrir período
+                  </button>
+                )}
               </div>
             </div>
 

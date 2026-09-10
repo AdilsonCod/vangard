@@ -5,6 +5,7 @@ import { Plus, GripVertical, Trash2, Calendar, Youtube, Instagram, Twitter, Mess
 import { useStore } from '../store';
 import { SystemUnit, User } from '../types';
 import { authenticatedApi } from '../services/apiClient';
+import { defaultUnitFor, scopedCollectionQuery } from '../services/firestoreScope';
 
 type PostStatus = 'Ideia' | 'Briefing' | 'Roteiro' | 'Aprovação' | 'Gravação' | 'Edição' | 'Revisão' | 'Agendado' | 'Publicado' | 'Mensurado' | 'Cancelado';
 type PostPriority = 'BAIXA' | 'NORMAL' | 'ALTA' | 'URGENTE';
@@ -79,7 +80,7 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
   const { users, systemUnits, currentUser } = useStore();
 
   useEffect(() => {
-    const q = query(collection(db, 'social_posts'));
+    const q = scopedCollectionQuery('social_posts', currentUser);
     const unsub = onSnapshot(q, (snap) => {
       const loaded: SocialPost[] = [];
       snap.forEach(doc => {
@@ -88,11 +89,11 @@ export function SocialMediaBoard({ initialTab = 'KANBAN', hideTabs = false }: { 
       setPosts(loaded);
     });
     return () => unsub();
-  }, []);
+  }, [currentUser]);
 
-  useEffect(() => onSnapshot(collection(db, 'marketing_campaigns'), snap => {
+  useEffect(() => onSnapshot(scopedCollectionQuery('marketing_campaigns', currentUser), snap => {
     setCampaigns(snap.docs.map(item => ({ id: item.id, ...item.data() } as CampaignOption)));
-  }), []);
+  }), [currentUser]);
 
   useEffect(() => setActiveTab(initialTab), [initialTab]);
 
@@ -385,19 +386,20 @@ function CalendarView({ posts, getPlatformIcon, onPostClick }: any) {
 }
 
 function LibraryView() {
+  const { currentUser } = useStore();
   const [links, setLinks] = useState<any[]>([]);
   const [newLink, setNewLink] = useState({ title: '', url: '' });
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'social_library'), snap => {
+    const unsub = onSnapshot(scopedCollectionQuery('social_library', currentUser), snap => {
       setLinks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return () => unsub();
-  }, []);
+  }, [currentUser]);
 
   const save = async () => {
     if (!newLink.title || !newLink.url) return;
-    await addDoc(collection(db, 'social_library'), newLink);
+    await addDoc(collection(db, 'social_library'), { ...newLink, unitId: defaultUnitFor(currentUser) });
     setNewLink({ title: '', url: '' });
   };
 
