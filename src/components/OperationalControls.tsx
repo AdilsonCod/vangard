@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { CheckCircle2, ChevronLeft, ChevronRight, Edit3, Gift, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
 import { useStore } from '../store';
-import type { FinancialTransaction } from '../types';
+import type { FinancialTransaction, PaymentRecord } from '../types';
+import { calculatePaymentTotals } from '../services/financialEngine';
 import { AppBadge, AppEmptyState, appControlClass, cn } from './ui/AppPrimitives';
 
 type Kind = 'COURTESY' | 'INTERNAL_SALE';
@@ -13,7 +14,7 @@ const parseMoney = (value: string) => Number(value.replace(/\s/g, '').replace(/\
 const shiftMonth = (period: string, amount: number) => { const [y, m] = period.split('-').map(Number); const d = new Date(y, m - 1 + amount, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 
 export default function OperationalControls({ kind, selectedUnit, strictUnitScope = false }: Props) {
-  const { transactions, users, catalog, systemUnits, addTransaction, updateTransaction, deleteTransaction } = useStore();
+  const { transactions, users, catalog, systemUnits, addTransaction, updateTransaction, deleteTransaction, payments, addPayment, updatePayment, deletePayment } = useStore();
   const today = new Date().toISOString().slice(0, 10);
   const isCourtesy = kind === 'COURTESY';
   const [period, setPeriod] = useState(today.slice(0, 7));
@@ -28,6 +29,157 @@ export default function OperationalControls({ kind, selectedUnit, strictUnitScop
   const records = useMemo(() => transactions.filter(item => item.category === categoryByKind[kind] && item.date.startsWith(period) && (selectedUnit === 'ALL' || item.unitId === selectedUnit)).sort((a, b) => `${b.date}-${b.id}`.localeCompare(`${a.date}-${a.id}`)), [kind, period, selectedUnit, transactions]);
   const total = records.reduce((sum, item) => sum + item.amount, 0);
   const pending = records.filter(item => item.status === 'PENDENTE').reduce((sum, item) => sum + item.amount, 0);
+
+  const syncInternalSaleWithPayment = async (
+    saleTransaction: FinancialTransaction,
+    previousTransaction?: FinancialTransaction | null
+  ) => {
+    if (kind !== 'INTERNAL_SALE' || !saleTransaction.barberId) return;
+
+    const barberId = saleTransaction.barberId;
+    const saleAmount = Number(saleTransaction.amount) || 0;
+    const saleDesc = `Venda interna: ${saleTransaction.itemName || saleTransaction.description}`;
+    const saleMonth = saleTransaction.date.slice(0, 7);
+
+    // If barber changed during edit, remove from previous barber's pending payment
+    if (previousTransaction && previousTransaction.barberId && previousTransaction.barberId !== barberId) {
+      const prevPayment = payments.find(p => 
+        p.userId === previousTransaction.barberId && 
+        p.status !== 'PAGO' && 
+        (p.discounts || []).some(d => d.internalSaleId === saleTransaction.id)
+      );
+      if (prevPayment) {
+        const remainingDiscounts = (prevPayment.discounts || []).filter(d => d.internalSaleId !== saleTransaction.id);
+        const totals = calculatePaymentTotals({
+          commissionAvulso: prevPayment.commissionAvulso,
+          commissionProductGeneral: prevPayment.commissionProductGeneral,
+          commissionProductAvant: prevPayment.commissionProductAvant,
+          commissionSubscriptions: prevPayment.commissionSubscriptions,
+          discount: 0,
+          discounts: remainingDiscounts,
+        });
+        await updatePayment({
+          ...prevPayment,
+          discounts: remainingDiscounts,
+          discount: totals.discounts,
+          discountDescription: remainingDiscounts.map(d => d.description).filter(Boolean).join(', '),
+          amountToBePaid: totals.netPayment,
+        });
+      }
+    }
+
+    // Find open/pending payment for this barber in the same month (or any pending payment)
+    const targetPayment = payments.find(p => 
+      p.userId === barberId && 
+      p.status !== 'PAGO' && 
+      p.date.startsWith(saleMonth)
+    ) || payments.find(p => 
+      p.userId === barberId && 
+      p.status !== 'PAGO'
+    );
+
+    if (targetPayment) {
+      const existingDiscounts = targetPayment.discounts || (targetPayment.discount > 0 ? [{ description: targetPayment.discountDescription || 'Desconto', value: targetPayment.discount }] : []);
+      
+      let updatedDiscounts: { description: string; value: number; internalSaleId?: string }[];
+      const existingIndex = existingDiscounts.findIndex(d => d.internalSaleId === saleTransaction.id || (d.description.includes(saleTransaction.itemName || '') && !d.internalSaleId));
+
+      if (existingIndex >= 0) {
+        updatedDiscounts = existingDiscounts.map((d, idx) => 
+          idx === existingIndex 
+            ? { ...d, description: saleDesc, value: saleAmount, internalSaleId: saleTransaction.id }
+            : d
+        );
+      } else {
+        updatedDiscounts = [
+          ...existingDiscounts,
+          { description: saleDesc, value: saleAmount, internalSaleId: saleTransaction.id }
+        ];
+      }
+
+      const totals = calculatePaymentTotals({
+        commissionAvulso: targetPayment.commissionAvulso,
+        commissionProductGeneral: targetPayment.commissionProductGeneral,
+        commissionProductAvant: targetPayment.commissionProductAvant,
+        commissionSubscriptions: targetPayment.commissionSubscriptions,
+        discount: 0,
+        discounts: updatedDiscounts,
+      });
+
+      await updatePayment({
+        ...targetPayment,
+        discounts: updatedDiscounts,
+        discount: totals.discounts,
+        discountDescription: updatedDiscounts.map(d => d.description).filter(Boolean).join(', '),
+        amountToBePaid: totals.netPayment,
+      });
+    } else {
+      const newDiscounts = [
+        { description: saleDesc, value: saleAmount, internalSaleId: saleTransaction.id }
+      ];
+      const totals = calculatePaymentTotals({
+        commissionAvulso: 0,
+        commissionProductGeneral: 0,
+        commissionProductAvant: 0,
+        commissionSubscriptions: 0,
+        discount: 0,
+        discounts: newDiscounts,
+      });
+      const newPayment: PaymentRecord = {
+        id: crypto.randomUUID(),
+        userId: barberId,
+        unitId: saleTransaction.unitId,
+        date: saleTransaction.date,
+        commissionAvulso: 0,
+        commissionProductGeneral: 0,
+        commissionProductAvant: 0,
+        commissionSubscriptions: 0,
+        discount: totals.discounts,
+        discountDescription: saleDesc,
+        discounts: newDiscounts,
+        amountToBePaid: totals.netPayment,
+        status: 'PENDENTE',
+        isPaid: false,
+        potData: [],
+      };
+      await addPayment(newPayment);
+    }
+  };
+
+  const removeInternalSaleFromPayment = async (item: FinancialTransaction) => {
+    if (kind !== 'INTERNAL_SALE' || !item.barberId) return;
+
+    const targetPayment = payments.find(p => 
+      p.userId === item.barberId && 
+      p.status !== 'PAGO' && 
+      (p.discounts || []).some(d => d.internalSaleId === item.id)
+    );
+
+    if (targetPayment) {
+      const remainingDiscounts = (targetPayment.discounts || []).filter(d => d.internalSaleId !== item.id);
+      const totals = calculatePaymentTotals({
+        commissionAvulso: targetPayment.commissionAvulso,
+        commissionProductGeneral: targetPayment.commissionProductGeneral,
+        commissionProductAvant: targetPayment.commissionProductAvant,
+        commissionSubscriptions: targetPayment.commissionSubscriptions,
+        discount: 0,
+        discounts: remainingDiscounts,
+      });
+
+      const hasCommissions = (targetPayment.commissionAvulso || 0) > 0 || (targetPayment.commissionProductGeneral || 0) > 0 || (targetPayment.commissionProductAvant || 0) > 0 || (targetPayment.commissionSubscriptions || 0) > 0;
+      if (!hasCommissions && remainingDiscounts.length === 0) {
+        await deletePayment(targetPayment.id);
+      } else {
+        await updatePayment({
+          ...targetPayment,
+          discounts: remainingDiscounts,
+          discount: totals.discounts,
+          discountDescription: remainingDiscounts.map(d => d.description).filter(Boolean).join(', '),
+          amountToBePaid: totals.netPayment,
+        });
+      }
+    }
+  };
 
   const newRecord = () => {
     setEditing(null);
@@ -47,9 +199,35 @@ export default function OperationalControls({ kind, selectedUnit, strictUnitScop
       ...(editing || {}), id: editing?.id || `${categoryByKind[kind].toLowerCase()}_${Date.now()}`, type: isCourtesy ? 'EXPENSE' : 'INCOME', category: categoryByKind[kind], description: form.itemName.trim(), amount: Number(amount.toFixed(2)), date: form.date, dueDate: form.date, unitId: form.unitId,
       status: isCourtesy ? 'PAGO' : form.status, recurrence: 'NONE', installments: 1, classification: isCourtesy ? 'Cortesia' : 'Venda interna', subclassification: form.itemName.trim(), sourceChannel: isCourtesy ? 'COURTESY' : 'OTHER', paymentMethod: isCourtesy ? 'COURTESY' : 'OTHER', movementNature: isCourtesy ? 'COMMERCIAL_DISCOUNT' : 'REVENUE', reconciliationStatus: 'NOT_APPLICABLE', clientName: isCourtesy ? form.clientName.trim() : barberName, barberId: form.barberId, itemName: form.itemName.trim(),
     };
-    try { setSaving(true); editing ? await updateTransaction(item) : await addTransaction(item); setOpen(false); } catch { window.alert('Não foi possível salvar. Verifique sua conexão e tente novamente.'); } finally { setSaving(false); }
+    try {
+      setSaving(true);
+      if (editing) {
+        await updateTransaction(item);
+      } else {
+        await addTransaction(item);
+      }
+      if (kind === 'INTERNAL_SALE') {
+        await syncInternalSaleWithPayment(item, editing);
+      }
+      setOpen(false);
+    } catch {
+      window.alert('Não foi possível salvar. Verifique sua conexão e tente novamente.');
+    } finally {
+      setSaving(false);
+    }
   };
-  const remove = async (item: FinancialTransaction) => { if (window.confirm('Deseja excluir este registro?')) try { await deleteTransaction(item.id); } catch { window.alert('Não foi possível excluir o registro.'); } };
+  const remove = async (item: FinancialTransaction) => {
+    if (window.confirm('Deseja excluir este registro?')) {
+      try {
+        await deleteTransaction(item.id);
+        if (kind === 'INTERNAL_SALE') {
+          await removeInternalSaleFromPayment(item);
+        }
+      } catch {
+        window.alert('Não foi possível excluir o registro.');
+      }
+    }
+  };
 
   return <div className="space-y-4 pb-6">
     <header className="app-themed-panel flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/[0.08] dark:bg-[#062222] sm:flex-row sm:items-center sm:justify-between">

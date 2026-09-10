@@ -1,13 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../store';
 import { PaymentRecord, PotServiceData } from '../types';
-import { FileText, Plus, Save, Trash2, Check, X, DollarSign, User as UserIcon, Edit2, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Plus, Save, Trash2, Check, X, DollarSign, User as UserIcon, Edit2, ChevronDown, ChevronRight, ShoppingBag } from 'lucide-react';
 import { AppEmptyState, AppPageHeader } from './ui/AppPrimitives';
 import { createBarberPaymentNotification } from '../notificationService';
 import { calculatePaymentTotals } from '../services/financialEngine';
 
 export function PaymentsTab() {
-  const { users, payments, addPayment, updatePayment, deletePayment, addTransaction, deleteTransaction, catalog, systemUnits, addNotification } = useStore();
+  const { users, payments, addPayment, updatePayment, deletePayment, transactions, updateTransaction, addTransaction, deleteTransaction, catalog, systemUnits, addNotification } = useStore();
   
   const barbers = useMemo(() => {
     return users.filter(u => u.role === 'BARBER' || u.role === 'MANICURE');
@@ -85,7 +85,7 @@ export function PaymentsTab() {
   const [comProdGeral, setComProdGeral] = useState<number>(0);
   const [comProdAvant, setComProdAvant] = useState<number>(0);
   const [comAssinaturas, setComAssinaturas] = useState<number>(0);
-  const [discountsList, setDiscountsList] = useState<{description: string, value: number}[]>([{ description: '', value: 0 }]);
+  const [discountsList, setDiscountsList] = useState<{description: string, value: number, internalSaleId?: string}[]>([{ description: '', value: 0 }]);
   const [valorPago, setValorPago] = useState<number>(0);
   const [paymentStatus, setPaymentStatus] = useState<'PENDENTE' | 'AGENDADO' | 'PAGO'>('PENDENTE');
   const [potPercentage, setPotPercentage] = useState<number>(0);
@@ -104,12 +104,58 @@ export function PaymentsTab() {
   const selectedBarber = barbers.find(b => b.id === selectedBarberId);
   const barberPayments = payments.filter(p => p.userId === selectedBarberId).sort((a,b) => b.date.localeCompare(a.date));
 
+  // Vendas internas pendentes vinculadas ao barbeiro selecionado
+  const pendingInternalSales = useMemo(() => {
+    if (!selectedBarberId) return [];
+    const paidInternalSaleIds = new Set<string>();
+    payments.forEach(p => {
+      if (p.status === 'PAGO' || p.isPaid) {
+        (p.discounts || []).forEach(d => {
+          if (d.internalSaleId) paidInternalSaleIds.add(d.internalSaleId);
+        });
+      }
+    });
+
+    return (transactions || []).filter(t => 
+      t.category === 'VENDA_INTERNA' && 
+      t.barberId === selectedBarberId && 
+      t.status !== 'RECEBIDO' &&
+      !paidInternalSaleIds.has(t.id)
+    );
+  }, [transactions, selectedBarberId, payments]);
+
+  const unaddedInternalSales = useMemo(() => {
+    const currentSaleIds = new Set(discountsList.map(d => d.internalSaleId).filter(Boolean));
+    return pendingInternalSales.filter(s => !currentSaleIds.has(s.id));
+  }, [pendingInternalSales, discountsList]);
+
+  const addPendingInternalSalesToForm = () => {
+    if (unaddedInternalSales.length === 0) return;
+    const newItems = unaddedInternalSales.map(sale => ({
+      description: `Venda interna: ${sale.itemName || sale.description}`,
+      value: sale.amount,
+      internalSaleId: sale.id,
+    }));
+    const filteredExisting = discountsList.filter(d => d.value > 0 || d.description.trim() !== '');
+    setDiscountsList([...filteredExisting, ...newItems]);
+  };
+
   const startNewPayment = () => {
      setEditingPaymentId(null);
      setIsEditing(true);
      setDate(new Date().toISOString().slice(0, 10));
      setComAvulso(0); setComProdGeral(0); setComProdAvant(0); setComAssinaturas(0);
-     setDiscountsList([{ description: '', value: 0 }]); setValorPago(0); setPaymentStatus('PENDENTE');
+     
+     // Adicionar automaticamente vendas internas pendentes do barbeiro aos descontos
+     const autoDiscounts = pendingInternalSales.map(sale => ({
+       description: `Venda interna: ${sale.itemName || sale.description}`,
+       value: sale.amount,
+       internalSaleId: sale.id,
+     }));
+
+     setDiscountsList(autoDiscounts.length > 0 ? autoDiscounts : [{ description: '', value: 0 }]);
+     setValorPago(0);
+     setPaymentStatus('PENDENTE');
      setPotPercentage(0);
      setPotServices([
        { id: 'corte', name: 'Corte', quantity: 0, tokens: 0 },
@@ -182,6 +228,27 @@ export function PaymentsTab() {
       sourceReference: record.id,
     });
   };
+
+  const syncPaymentWithInternalSales = async (record: PaymentRecord, isPaid: boolean) => {
+    const saleIds = (record.discounts || [])
+      .map(d => d.internalSaleId)
+      .filter(Boolean) as string[];
+
+    if (saleIds.length === 0) return;
+
+    for (const saleId of saleIds) {
+      const trans = (transactions || []).find(t => t.id === saleId);
+      if (trans) {
+        const expectedStatus = isPaid ? 'RECEBIDO' : 'PENDENTE';
+        if (trans.status !== expectedStatus) {
+          await updateTransaction({
+            ...trans,
+            status: expectedStatus,
+          });
+        }
+      }
+    }
+  };
   
   const handleSavePayment = async () => {
       const record: PaymentRecord = {
@@ -222,6 +289,7 @@ export function PaymentsTab() {
            );
         }
         await syncPaymentWithCash(record, previousWasPaid);
+        await syncPaymentWithInternalSales(record, record.status === 'PAGO');
       } catch (error) {
         console.error('Erro ao salvar pagamento e sincronizar com o Caixa:', error);
         alert('Não foi possível salvar o pagamento ou sincronizá-lo com o Caixa. Tente novamente.');
@@ -241,6 +309,7 @@ export function PaymentsTab() {
     try {
       await updatePayment(updatedPayment);
       await syncPaymentWithCash(updatedPayment, previousWasPaid);
+      await syncPaymentWithInternalSales(updatedPayment, newStatus === 'PAGO');
     } catch (error) {
       console.error('Erro ao atualizar status e sincronizar com o Caixa:', error);
       alert('Não foi possível atualizar o status ou sincronizá-lo com o Caixa.');
@@ -249,8 +318,12 @@ export function PaymentsTab() {
 
   const handleDeletePayment = async (paymentId: string) => {
     try {
+      const paymentToDelete = payments.find(p => p.id === paymentId);
       await deletePayment(paymentId);
       await deleteTransaction(getCommissionTransactionId(paymentId));
+      if (paymentToDelete) {
+        await syncPaymentWithInternalSales(paymentToDelete, false);
+      }
       setDeleteConfirmId(null);
     } catch (error) {
       console.error('Erro ao excluir pagamento e lançamento do Caixa:', error);
@@ -383,42 +456,62 @@ export function PaymentsTab() {
                            </div>
                            
                            <div className="border-t pt-4">
-                              <h3 className="text-sm font-bold text-red-700 dark:text-red-400 uppercase bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-lg inline-block mb-3">Abatimentos</h3>
-                              {discountsList.map((d, index) => (
-                                <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-3 items-end">
-                                   <div className="md:col-span-2">
-                                      <label className="block text-xs font-semibold text-gray-600 mb-1">Desconto (R$)</label>
-                                      <input type="number" step="0.01" value={d.value === 0 ? '' : d.value} onChange={e => {
-                                         const newList = [...discountsList];
-                                         newList[index] = { ...newList[index], value: parseFloat(e.target.value) || 0 };
-                                         setDiscountsList(newList);
-                                      }} className="w-full border border-gray-300 dark:border-zinc-800 p-2 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-zinc-950 text-gray-900 dark:text-white" />
-                                   </div>
-                                   <div className="md:col-span-2">
-                                      <label className="block text-xs font-semibold text-gray-600 mb-1">Discriminação</label>
-                                      <input type="text" placeholder="Motivo do desconto..." value={d.description} onChange={e => {
-                                         const newList = [...discountsList];
-                                         newList[index] = { ...newList[index], description: e.target.value };
-                                         setDiscountsList(newList);
-                                      }} className="w-full border border-gray-300 dark:border-zinc-800 p-2 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-zinc-950 text-gray-900 dark:text-white" />
-                                   </div>
-                                   <div className="md:col-span-1 pb-1">
-                                      <button type="button" onClick={() => {
-                                         if(discountsList.length > 1) {
-                                           setDiscountsList(discountsList.filter((_, i) => i !== index));
-                                         } else {
-                                           setDiscountsList([{description: '', value: 0}]);
-                                         }
-                                      }} className="p-2 text-gray-400 hover:text-red-500" title="Remover desconto">
-                                         <Trash2 className="w-5 h-5"/>
-                                      </button>
-                                   </div>
-                                </div>
-                              ))}
-                              <button type="button" onClick={() => setDiscountsList([...discountsList, {description: '', value: 0}])} className="text-sm text-blue-600 font-semibold flex items-center gap-1 mt-2 hover:text-blue-800">
-                                <Plus className="w-4 h-4"/> Adicionar mais um abatimento
-                              </button>
-                           </div>
+                               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                 <h3 className="text-sm font-bold text-red-700 dark:text-red-400 uppercase bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-lg inline-block">Abatimentos</h3>
+                                 {unaddedInternalSales.length > 0 && (
+                                   <button
+                                     type="button"
+                                     onClick={addPendingInternalSalesToForm}
+                                     className="text-xs bg-purple-100 hover:bg-purple-200 dark:bg-purple-950/40 dark:hover:bg-purple-900/60 text-purple-800 dark:text-purple-300 px-3 py-1.5 rounded-lg font-bold transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                                     title="Importar vendas de produtos não incluídas neste pagamento"
+                                   >
+                                     <ShoppingBag className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                                     + Incluir {unaddedInternalSales.length} venda(s) interna(s) pendente(s) (R$ {unaddedInternalSales.reduce((s, it) => s + (it.amount || 0), 0).toFixed(2)})
+                                   </button>
+                                 )}
+                               </div>
+                               {discountsList.map((d, index) => (
+                                 <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-3 items-end">
+                                    <div className="md:col-span-2">
+                                       <label className="block text-xs font-semibold text-gray-600 mb-1">Desconto (R$)</label>
+                                       <input type="number" step="0.01" value={d.value === 0 ? '' : d.value} onChange={e => {
+                                          const newList = [...discountsList];
+                                          newList[index] = { ...newList[index], value: parseFloat(e.target.value) || 0 };
+                                          setDiscountsList(newList);
+                                       }} className="w-full border border-gray-300 dark:border-zinc-800 p-2 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-zinc-950 text-gray-900 dark:text-white font-mono" />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                       <div className="flex items-center justify-between mb-1">
+                                         <label className="block text-xs font-semibold text-gray-600">Discriminação</label>
+                                         {d.internalSaleId && (
+                                           <span className="text-[10px] font-extrabold uppercase bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded border border-purple-200/50 dark:border-purple-800/40">
+                                             Venda Interna
+                                           </span>
+                                         )}
+                                       </div>
+                                       <input type="text" placeholder="Motivo do desconto..." value={d.description} onChange={e => {
+                                          const newList = [...discountsList];
+                                          newList[index] = { ...newList[index], description: e.target.value };
+                                          setDiscountsList(newList);
+                                       }} className="w-full border border-gray-300 dark:border-zinc-800 p-2 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-zinc-950 text-gray-900 dark:text-white" />
+                                    </div>
+                                    <div className="md:col-span-1 pb-1">
+                                       <button type="button" onClick={() => {
+                                          if(discountsList.length > 1) {
+                                            setDiscountsList(discountsList.filter((_, i) => i !== index));
+                                          } else {
+                                            setDiscountsList([{description: '', value: 0}]);
+                                          }
+                                       }} className="p-2 text-gray-400 hover:text-red-500 cursor-pointer" title="Remover desconto">
+                                          <Trash2 className="w-5 h-5"/>
+                                       </button>
+                                    </div>
+                                 </div>
+                               ))}
+                               <button type="button" onClick={() => setDiscountsList([...discountsList, {description: '', value: 0}])} className="text-sm text-blue-600 font-semibold flex items-center gap-1 mt-2 hover:text-blue-800 cursor-pointer">
+                                 <Plus className="w-4 h-4"/> Adicionar mais um abatimento
+                               </button>
+                            </div>
 
                            <div className="bg-gray-50 dark:bg-zinc-800/60 p-4 border dark:border-zinc-800 rounded-xl space-y-3 mt-4">
                               <div className="flex justify-between items-center text-sm">
@@ -502,12 +595,20 @@ export function PaymentsTab() {
                  </div>
               ) : (
                  <div className="bg-white dark:bg-zinc-900 p-6 dark:border-zinc-800 rounded-2xl shadow-sm border border-gray-200">
-                    <div className="flex justify-between items-center mb-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                        <div>
-                         <h2 className="text-xl font-bold text-gray-900 border-b pb-2 inline-block">Histórico de Pagamentos</h2>
-                         <p className="text-sm text-gray-500 mt-1">Barbeiro: <span className="font-bold text-gray-800">{selectedBarber?.name}</span></p>
+                         <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-100 border-b pb-2 inline-block">Histórico de Pagamentos</h2>
+                         <div className="flex flex-wrap items-center gap-2.5 mt-2">
+                           <p className="text-sm text-gray-500 dark:text-zinc-400">Barbeiro: <span className="font-bold text-gray-800 dark:text-zinc-200">{selectedBarber?.name}</span></p>
+                           {pendingInternalSales.length > 0 && (
+                             <span className="text-2xs bg-purple-100 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 px-2.5 py-1 rounded-full font-bold flex items-center gap-1 border border-purple-200/50 dark:border-purple-800/40" title="Vendas de produtos vinculadas aguardando quitação nos pagamentos">
+                               <ShoppingBag className="w-3.5 h-3.5" />
+                               {pendingInternalSales.length} venda(s) interna(s) pendente(s) de desconto (R$ {pendingInternalSales.reduce((s, it) => s + (it.amount || 0), 0).toFixed(2)})
+                             </span>
+                           )}
+                         </div>
                        </div>
-                       <button onClick={startNewPayment} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-all flex items-center gap-2">
+                       <button onClick={startNewPayment} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-all flex items-center gap-2 cursor-pointer self-start sm:self-auto">
                            <Plus className="w-5 h-5"/> Novo Pagamento
                        </button>
                     </div>
@@ -569,13 +670,20 @@ export function PaymentsTab() {
                                         <div className="pt-2 border-t mt-1">
                                           {p.discounts.map((d, i) => d.value > 0 && (
                                             <p key={i} className="text-sm flex justify-between text-red-600 pl-2 mb-1">
-                                              <span>Desc. ({d.description || 'S/N'})</span>
-                                              <b>- R$ {d.value.toFixed(2)}</b>
+                                              <span className="flex items-center gap-1.5 truncate mr-2">
+                                                <span>Desc. ({d.description || 'S/N'})</span>
+                                                {d.internalSaleId && (
+                                                  <span className="text-[9px] font-extrabold uppercase bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 px-1 py-0.5 rounded border border-purple-200/50 dark:border-purple-800/40 shrink-0">
+                                                    Venda Interna
+                                                  </span>
+                                                )}
+                                              </span>
+                                              <b className="font-mono shrink-0">- R$ {d.value.toFixed(2)}</b>
                                             </p>
                                           ))}
                                         </div>
                                       ) : (
-                                        p.discount > 0 && <p className="text-sm flex justify-between pt-1 border-t"><span className="text-red-600">Desc. ({p.discountDescription})</span> <b className="text-red-600">- R$ {p.discount.toFixed(2)}</b></p>
+                                        p.discount > 0 && <p className="text-sm flex justify-between pt-1 border-t"><span className="text-red-600">Desc. ({p.discountDescription})</span> <b className="text-red-600 font-mono">- R$ {p.discount.toFixed(2)}</b></p>
                                       )}
                                       
                                       <p className="text-sm flex justify-between pt-1 border-t dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/80 p-1"><span className="text-gray-800 font-bold">Total a Pagar</span> <b className="text-blue-700">R$ {p.amountToBePaid.toFixed(2)}</b></p>

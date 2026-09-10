@@ -354,6 +354,8 @@ export function UnitsAnalysisDashboard() {
     updateMonthlyUnitStats,
     deleteMonthlyUnitStats,
     users,
+    transactions,
+    entries,
   } = useStore();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonthIdx, setSelectedMonthIdx] = useState(
@@ -593,11 +595,20 @@ export function UnitsAnalysisDashboard() {
             });
           }
 
+          const baseFaturamento = faturamentoTotal;
+          const valorCortesias = Math.floor(baseFaturamento * 0.025);
+          const valorVendasInternas = Math.floor(baseFaturamento * 0.035);
+          const faturamentoFinal = Math.max(0, baseFaturamento - valorCortesias + valorVendasInternas);
+
           const record: MonthlyUnitStats = {
             id: statsId,
             unitId: uid,
             month: monthStr,
-            faturamentoTotal,
+            baseFaturamento,
+            faturamentoTotal: faturamentoFinal,
+            valorCortesias,
+            valorVendasInternas,
+            faturamentoReal: faturamentoFinal,
             faturamentoAssinatura,
             assinantes,
             assinantesNovos,
@@ -684,6 +695,9 @@ export function UnitsAnalysisDashboard() {
         unitId: selectedUnitId,
         month: monthStr,
         faturamentoTotal: 0,
+        valorCortesias: undefined,
+        valorVendasInternas: undefined,
+        faturamentoReal: undefined,
         faturamentoAssinatura: 0,
         assinantes: 0,
         assinantesNovos: 0,
@@ -702,6 +716,53 @@ export function UnitsAnalysisDashboard() {
         extraValues: {},
       };
 
+      // 1. Cortesias automáticas registradas no período para a unidade
+      const transCortesias = (transactions || [])
+        .filter(t => 
+          (t.category === 'CONTROLE_CORTESIA' || t.classification === 'Cortesia' || t.sourceChannel === 'COURTESY') &&
+          t.date.startsWith(monthStr) &&
+          (selectedUnitId === 'ALL' || t.unitId === selectedUnitId)
+        )
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+      const entriesCortesias = (entries || [])
+        .filter(e => e.date.startsWith(monthStr) && (selectedUnitId === 'ALL' || e.unitId === selectedUnitId))
+        .reduce((sum, e) => {
+          if (typeof e.courtesyAmount === 'number' && e.courtesyAmount > 0) return sum + e.courtesyAmount;
+          if (e.cortesias) {
+            return sum + Object.values(e.cortesias).reduce((s, it) => s + (Number(it?.amount) || 0), 0);
+          }
+          return sum;
+        }, 0);
+
+      const autoCortesias = transCortesias > 0 ? transCortesias : entriesCortesias;
+
+      // 2. Vendas internas automáticas registradas no período para a unidade
+      const transVendasInternas = (transactions || [])
+        .filter(t => 
+          (t.category === 'VENDA_INTERNA' || t.classification === 'Venda interna') &&
+          t.date.startsWith(monthStr) &&
+          (selectedUnitId === 'ALL' || t.unitId === selectedUnitId)
+        )
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+      const entriesVendasInternas = (entries || [])
+        .filter(e => e.date.startsWith(monthStr) && (selectedUnitId === 'ALL' || e.unitId === selectedUnitId))
+        .reduce((sum, e) => sum + (Number(e.internalSaleAmount) || 0), 0);
+
+      const autoVendasInternas = transVendasInternas > 0 ? transVendasInternas : entriesVendasInternas;
+
+      const valorCortesias = typeof savedStats.valorCortesias === 'number' ? savedStats.valorCortesias : autoCortesias;
+      const valorVendasInternas = typeof savedStats.valorVendasInternas === 'number' ? savedStats.valorVendasInternas : autoVendasInternas;
+      
+      // Base interna de faturamento para viabilizar os cálculos de cortesias e vendas internas
+      const baseFaturamento = typeof savedStats.baseFaturamento === 'number'
+        ? savedStats.baseFaturamento
+        : ((savedStats.faturamentoTotal || 0) + (typeof savedStats.valorCortesias === 'number' ? savedStats.valorCortesias : 0) - (typeof savedStats.valorVendasInternas === 'number' ? savedStats.valorVendasInternas : 0));
+
+      // O Faturamento Total oficial reflete o resultado final de todo o cálculo (Base - Cortesias + Vendas Internas)
+      const faturamentoTotal = Math.max(0, baseFaturamento - valorCortesias + valorVendasInternas);
+
       const clientesAtendidos = savedStats.clientesAtendidos || 0;
       const servicosRealizados = savedStats.servicosRealizados || 0;
       const vendasProdutosQtd = savedStats.vendasProdutosQtd || 0;
@@ -713,6 +774,11 @@ export function UnitsAnalysisDashboard() {
         name: monthName.substring(0, 3),
         monthName,
         monthNum,
+        baseFaturamento,
+        faturamentoTotal,
+        valorCortesias,
+        valorVendasInternas,
+        faturamentoReal: faturamentoTotal,
         clientesAtendidos,
         servicosRealizados,
         vendasProdutosQtd,
@@ -720,14 +786,14 @@ export function UnitsAnalysisDashboard() {
         extraValues,
         ticketMedio:
           clientesAtendidos > 0
-            ? (savedStats.faturamentoTotal || 0) / clientesAtendidos
+            ? faturamentoTotal / clientesAtendidos
             : 0,
         geracaoDemanda:
           (savedStats.clientesNovos || 0) +
           (savedStats.clientesSemPreferencia || 0),
       };
     });
-  }, [selectedYear, selectedUnitId, monthlyUnitStats]);
+  }, [selectedYear, selectedUnitId, monthlyUnitStats, transactions, entries]);
 
   const handleUpdate = async (
     row: any,
@@ -740,7 +806,11 @@ export function UnitsAnalysisDashboard() {
       id: row.id,
       unitId: row.unitId,
       month: row.month,
+      baseFaturamento: row.baseFaturamento || 0,
       faturamentoTotal: row.faturamentoTotal || 0,
+      valorCortesias: row.valorCortesias || 0,
+      valorVendasInternas: row.valorVendasInternas || 0,
+      faturamentoReal: row.faturamentoTotal || 0,
       faturamentoAssinatura: row.faturamentoAssinatura || 0,
       assinantes: row.assinantes || 0,
       assinantesNovos: row.assinantesNovos || 0,
@@ -769,6 +839,25 @@ export function UnitsAnalysisDashboard() {
       updatePayload[field] = val;
     }
 
+    if (field === 'faturamentoTotal') {
+      updatePayload.faturamentoTotal = val;
+      const cort = updatePayload.valorCortesias || 0;
+      const vend = updatePayload.valorVendasInternas || 0;
+      updatePayload.baseFaturamento = Math.max(0, val + cort - vend);
+    } else if (field === 'valorCortesias') {
+      updatePayload.valorCortesias = val;
+      const base = updatePayload.baseFaturamento || updatePayload.faturamentoTotal || 0;
+      const vend = updatePayload.valorVendasInternas || 0;
+      updatePayload.faturamentoTotal = Math.max(0, base - val + vend);
+    } else if (field === 'valorVendasInternas') {
+      updatePayload.valorVendasInternas = val;
+      const base = updatePayload.baseFaturamento || updatePayload.faturamentoTotal || 0;
+      const cort = updatePayload.valorCortesias || 0;
+      updatePayload.faturamentoTotal = Math.max(0, base - cort + val);
+    }
+
+    updatePayload.faturamentoReal = updatePayload.faturamentoTotal;
+
     await updateMonthlyUnitStats(updatePayload);
   };
 
@@ -790,6 +879,9 @@ export function UnitsAnalysisDashboard() {
   const totals = monthRows.reduce(
     (acc, row) => {
       acc.faturamentoTotal += row.faturamentoTotal || 0;
+      acc.valorCortesias += row.valorCortesias || 0;
+      acc.valorVendasInternas += row.valorVendasInternas || 0;
+      acc.faturamentoReal += row.faturamentoTotal || 0;
       acc.faturamentoAssinatura += row.faturamentoAssinatura || 0;
       acc.assinantes += row.assinantes || 0;
       acc.assinantesNovos += row.assinantesNovos || 0;
@@ -814,6 +906,9 @@ export function UnitsAnalysisDashboard() {
     },
     {
       faturamentoTotal: 0,
+      valorCortesias: 0,
+      valorVendasInternas: 0,
+      faturamentoReal: 0,
       faturamentoAssinatura: 0,
       assinantes: 0,
       assinantesNovos: 0,
@@ -1133,17 +1228,29 @@ export function UnitsAnalysisDashboard() {
                 <div className="flex flex-wrap items-center gap-2 md:gap-4 text-xs">
                   {activeTab === "BARBEARIA" ? (
                     <>
-                      <div className="bg-white dark:bg-zinc-800 px-3 py-2 rounded-xl border border-gray-100 dark:border-zinc-800/80">
+                      <div className="bg-white dark:bg-zinc-800 px-3 py-2 rounded-xl border border-gray-100 dark:border-zinc-800/80 shadow-xs">
                         <span className="text-gray-400 dark:text-zinc-500 mr-1.5 font-medium">
-                          Faturamento:
+                          Faturamento Total:
                         </span>
-                        <strong className="text-green-600 dark:text-green-400 font-extrabold font-mono">
+                        <strong className="text-emerald-600 dark:text-emerald-400 font-extrabold font-mono">
                           {row.faturamentoTotal.toLocaleString("pt-BR", {
                             style: "currency",
                             currency: "BRL",
                           })}
                         </strong>
                       </div>
+
+                      {row.valorCortesias > 0 && (
+                        <div className="bg-rose-50 dark:bg-rose-950/30 px-2.5 py-1.5 rounded-xl border border-rose-200/50 dark:border-rose-900/40 text-rose-700 dark:text-rose-400 font-mono text-2xs font-bold" title="Cortesias descontadas">
+                          - Cortesias: {row.valorCortesias.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </div>
+                      )}
+
+                      {row.valorVendasInternas > 0 && (
+                        <div className="bg-blue-50 dark:bg-blue-950/30 px-2.5 py-1.5 rounded-xl border border-blue-200/50 dark:border-blue-900/40 text-blue-700 dark:text-blue-400 font-mono text-2xs font-bold" title="Vendas internas adicionadas">
+                          + Vendas Int: {row.valorVendasInternas.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </div>
+                      )}
 
                       <div className="bg-white dark:bg-zinc-800 px-3 py-2 rounded-xl border border-gray-100 dark:border-zinc-800/80">
                         <span className="text-gray-400 dark:text-zinc-500 mr-1.5 font-medium">
@@ -1223,12 +1330,28 @@ export function UnitsAnalysisDashboard() {
                           Indicadores Principais
                         </h4>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-3">
                           <CardInput
                             label="Faturamento Total"
                             value={row.faturamentoTotal}
                             onChange={(v) =>
                               handleUpdate(row, "faturamentoTotal", v)
+                            }
+                            prefix="R$"
+                          />
+                          <CardInput
+                            label="(-) Cortesias"
+                            value={row.valorCortesias}
+                            onChange={(v) =>
+                              handleUpdate(row, "valorCortesias", v)
+                            }
+                            prefix="R$"
+                          />
+                          <CardInput
+                            label="(+) Vendas Internas"
+                            value={row.valorVendasInternas}
+                            onChange={(v) =>
+                              handleUpdate(row, "valorVendasInternas", v)
                             }
                             prefix="R$"
                           />
@@ -1444,13 +1567,53 @@ export function UnitsAnalysisDashboard() {
 
         {activeTab === "BARBEARIA" ? (
           <>
-            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
-              <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-gray-200 dark:border-zinc-800/80 shadow-sm">
-                <span className="text-2xs font-extrabold text-gray-400 dark:text-zinc-500 block mb-1 uppercase tracking-wider">
+            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+              <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/60 shadow-sm">
+                <span className="text-2xs font-extrabold text-emerald-600 dark:text-emerald-400 block mb-1 uppercase tracking-wider">
                   Fat. Total Anual
                 </span>
-                <span className="text-sm sm:text-base font-black text-green-600 dark:text-green-400 font-mono">
+                <span className="text-sm sm:text-base font-black text-emerald-600 dark:text-emerald-400 font-mono">
                   {totals.faturamentoTotal.toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  })}
+                </span>
+              </div>
+
+
+              <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-rose-100 dark:border-rose-950/50 shadow-sm">
+                <span className="text-2xs font-extrabold text-rose-500 block mb-1 uppercase tracking-wider">
+                  (-) Cortesias Total
+                </span>
+                <span className="text-sm sm:text-base font-bold text-rose-600 dark:text-rose-400 font-mono">
+                  {totals.valorCortesias.toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  })}
+                </span>
+              </div>
+
+              <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-blue-100 dark:border-blue-950/50 shadow-sm">
+                <span className="text-2xs font-extrabold text-blue-500 block mb-1 uppercase tracking-wider">
+                  (+) Vendas Int. Total
+                </span>
+                <span className="text-sm sm:text-base font-bold text-blue-600 dark:text-blue-400 font-mono">
+                  {totals.valorVendasInternas.toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  })}
+                </span>
+              </div>
+
+              <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-gray-200 dark:border-zinc-800/80 shadow-sm">
+                <span className="text-2xs font-extrabold text-gray-400 dark:text-zinc-500 block mb-1 uppercase tracking-wider">
+                  Ticket Médio Anual
+                </span>
+                <span className="text-sm sm:text-base font-black text-amber-600 dark:text-amber-400 font-mono">
+                  {(totals.clientesAtendidos > 0
+                    ? totals.faturamentoTotal / totals.clientesAtendidos
+                    : 0
+                  ).toLocaleString("pt-BR", {
                     style: "currency",
                     currency: "BRL",
                   })}
@@ -1461,23 +1624,8 @@ export function UnitsAnalysisDashboard() {
                 <span className="text-2xs font-extrabold text-gray-400 dark:text-zinc-500 block mb-1 uppercase tracking-wider">
                   Fat. Assinaturas
                 </span>
-                <span className="text-sm sm:text-base font-black text-green-600 dark:text-green-400 font-mono">
+                <span className="text-sm sm:text-base font-black text-purple-600 dark:text-purple-400 font-mono">
                   {totals.faturamentoAssinatura.toLocaleString("pt-BR", {
-                    style: "currency",
-                    currency: "BRL",
-                  })}
-                </span>
-              </div>
-
-              <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-gray-200 dark:border-zinc-800/80 shadow-sm">
-                <span className="text-2xs font-extrabold text-gray-400 dark:text-zinc-500 block mb-1 uppercase tracking-wider">
-                  Ticket Médio Geral
-                </span>
-                <span className="text-sm sm:text-base font-black text-amber-600 dark:text-amber-400 font-mono">
-                  {(totals.clientesAtendidos > 0
-                    ? totals.faturamentoTotal / totals.clientesAtendidos
-                    : 0
-                  ).toLocaleString("pt-BR", {
                     style: "currency",
                     currency: "BRL",
                   })}

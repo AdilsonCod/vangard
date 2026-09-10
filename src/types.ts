@@ -74,7 +74,7 @@ export interface PaymentRecord {
   commissionSubscriptions: number;
   discount: number;
   discountDescription: string;
-  discounts?: { description: string; value: number }[];
+  discounts?: { description: string; value: number; internalSaleId?: string }[];
   amountToBePaid: number;
   status: 'PENDENTE' | 'AGENDADO' | 'PAGO';
   isPaid: boolean; // Keep for backward compatibility temp, but prefer status
@@ -138,7 +138,11 @@ export interface MonthlyUnitStats {
   id: string; // YYYY-MM_UNIT_ID
   unitId: string;
   month: string; // YYYY-MM
-  faturamentoTotal: number;
+  faturamentoTotal: number; // Faturamento oficial final da loja (reflete todo o cálculo de cortesias e vendas internas)
+  baseFaturamento?: number; // Base interna de faturamento antes de cortesias e vendas internas
+  valorCortesias?: number;
+  valorVendasInternas?: number;
+  faturamentoReal?: number;
   faturamentoServicos?: number;
   faturamentoProdutos?: number;
   faturamentoAssinatura: number;
