@@ -49,19 +49,12 @@ import {
   Calculator,
   Gift,
   ShoppingBag,
+  ClipboardList,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { User, CatalogItem, Target, Category, Subcategory, Role } from "../types";
 import { AnnouncementWall } from "./AnnouncementWall";
+import { getAdminNavigation } from "../config/adminNavigation";
 // Logo imported via direct asset path
-
-type AdminNavItem = {
-  id: string;
-  label: string;
-  section: string;
-  icon: LucideIcon;
-  subItems?: ReadonlyArray<{ id: string; label: string }>;
-};
 
 const ConfigEditor = lazy(() => import("./ConfigEditor").then(module => ({ default: module.ConfigEditor })));
 const UsersDashboard = lazy(() => import("./UsersDashboard").then(module => ({ default: module.UsersDashboard })));
@@ -78,6 +71,7 @@ const MessageDispatchDashboard = lazy(() => import("./MessageDispatchDashboard")
 const SmartLinksDashboard = lazy(() => import("./SmartLinksDashboard"));
 const CommissionCalculationView = lazy(() => import("./CommissionCalculationView"));
 const OperationalControls = lazy(() => import("./OperationalControls"));
+const FinancialAuditTrail = lazy(() => import("./FinancialAuditTrail"));
 
 export default function AdminDashboard() {
   const { currentUser, logout, themeLightBg, themeDarkBg, 
@@ -186,77 +180,7 @@ export default function AdminDashboard() {
     };
   };
 
-  const allNavItems: AdminNavItem[] = [
-    { id: "OVERVIEW", label: "Visão Geral", section: "Principal", icon: LayoutDashboard },
-    { 
-      id: "FINANCE", 
-      label: "Financeiro",
-      section: "Financeiro",
-      icon: PieChart,
-      subItems: [
-        { id: "FINANCE_RESUMO", label: "Resumo" },
-        { id: "FINANCE_CAIXA", label: "Caixa & Contas" },
-        { id: "FINANCE_CONCILIACAO_FINTECH", label: "Conciliação" },
-        { id: "FINANCE_CONCILIACAO", label: "Conciliação OFX" },
-        { id: "FINANCE_RECEBIMENTOS", label: "Baixa de Recebimentos" },
-        { id: "FINANCE_DESPESAS", label: "Baixa de Despesas" }
-      ]
-    },
-    { id: "PAYMENTS", label: "Pagamentos", section: "Financeiro", icon: DollarSign },
-    { id: "COMMISSION_CALCULATION", label: "Cálculo de Comissão", section: "Financeiro", icon: Calculator },
-    { id: "BARBERS", label: "Barbeiros e Metas", section: "Operação", icon: TrendingUp },
-    { 
-      id: "MANAGEMENT", 
-      label: "Análises",
-      section: "Operação",
-      icon: Briefcase,
-      subItems: [
-        { id: "MANAGEMENT_SVA", label: "SVA" },
-        { id: "MANAGEMENT_UNITS", label: "Análise de Unidades" },
-        { id: "MANAGEMENT_BARBERS", label: "Análise de Barbeiros" }
-      ]
-    },
-    { id: "AVISOS", label: "Mural de Avisos", section: "Operação", icon: Megaphone },
-    { id: "COURTESY_CONTROL", label: "Controle de Cortesias", section: "Financeiro", icon: Gift },
-    { id: "INTERNAL_SALES", label: "Vendas Internas", section: "Financeiro", icon: ShoppingBag },
-    { id: "MESSAGES", label: "Disparo de Mensagens", section: "Operação", icon: MessagesSquare },
-    { id: "SMART_LINKS", label: "Links Inteligentes", section: "Operação", icon: Link2 },
-    { 
-      id: "CATALOG", 
-      label: "Catálogo", 
-      section: "Cadastros",
-      icon: BookOpen,
-      subItems: [
-        { id: "CATALOG_PRODUCTS", label: "Produtos" },
-        { id: "CATALOG_SERVICES", label: "Serviços" },
-        { id: "CATALOG_CATEGORIES", label: "Categorias" }
-      ]
-    },
-    { id: "MARKETING", label: "Marketing", section: "Análises", icon: BarChart3 },
-    { 
-      id: "USERS", 
-      label: "Equipe e Unidades",
-      section: "Cadastros",
-      icon: Users,
-      subItems: [
-        { id: "USERS_STAFF", label: "Colaboradores" },
-        { id: "USERS_RECEPTION", label: "Recepção" },
-        { id: "USERS_MANAGEMENT", label: "Gerência" },
-        { id: "USERS_UNITS", label: "Unidades" }
-      ]
-    },
-    { id: "REPORTS", label: "Relatórios", section: "Dados", icon: FileText },
-    { id: "IMPORT", label: "Importações", section: "Dados", icon: Upload },
-    { id: "CONFIG", label: "Configurações", section: "Sistema", icon: Settings },
-  ];
-
-  const navItems = currentUser?.role === 'FINANCIAL' 
-    ? allNavItems.filter(item => item.id === "FINANCE" || item.id === "REPORTS" || item.id === "PAYMENTS" || item.id === "COMMISSION_CALCULATION" || item.id === "COURTESY_CONTROL" || item.id === "INTERNAL_SALES" || item.id === "CONFIG")
-    : currentUser?.role === 'MARKETING'
-    ? allNavItems.filter(item => item.id === "MARKETING" || item.id === "MESSAGES" || item.id === "SMART_LINKS" || item.id === "CONFIG")
-    : currentUser?.role === 'RECEPTION'
-    ? allNavItems.filter(item => item.id === "OVERVIEW" || item.id === "AVISOS" || item.id === "COURTESY_CONTROL" || item.id === "INTERNAL_SALES" || item.id === "MESSAGES" || item.id === "SMART_LINKS" || item.id === "CONFIG")
-    : allNavItems;
+  const navItems = getAdminNavigation(currentUser?.role);
 
   const navSections = useMemo(
     () => Array.from(new Set(navItems.map(item => item.section))),
@@ -737,6 +661,8 @@ export default function AdminDashboard() {
           <PaymentsTab />
         ) : activeTab === "COMMISSION_CALCULATION" ? (
           <CommissionCalculationView />
+        ) : activeTab === "FINANCIAL_AUDIT" ? (
+          <FinancialAuditTrail />
         ) : activeTab === "COURTESY_CONTROL" ? (
           <OperationalControls kind="COURTESY" selectedUnit={selectedUnit} strictUnitScope={currentUser?.role === 'RECEPTION'} />
         ) : activeTab === "INTERNAL_SALES" ? (

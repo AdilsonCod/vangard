@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { FinancialTransaction, PaymentRecord } from '../types';
+import { usePagination } from '../hooks/usePagination';
+import { Pagination } from './ui/Pagination';
 
 type ScheduledExpense = {
   key: string;
@@ -107,6 +109,8 @@ export function ExpenseSettlement() {
       total: items.reduce((sum, item) => sum + item.amount, 0),
     })).sort((a, b) => a.date.localeCompare(b.date));
   }, [filteredExpenses]);
+
+  const { currentData, currentPage, totalPages, goToPage, totalItems } = usePagination(groups);
 
   const totals = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -265,7 +269,7 @@ export function ExpenseSettlement() {
         <div className="divide-y divide-gray-100 dark:divide-zinc-800 lg:hidden">
           {groups.length === 0 ? (
             <p className="px-5 py-12 text-center text-sm text-gray-500">Nenhuma despesa pendente ou agendada.</p>
-          ) : groups.map(group => {
+          ) : currentData.map(group => {
             const expanded = expandedDates.has(group.date);
             const allSelected = group.items.every(item => selectedKeys.has(item.key));
             const overdue = group.date < today;
@@ -339,7 +343,7 @@ export function ExpenseSettlement() {
             <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
               {groups.length === 0 ? (
                 <tr><td colSpan={6} className="px-5 py-12 text-center text-gray-500">Nenhuma despesa pendente ou agendada.</td></tr>
-              ) : groups.map(group => {
+              ) : currentData.map(group => {
                 const expanded = expandedDates.has(group.date);
                 const allSelected = group.items.every(item => selectedKeys.has(item.key));
                 const overdue = group.date < today;
@@ -405,6 +409,7 @@ export function ExpenseSettlement() {
             </tbody>
           </table>
         </div>
+        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} totalItems={totalItems} />
       </section>
 
       {isSettlementOpen && (

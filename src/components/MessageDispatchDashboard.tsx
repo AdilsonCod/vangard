@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { AlertTriangle, CheckCircle2, Clock3, Link2, ListFilter, MessageCircle, Pause, Play, QrCode, Save, Send, ShieldCheck, Trash2, Users, Wifi, WifiOff } from 'lucide-react';
 import { db } from '../firebase';
@@ -6,6 +6,8 @@ import { authenticatedApi } from '../services/apiClient';
 import { useStore } from '../store';
 import { AppBadge, AppButton, AppCard, AppEmptyState, AppPageHeader, AppSectionHeader, appControlClass } from './ui/AppPrimitives';
 import { defaultUnitFor, scopedCollectionQuery } from '../services/firestoreScope';
+import { usePagination } from '../hooks/usePagination';
+import { Pagination } from './ui/Pagination';
 
 type LogEntry={id:string;time:string;text:string;type:'info'|'success'|'warning'};
 type BackendState={enabled:boolean;connectionStatus:'disconnected'|'connecting'|'qr'|'connected';currentQr:string;isSending:boolean;progress:number;total:number;currentAction:string;logs:LogEntry[];campaignStatus:'idle'|'running'|'completed'|'stopped';successCount:number;errorCount:number;errorDetails:{contact:string;error:string}[];runId:string};
@@ -13,6 +15,8 @@ type ContactList={id:string;name:string;contacts:string;unitId:string;createdAt:
 type DispatchHistory={id:string;name:string;createdAt:string;unitId:string;total:number;successCount:number;errorCount:number;status:string;createdBy:string};
 
 const initialBackend:BackendState={enabled:false,connectionStatus:'disconnected',currentQr:'',isSending:false,progress:0,total:0,currentAction:'Conecte o serviço para começar.',logs:[],campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],runId:''};
+const messageServiceUrl=String(import.meta.env.VITE_MESSAGE_SERVICE_URL||(import.meta.env.DEV?'http://localhost:3001':'')).replace(/\/$/,'');
+const messageApi=(path:string)=>`${messageServiceUrl}/api/message-dispatch/${path}`;
 const normalizeContacts=(value:string)=>{
   const raw=value.split(/[\n,;]+/).map(item=>item.trim()).filter(Boolean);
   const valid:string[]=[];const invalid:string[]=[];
@@ -36,27 +40,23 @@ export default function MessageDispatchDashboard(){
   const [history,setHistory]=useState<DispatchHistory[]>([]);
   const [feedback,setFeedback]=useState('');
   const [apiError,setApiError]=useState('');
-  const savedRun=useRef('');
   const parsed=useMemo(()=>normalizeContacts(contacts),[contacts]);
   const percentage=backend.total?Math.round(backend.progress/backend.total*100):0;
+
+  const { currentData: currentHistory, currentPage, totalPages, goToPage, totalItems } = usePagination(history, 10);
 
   useEffect(()=>onSnapshot(scopedCollectionQuery('message_contact_lists',currentUser),snapshot=>setLists(snapshot.docs.map(item=>({id:item.id,...item.data()} as ContactList)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))),[currentUser]);
   useEffect(()=>onSnapshot(scopedCollectionQuery('message_dispatch_history',currentUser),snapshot=>setHistory(snapshot.docs.map(item=>({id:item.id,...item.data()} as DispatchHistory)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,20))),[currentUser]);
   useEffect(()=>{
     let cancelled=false;
-    const poll=async()=>{try{const data=await authenticatedApi.json<BackendState>('/api/message-dispatch/status');if(!cancelled){setBackend(data);setApiError('');}}catch(error){if(!cancelled)setApiError(error instanceof Error?error.message:'Não foi possível consultar o serviço.');}};
+    const poll=async()=>{try{const data=await authenticatedApi.json<BackendState>(`${messageApi('status')}?unitId=${encodeURIComponent(unitId)}`);if(!cancelled){setBackend(data);setApiError('');}}catch(error){if(!cancelled){setBackend(initialBackend);setApiError(error instanceof Error?error.message:'Não foi possível consultar o serviço persistente de mensagens.');}}};
     void poll();const timer=setInterval(poll,1500);return()=>{cancelled=true;clearInterval(timer);};
-  },[]);
-  useEffect(()=>{
-    if(backend.campaignStatus!=='completed'||!backend.runId||savedRun.current===backend.runId)return;
-    savedRun.current=backend.runId;
-    void setDoc(doc(db,'message_dispatch_history',backend.runId),{name:campaignName.trim()||'Disparo sem título',createdAt:new Date().toISOString(),unitId,total:backend.total,successCount:backend.successCount,errorCount:backend.errorCount,status:'CONCLUIDO',createdBy:currentUser?.id||''},{merge:true});
-  },[backend.campaignStatus,backend.runId,backend.total,backend.successCount,backend.errorCount,campaignName,unitId,currentUser?.id]);
+  },[unitId]);
 
-  const call=async(path:string,body?:object)=>{setFeedback('');return authenticatedApi.json<Record<string,unknown>>(`/api/message-dispatch/${path}`,{method:'POST',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});};
-  const connect=async()=>{try{await call('connect');setFeedback('Conexão iniciada. Aguarde o QR Code.');}catch(error){setFeedback(error instanceof Error?error.message:'Falha ao conectar.');}};
-  const start=async()=>{if(!campaignName.trim()){setFeedback('Informe um nome para identificar o disparo.');return;}if(!parsed.valid.length){setFeedback('Inclua ao menos um contato válido.');return;}if(!message.trim()){setFeedback('Digite a mensagem que será enviada.');return;}if(!confirmedOptIn){setFeedback('Confirme que os contatos autorizaram o recebimento.');return;}try{await call('start',{contacts:parsed.valid,message,minDelay,maxDelay,simulateTyping,confirmedOptIn});setFeedback('Campanha iniciada. Não feche o servidor durante o processamento.');}catch(error){setFeedback(error instanceof Error?error.message:'Falha ao iniciar.');}};
-  const stop=async()=>{try{await call('stop');}catch(error){setFeedback(error instanceof Error?error.message:'Falha ao interromper.');}};
+  const call=async(path:string,body?:object)=>{setFeedback('');return authenticatedApi.json<Record<string,unknown>>(messageApi(path),{method:'POST',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});};
+  const connect=async()=>{try{await call('connect',{unitId});setFeedback('Conexão iniciada. Aguarde o QR Code.');}catch(error){setFeedback(error instanceof Error?error.message:'Falha ao conectar.');}};
+  const start=async()=>{if(!campaignName.trim()){setFeedback('Informe um nome para identificar o disparo.');return;}if(!parsed.valid.length){setFeedback('Inclua ao menos um contato válido.');return;}if(!message.trim()){setFeedback('Digite a mensagem que será enviada.');return;}if(!confirmedOptIn){setFeedback('Confirme que os contatos autorizaram o recebimento.');return;}try{await call('start',{campaignName,unitId,contacts:parsed.valid,message,minDelay,maxDelay,simulateTyping,confirmedOptIn});setFeedback('Campanha iniciada no serviço persistente. Você pode continuar usando o sistema normalmente.');}catch(error){setFeedback(error instanceof Error?error.message:'Falha ao iniciar.');}};
+  const stop=async()=>{const reason=prompt('Informe o motivo da interrupção:','Interrompida manualmente pelo operador.')?.trim();if(reason===undefined)return;try{await call('stop',{unitId,reason});}catch(error){setFeedback(error instanceof Error?error.message:'Falha ao interromper.');}};
   const saveList=async()=>{if(!parsed.valid.length){setFeedback('Não há contatos válidos para salvar.');return;}const name=prompt('Nome da lista de contatos:')?.trim();if(!name)return;const id=crypto.randomUUID();await setDoc(doc(db,'message_contact_lists',id),{name,contacts:parsed.valid.join('\n'),unitId,createdAt:new Date().toISOString(),createdBy:currentUser?.id||''});setFeedback('Lista salva no sistema.');};
   const etaSeconds=Math.max(0,parsed.valid.length-(backend.isSending?backend.progress:0))*((minDelay+maxDelay)/2+(simulateTyping?Math.min(6,Math.max(1.2,message.length*.045)):0));
   const eta=etaSeconds>=3600?`${Math.floor(etaSeconds/3600)}h ${Math.ceil(etaSeconds%3600/60)}min`:etaSeconds>=60?`${Math.ceil(etaSeconds/60)} min`:`${Math.ceil(etaSeconds)}s`;
@@ -75,7 +75,13 @@ export default function MessageDispatchDashboard(){
         <AppCard className="p-4 sm:p-5"><AppSectionHeader title="Registro em tempo real" description="Últimos eventos desta sessão."/><div className="mt-4 max-h-64 space-y-2 overflow-y-auto app-scrollbar">{backend.logs.length?backend.logs.map(log=><div key={log.id} className="flex gap-3 rounded-lg bg-gray-50 p-2 text-xs dark:bg-zinc-800/60"><span className="shrink-0 font-mono text-gray-400">{log.time}</span><span className={log.type==='success'?'text-emerald-600 dark:text-emerald-400':log.type==='warning'?'text-amber-600 dark:text-amber-400':''}>{log.text}</span></div>):<p className="py-8 text-center text-sm text-gray-400">Aguardando atividade.</p>}</div></AppCard>
       </div>
     </div>
-    <AppCard className="p-4 sm:p-5"><AppSectionHeader title="Histórico de campanhas" description="Resumo dos processamentos salvos no sistema."/><div className="mt-4 space-y-2">{history.length?history.map(item=><div key={item.id} className="grid gap-3 rounded-xl border border-gray-200 p-3 dark:border-zinc-800 sm:grid-cols-[minmax(0,1fr)_repeat(4,auto)] sm:items-center"><div><strong className="block text-sm">{item.name}</strong><span className="text-xs text-gray-400">{dateTime(item.createdAt)} · {systemUnits.find(unit=>unit.id===item.unitId)?.name||'Todas as unidades'}</span></div><Small label="Total" value={item.total}/><Small label="Entregues" value={item.successCount}/><Small label="Falhas" value={item.errorCount}/><AppBadge tone={item.errorCount?'warning':'success'}>{item.status}</AppBadge></div>):<AppEmptyState icon={<QrCode/>} title="Nenhum disparo registrado" description="As campanhas concluídas aparecerão aqui."/>}</div></AppCard>
+    <AppCard className="p-4 sm:p-5">
+      <AppSectionHeader title="Histórico de campanhas" description="Resumo dos processamentos salvos no sistema."/>
+      <div className="mt-4 space-y-2">
+        {history.length?currentHistory.map(item=><div key={item.id} className="grid gap-3 rounded-xl border border-gray-200 p-3 dark:border-zinc-800 sm:grid-cols-[minmax(0,1fr)_repeat(4,auto)] sm:items-center"><div><strong className="block text-sm">{item.name}</strong><span className="text-xs text-gray-400">{dateTime(item.createdAt)} · {systemUnits.find(unit=>unit.id===item.unitId)?.name||'Todas as unidades'}</span></div><Small label="Total" value={item.total}/><Small label="Entregues" value={item.successCount}/><Small label="Falhas" value={item.errorCount}/><AppBadge tone={item.errorCount?'warning':'success'}>{item.status}</AppBadge></div>):<AppEmptyState icon={<QrCode/>} title="Nenhum disparo registrado" description="As campanhas concluídas aparecerão aqui."/>}
+      </div>
+      <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} totalItems={totalItems} />
+    </AppCard>
     <div className="flex gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-xs text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-300"><ShieldCheck className="h-5 w-5 shrink-0"/><p>Use somente contatos com consentimento, mantenha uma opção clara de saída e respeite as políticas do WhatsApp. O sistema limita cada execução a 200 destinatários.</p></div>
   </div>;
 }

@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "dev:messages": "tsx message-service-server.ts",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs",
+    "build": "npm run typecheck && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs && npm run build:messages",
+    "build:messages": "esbuild message-service-server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/message-service.cjs",
     "start": "node dist/server.cjs",
+    "start:messages": "node dist/message-service.cjs",
     "lint": "eslint .",
     "test:rede-parser": "tsx scripts/test-rede-parser.ts",
     "test:commission": "tsx --test scripts/commission-calculator.test.ts",
@@ -28,6 +31,12 @@
     "test:unit-id-migration": "tsx --test scripts/unit-id-migration.test.ts",
     "test:financial-engine": "tsx --test scripts/financial-engine.test.ts scripts/commission-calculator.test.ts",
     "test:financial-period-lock": "tsx --test scripts/financial-period-lock.test.ts",
+    "test:financial-audit": "tsx --test scripts/financial-audit.test.ts",
+    "test:financial-presentation": "tsx --test scripts/financial-presentation.test.ts",
+    "test:data-import-modules": "tsx --test scripts/data-import-modules.test.ts",
+    "test:message-auth-store": "tsx --test scripts/message-auth-store.test.ts",
+    "test:message-dispatch-policy": "tsx --test scripts/message-dispatch-policy.test.ts",
+    "test:smart-link-security": "tsx --test scripts/smart-link-security.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

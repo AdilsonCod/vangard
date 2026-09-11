@@ -315,6 +315,22 @@ export interface FinancialPeriodEvent {
   createdAt: string;
   closingSnapshot: CashClosing;
 }
+export interface FinancialAuditEvent {
+  id: string;
+  createdAt: string;
+  occurredOn: string;
+  actorAuthUid: string;
+  actorId: string;
+  actorName: string;
+  actorRole: Role;
+  unitId: string;
+  action: 'CREATED' | 'UPDATED' | 'DELETED' | 'CLOSED' | 'REOPENED' | 'IMPORTED' | 'CALCULATED' | 'TRANSFERRED';
+  entityType: 'TRANSACTION' | 'PAYMENT' | 'RECONCILIATION' | 'IMPORT' | 'COMMISSION' | 'CASH_CLOSING';
+  entityId: string;
+  previousValue?: unknown;
+  newValue?: unknown;
+  metadata?: Record<string, unknown>;
+}
 export interface FinancialCategory {
   id: string;
   name: string;

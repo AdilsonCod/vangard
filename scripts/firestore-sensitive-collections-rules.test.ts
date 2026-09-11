@@ -7,7 +7,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, query, setDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const projectId = 'vans-task-9-rules';
 let environment: RulesTestEnvironment;
@@ -41,6 +41,8 @@ before(async () => {
     await setDoc(doc(db, 'cashClosings', closing.id), closing);
     await setDoc(doc(db, 'financialPeriodLocks', 'unit-a_2026-09-10'), { unitId: 'unit-a', period: '2026-09-10', closingId: closing.id, active: true });
     await setDoc(doc(db, 'financialPeriodLocks', 'unit-a_2026-09'), { unitId: 'unit-a', period: '2026-09', closingId: closing.id, active: true });
+    await setDoc(doc(db, 'smart_links', 'promo'), { unitId: 'unit-a', shortCode: 'promo', destinationUrl: 'https://example.com', totalClicks: 0, isActive: true });
+    await setDoc(doc(db, 'smart_link_clicks', 'allowed'), { linkId: 'promo', unitId: 'unit-a', shortCode: 'promo', destinationUrl: 'https://example.com', phase: 'ACTIVE', timestamp: new Date(0).toISOString(), device: 'Desktop', simulated: false });
   });
 });
 
@@ -119,8 +121,6 @@ test('coleções de mensagens permitem Recepção e negam Barbeiro', async () =>
   const barber = authDb('barber', 'BARBER');
   const collections = [
     'message_contact_lists',
-    'message_dispatch_history',
-    'dispatch_audit',
   ];
 
   for (const collectionName of collections) {
@@ -133,6 +133,8 @@ test('coleções de mensagens permitem Recepção e negam Barbeiro', async () =>
       marker: collectionName,
     }));
   }
+  await assertFails(setDoc(doc(reception, 'message_dispatch_history', 'server-only'), { unitId: 'unit-a' }));
+  await assertFails(setDoc(doc(reception, 'dispatch_audit', 'server-only'), { unitId: 'unit-a' }));
 });
 
 test('links inteligentes preservam resolução pública e restringem a gestão', async () => {
@@ -140,7 +142,7 @@ test('links inteligentes preservam resolução pública e restringem a gestão',
   const barber = authDb('barber', 'BARBER');
   const anonymous = environment.unauthenticatedContext().firestore();
 
-  await assertSucceeds(setDoc(doc(marketing, 'smart_links', 'promo'), {
+  await assertFails(setDoc(doc(marketing, 'smart_links', 'client-write-denied'), {
     unitId: 'unit-a',
     shortCode: 'promo',
     destinationUrl: 'https://example.com',
@@ -165,7 +167,7 @@ test('links inteligentes preservam resolução pública e restringem a gestão',
     referrer: '',
     simulated: false,
   };
-  await assertSucceeds(setDoc(doc(marketing, 'smart_link_clicks', 'allowed'), click));
+  await assertFails(setDoc(doc(marketing, 'smart_link_clicks', 'client-write-denied'), click));
   await assertFails(getDoc(doc(barber, 'smart_link_clicks', 'allowed')));
 });
 
@@ -207,6 +209,21 @@ test('auditoria permite leitura administrativa, nega leitura comum e toda escrit
   assert.equal(snapshot.exists(), true);
   await assertFails(getDoc(doc(barber, 'auditLogs', 'seed')));
   await assertFails(setDoc(doc(admin, 'auditLogs', 'client-write'), { action: 'INVALID' }));
+});
+
+test('trilha financeira aceita inclusão atribuída ao autor e permanece imutável', async () => {
+  const admin = authDb('admin', 'ADMIN');
+  const finance = authDb('finance', 'FINANCIAL');
+  const financeB = authDb('finance-b', 'FINANCIAL');
+  const event = { actorAuthUid: 'finance', actorId: 'finance', actorName: 'Financeiro', actorRole: 'FINANCIAL', unitId: 'unit-a', occurredOn: '2026-09-11', createdAt: new Date().toISOString(), action: 'CREATED', entityType: 'TRANSACTION', entityId: 'transaction-1' };
+
+  await assertSucceeds(setDoc(doc(finance, 'financialAuditEvents', 'event-1'), event));
+  await assertSucceeds(getDoc(doc(admin, 'financialAuditEvents', 'event-1')));
+  await assertFails(getDoc(doc(finance, 'financialAuditEvents', 'event-1')));
+  await assertFails(setDoc(doc(financeB, 'financialAuditEvents', 'event-cross-unit'), { ...event, actorAuthUid: 'finance-b', actorId: 'finance-b' }));
+  await assertFails(setDoc(doc(finance, 'financialAuditEvents', 'event-forged'), { ...event, actorAuthUid: 'admin', actorId: 'admin' }));
+  await assertFails(updateDoc(doc(admin, 'financialAuditEvents', 'event-1'), { action: 'DELETED' }));
+  await assertFails(deleteDoc(doc(admin, 'financialAuditEvents', 'event-1')));
 });
 
 test('coleções não inventariadas são negadas até para administrador', async () => {

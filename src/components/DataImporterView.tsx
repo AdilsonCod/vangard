@@ -22,6 +22,8 @@ import { parseDPotePDF, DPoteReport, parseDPoteSpreadsheet } from "../DPoteParse
 import { parseCashbarberProductsSpreadsheet, parseCashbarberProductsPDF, CashbarberProductReport } from "../CashbarberParser";
 import { AppCard, AppPageHeader, appControlClass } from "./ui/AppPrimitives";
 import { calculatePaymentTotals, calculateTotalRevenue, inferStandaloneRevenue } from "../services/financialEngine";
+import { createImportFingerprint, DataImportType, detectImportTypeFromFilename, findImportHeaderIndex, parseImportCurrency as parseCurrency, parseImportWholeNumber as parseWholeNumber } from "../services/dataImportParsing";
+import { ImportPreviewHeader } from "./importer/ImportPreviewHeader";
 
 export default function DataImporterView() {
   const {
@@ -48,20 +50,7 @@ export default function DataImporterView() {
   const [selectedYear, setSelectedYear] = useState(
     today.getFullYear().toString(),
   );
-  const [importType, setImportType] = useState<
-    | "SERVICOS"
-    | "PRODUTOS"
-    | "UNIDADE"
-    | "UNIDADE_ITENS"
-    | "UNIDADE_SERVICOS"
-    | "UNIDADE_PRODUTOS"
-    | "CATALOGO"
-    | "DPOTE_PDF"
-    | "CASHBARBER_PRODUTOS"
-    | "RELATORIO_09"
-    | "RELATORIO_17"
-    | "RELATORIO_33"
-  >("SERVICOS");
+  const [importType, setImportType] = useState<DataImportType>("SERVICOS");
   const isUnitItemsImport = ["UNIDADE_ITENS", "UNIDADE_SERVICOS", "UNIDADE_PRODUTOS"].includes(importType);
   const isClientMetricsImport = ["RELATORIO_09", "RELATORIO_17", "RELATORIO_33"].includes(importType);
   const [targetUnitId, setTargetUnitId] = useState<string>("");
@@ -105,14 +94,6 @@ export default function DataImporterView() {
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const sha256 = async (value: ArrayBuffer | string) => {
-    const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    return Array.from(new Uint8Array(digest))
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join("");
-  };
-
   const resetImportResult = () => {
     setParsedData([]);
     setRawData([]);
@@ -142,27 +123,7 @@ export default function DataImporterView() {
     setAvailableSheets([]);
     setSelectedSheet("");
 
-    const normalizedName = selectedFile.name
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
-    const detectedType = normalizedName.includes("matriz ass")
-      ? "DPOTE_PDF"
-      : normalizedName.includes("produtos barbeiros")
-        ? "CASHBARBER_PRODUTOS"
-        : normalizedName.includes("servicos barbeiros")
-          ? "SERVICOS"
-          : normalizedName.includes("servicos realizados")
-            ? "UNIDADE_SERVICOS"
-            : normalizedName.includes("relatorio produtos")
-              ? "UNIDADE_PRODUTOS"
-              : /relatorio\s*09/.test(normalizedName)
-                ? "RELATORIO_09"
-                : /relatorio\s*17/.test(normalizedName)
-                  ? "RELATORIO_17"
-                  : /relatorio\s*33/.test(normalizedName)
-                    ? "RELATORIO_33"
-              : null;
+    const detectedType = detectImportTypeFromFilename(selectedFile.name);
     if (detectedType) {
       setImportType(detectedType);
       setSuccessMessage("Tipo de relatório identificado automaticamente pelo nome do arquivo.");
@@ -170,7 +131,7 @@ export default function DataImporterView() {
 
     try {
       const buffer = await selectedFile.arrayBuffer();
-      setFileFingerprint(await sha256(buffer));
+      setFileFingerprint(await createImportFingerprint(buffer));
 
       if (/\.xlsx?$/i.test(selectedFile.name)) {
         const bytes = new Uint8Array(buffer);
@@ -192,64 +153,13 @@ export default function DataImporterView() {
       defval: "",
       raw: false,
     });
-    const keywords = [
-      "profissional", "barbeiro", "funcionario", "colaborador", "servico",
-      "produto", "item", "descricao", "quantidade", "qtd", "valor", "total",
-      "comissao", "unidade", "filial", "loja", "categoria", "cliente",
-    ];
-    let headerIndex = 0;
-    let bestScore = -1;
-
-    matrix.slice(0, 30).forEach((row, index) => {
-      const values = row.map((cell) => String(cell ?? "").trim()).filter(Boolean);
-      if (values.length < 2) return;
-      const normalized = values.join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-      const hits = keywords.filter((keyword) => normalized.includes(keyword)).length;
-      const score = hits * 10 + values.length;
-      if (score > bestScore) {
-        bestScore = score;
-        headerIndex = index;
-      }
-    });
+    const headerIndex = findImportHeaderIndex(matrix);
 
     return {
       rows: XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false, range: headerIndex }) as any[],
       headerIndex,
     };
   };
-
-  const parseCurrency = (val: string | number): number => {
-      if (!val) return 0;
-      if (typeof val === "number") return val;
-      let cleaned = String(val).replace(/R\$/gi, "").replace(/\s/g, "").trim();
-      const negative = /^\(.*\)$/.test(cleaned) || cleaned.startsWith("-");
-      cleaned = cleaned.replace(/[()\-+]/g, "").replace(/[^\d.,]/g, "");
-
-      const lastComma = cleaned.lastIndexOf(",");
-      const lastDot = cleaned.lastIndexOf(".");
-      if (lastComma >= 0 && lastDot >= 0) {
-        cleaned = lastComma > lastDot
-          ? cleaned.replace(/\./g, "").replace(",", ".")
-          : cleaned.replace(/,/g, "");
-      } else if (lastComma >= 0) {
-        cleaned = cleaned.replace(/\./g, "").replace(",", ".");
-      } else if ((cleaned.match(/\./g) || []).length > 1) {
-        const parts = cleaned.split(".");
-        const decimal = parts.at(-1)?.length === 2 ? `.${parts.pop()}` : "";
-        cleaned = `${parts.join("")}${decimal}`;
-      } else if (lastDot >= 0 && cleaned.length - lastDot - 1 === 3) {
-        cleaned = cleaned.replace(".", "");
-      }
-
-      const parsed = Number.parseFloat(cleaned) || 0;
-      return negative ? -parsed : parsed;
-    };
-
-    const parseWholeNumber = (val: unknown): number => {
-      if (typeof val === "number") return Math.round(val);
-      const normalized = String(val ?? "").replace(/[^\d-]/g, "");
-      return Number.parseInt(normalized, 10) || 0;
-    };
 
     const handleParsedRawData = (data: any[], warnings: string[] = []) => {
       if (!data || data.length === 0) {
@@ -915,7 +825,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
       try {
         let importJobRef: ReturnType<typeof doc> | null = null;
         if (file && fileFingerprint) {
-          const contextFingerprint = await sha256(
+          const contextFingerprint = await createImportFingerprint(
             `${fileFingerprint}|${importType}|${monthStr}|${targetUnitId || "AUTO"}|${targetBarberId || "ALL"}|${selectedSheet || "DEFAULT"}`,
           );
           importJobRef = doc(db, "dataImportJobs", contextFingerprint);
@@ -1762,50 +1672,18 @@ if (importType === "CASHBARBER_PRODUTOS") {
 
         {!isMappingColumns && parsedData.length > 0 && (
           <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm">
-            <div className="p-4 bg-gray-50 dark:bg-zinc-950 border-b border-gray-200 dark:border-zinc-800 flex flex-col md:flex-row items-center justify-between gap-4">
-              <div>
-                <h3 className="font-bold text-gray-900 dark:text-zinc-100">
-                  Pré-visualização da Importação
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-zinc-400">
-                  {importType === "CATALOGO"
-                    ? "Revise os itens que serão importados para o seu Catálogo. Itens com o mesmo nome serão atualizados."
-                    : isUnitItemsImport
-                      ? `Confirme a unidade destino. Este arquivo será tratado como ${importType === "UNIDADE_PRODUTOS" ? "venda de produtos" : importType === "UNIDADE_SERVICOS" ? "serviços realizados" : "itens mistos"}.`
-                      : importType === "UNIDADE"
-                        ? 'Se a unidade não foi encontrada automaticamente, você pode vinculá-la manualmente na coluna "Unidade do Sistema".'
-                        : 'Se o barbeiro não foi encontrado automaticamente, você pode vinculá-lo manualmente na coluna "Barbeiro do Sistema".'}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-                  <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-                    {importSummary.read} linhas lidas
-                  </span>
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                    {importSummary.valid} válidas
-                  </span>
-                  {importSummary.ignored > 0 && (
-                    <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                      {importSummary.ignored} ignoradas
-                    </span>
-                  )}
-                  <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-zinc-800 dark:text-zinc-300 inline-flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" /> duplicidade protegida
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="w-full md:w-auto px-6 py-2.5 bg-[var(--theme-color)] text-white font-bold rounded-lg hover:bg-[var(--theme-color-strong)] transition-colors shadow-lg shadow-[var(--theme-color)]/20 flex items-center justify-center gap-2"
-              >
-                {isSaving ? (
-                  <RefreshCcw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4" />
-                )}
-                Confirmar e Salvar
-              </button>
-            </div>
+            <ImportPreviewHeader
+              summary={importSummary}
+              isSaving={isSaving}
+              onSave={handleSave}
+              description={importType === "CATALOGO"
+                ? "Revise os itens que serão importados para o seu Catálogo. Itens com o mesmo nome serão atualizados."
+                : isUnitItemsImport
+                  ? `Confirme a unidade destino. Este arquivo será tratado como ${importType === "UNIDADE_PRODUTOS" ? "venda de produtos" : importType === "UNIDADE_SERVICOS" ? "serviços realizados" : "itens mistos"}.`
+                  : importType === "UNIDADE"
+                    ? 'Se a unidade não foi encontrada automaticamente, você pode vinculá-la manualmente na coluna "Unidade do Sistema".'
+                    : 'Se o barbeiro não foi encontrado automaticamente, você pode vinculá-lo manualmente na coluna "Barbeiro do Sistema".'}
+            />
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-gray-600 dark:text-zinc-300">

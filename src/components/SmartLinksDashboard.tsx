@@ -1,14 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  addDoc,
   collection,
-  deleteDoc,
-  doc,
   getDocs,
   onSnapshot,
   orderBy,
   query,
-  setDoc,
   where,
 } from "firebase/firestore";
 import QRCode from "qrcode";
@@ -49,6 +45,8 @@ import {
   AppSectionHeader,
   appControlClass,
 } from "./ui/AppPrimitives";
+import { usePagination } from "../hooks/usePagination";
+import { Pagination } from "./ui/Pagination";
 
 type LinkDraft = {
   title: string;
@@ -177,6 +175,9 @@ export default function SmartLinksDashboard() {
         ),
     [links, filter, search],
   );
+
+  const { currentData: currentVisible, currentPage, totalPages, goToPage, totalItems } = usePagination(visible, 20);
+
   const origin = location.origin;
   const publicUrl = (code: string) => `${origin}/r/${code}`;
   const create = () => {
@@ -284,17 +285,11 @@ export default function SmartLinksDashboard() {
         tags: draft.tags.map((x) => x.trim()).filter(Boolean),
         updatedAt: now,
       };
-      editing
-        ? await setDoc(doc(db, "smart_links", editing.id), payload, {
-            merge: true,
-          })
-        : await addDoc(collection(db, "smart_links"), {
-            ...payload,
-            ownerId: currentUser?.id || "",
-            createdAt: now,
-            totalClicks: 0,
-            isActive: true,
-          });
+      await authenticatedApi.json(editing ? `/api/smart-links/${encodeURIComponent(editing.id)}` : "/api/smart-links", {
+        method: editing ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       setOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao salvar.");
@@ -325,15 +320,10 @@ export default function SmartLinksDashboard() {
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
     });
   };
-  const toggle = (x: SmartLink) =>
-    setDoc(
-      doc(db, "smart_links", x.id),
-      { isActive: !x.isActive, updatedAt: new Date().toISOString() },
-      { merge: true },
-    );
+  const toggle = (x: SmartLink) => authenticatedApi.json(`/api/smart-links/${encodeURIComponent(x.id)}/toggle`, { method: "POST" });
   const remove = async (x: SmartLink) => {
     if (confirm(`Excluir “${x.title}”?`))
-      await deleteDoc(doc(db, "smart_links", x.id));
+      await authenticatedApi.request(`/api/smart-links/${encodeURIComponent(x.id)}`, { method: "DELETE" });
   };
   return (
     <div className="space-y-5">
@@ -400,7 +390,7 @@ export default function SmartLinksDashboard() {
           />
         ) : (
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {visible.map((x) => (
+            {currentVisible.map((x) => (
               <Card
                 key={x.id}
                 link={x}
@@ -415,6 +405,7 @@ export default function SmartLinksDashboard() {
             ))}
           </div>
         )}
+        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} totalItems={totalItems} />
       </AppCard>
       {open && (
         <Editor
@@ -1082,19 +1073,9 @@ function Simulator({
       window.clearTimeout(timer);
     };
   }, [value.at, value.link.id]);
-  const record = () =>
-    addDoc(collection(db, "smart_link_clicks"), {
-      linkId: value.link.id,
-      unitId: value.link.unitId,
-      shortCode: r.activeShortCode,
-      destinationUrl: r.url,
-      phase: r.phase,
-      cycleNumber: r.cycleNumber || null,
-      timestamp: new Date(value.at).toISOString(),
-      device: "simulador",
-      referrer: "Máquina do Tempo",
-      simulated: true,
-    });
+  const record = () => authenticatedApi.json(`/api/smart-links/${encodeURIComponent(value.link.id)}/simulated-click`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ at: new Date(value.at).toISOString() }),
+  });
   return (
     <Modal close={close}>
       <Head title="Máquina do Tempo" close={close} />

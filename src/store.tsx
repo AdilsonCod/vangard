@@ -21,6 +21,7 @@ import {
   FinClassification,
   FinSubclassification,
   FinancialPeriodEvent,
+  FinancialAuditEvent,
 } from './types';
 import { db, auth } from './firebase';
 import { collection, doc, documentId, setDoc, deleteDoc, getDoc, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
@@ -28,6 +29,7 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebas
 import { seedDatabase } from './firebase-sync';
 import { authenticatedProfile, endAuthenticatedSession, startAuthenticatedSession } from './services/authSession';
 import { assertFinancialPeriodOpen, validateReopening } from './services/financialPeriodLock';
+import { createFinancialAuditEvent } from './services/financialAudit';
 
 // Mock initial data
 export const DEFAULT_UNITS: SystemUnit[] = [
@@ -88,11 +90,13 @@ interface AppState {
   suppliers: Supplier[];
   finClassifications: FinClassification[];
   finSubclassifications: FinSubclassification[];
+  financialAuditEvents: FinancialAuditEvent[];
   addTransaction: (t: FinancialTransaction) => Promise<void>;
   updateTransaction: (t: FinancialTransaction) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   saveCashClosing: (closing: CashClosing) => Promise<void>;
   reopenCashClosing: (closingId: string, reason: string) => Promise<void>;
+  recordFinancialAudit: (event: Omit<FinancialAuditEvent, 'id' | 'createdAt' | 'actorAuthUid' | 'actorId' | 'actorName' | 'actorRole'>) => Promise<void>;
   addFinancialCategory: (cat: FinancialCategory) => Promise<void>;
   deleteFinancialCategory: (id: string) => Promise<void>;
   addSupplier: (supplier: Supplier) => Promise<void>;
@@ -233,6 +237,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [finClassifications, setFinClassifications] = useState<FinClassification[]>([]);
   const [finSubclassifications, setFinSubclassifications] = useState<FinSubclassification[]>([]);
+  const [financialAuditEvents, setFinancialAuditEvents] = useState<FinancialAuditEvent[]>([]);
   const [monthlyUnitStats, setMonthlyUnitStats] = useState<MonthlyUnitStats[]>([]);
   const [monthlyBarberStats, setMonthlyBarberStats] = useState<MonthlyBarberStats[]>([]);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
@@ -246,6 +251,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     setGdvSettings([]);
     setTransactions([]);
     setCashClosings([]);
+    setFinancialAuditEvents([]);
     setMonthlyUnitStats([]);
     setMonthlyBarberStats([]);
     setTargets({});
@@ -461,6 +467,9 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unsubFinSubclassifications = canReadUnitOperation ? onSnapshot(collection(db, 'finSubclassifications'), snap => {
       setFinSubclassifications(snap.docs.map(d => withDocumentId<FinSubclassification>(d)));
     }) : noSubscription;
+    const unsubFinancialAudit = isAdmin ? onSnapshot(collection(db, 'financialAuditEvents'), snap => {
+      setFinancialAuditEvents(snap.docs.map(d => withDocumentId<FinancialAuditEvent>(d)));
+    }) : noSubscription;
 
     return () => {
       unsubRankingSettings();
@@ -485,6 +494,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       unsubSuppliers();
       unsubFinClassifications();
       unsubFinSubclassifications();
+      unsubFinancialAudit();
     };
   }, [isInitializing, currentUser?.id, currentUser?.unit, (currentUser as any)?.unitId, currentUser?.role]);
 
@@ -549,16 +559,40 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     Object.keys(newObj).forEach(key => newObj[key] === undefined && delete newObj[key]);
     return newObj;
   };
+
+  const auditFor = (input: Omit<FinancialAuditEvent, 'id' | 'createdAt' | 'actorAuthUid' | 'actorId' | 'actorName' | 'actorRole'>) => {
+    if (!currentUser || !auth.currentUser) throw new Error('Sessão inválida para registrar a auditoria financeira.');
+    return createFinancialAuditEvent({
+      ...input,
+      actorAuthUid: auth.currentUser.uid,
+      actorId: currentUser.id,
+      actorName: currentUser.name,
+      actorRole: currentUser.role,
+    });
+  };
+
+  const recordFinancialAudit = async (input: Omit<FinancialAuditEvent, 'id' | 'createdAt' | 'actorAuthUid' | 'actorId' | 'actorName' | 'actorRole'>) => {
+    const event = auditFor(input);
+    await setDoc(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+  };
   
   const addTransaction = async (t: FinancialTransaction) => {
     assertFinancialPeriodOpen(t.unitId, t.date, cashClosings);
-    await setDoc(doc(db, 'transactions', t.id), cleanUndefined(t));
+    const event = auditFor({ unitId: t.unitId, occurredOn: t.date, action: 'CREATED', entityType: 'TRANSACTION', entityId: t.id, newValue: t });
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'transactions', t.id), cleanUndefined(t));
+    batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    await batch.commit();
   };
   const updateTransaction = async (t: FinancialTransaction) => {
     const previous = transactions.find(item => item.id === t.id);
     if (previous) assertFinancialPeriodOpen(previous.unitId, previous.date, cashClosings);
     assertFinancialPeriodOpen(t.unitId, t.date, cashClosings);
-    await setDoc(doc(db, 'transactions', t.id), cleanUndefined(t));
+    const event = auditFor({ unitId: t.unitId, occurredOn: t.date, action: 'UPDATED', entityType: 'TRANSACTION', entityId: t.id, previousValue: previous, newValue: t });
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'transactions', t.id), cleanUndefined(t));
+    batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    await batch.commit();
   };
   const saveCashClosing = async (closing: CashClosing) => {
     const existing = cashClosings.find(item => item.id === closing.id);
@@ -568,6 +602,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const batch = writeBatch(db);
     batch.set(doc(db, 'cashClosings', closing.id), cleanUndefined(closing));
     batch.set(doc(db, 'financialPeriodEvents', event.id), cleanUndefined(event));
+    const audit = auditFor({ unitId: closing.unitId, occurredOn: closing.date, action: 'CLOSED', entityType: 'CASH_CLOSING', entityId: closing.id, previousValue: existing, newValue: closing });
+    batch.set(doc(db, 'financialAuditEvents', audit.id), cleanUndefined(audit));
     batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date}`), { unitId: closing.unitId, period: closing.date, closingId: closing.id, active: true, updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
     batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date.slice(0, 7)}`), { unitId: closing.unitId, period: closing.date.slice(0, 7), closingId: closing.id, active: true, updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
     await batch.commit();
@@ -583,6 +619,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const batch = writeBatch(db);
     batch.set(doc(db, 'cashClosings', closing.id), cleanUndefined(reopened));
     batch.set(doc(db, 'financialPeriodEvents', event.id), cleanUndefined(event));
+    const audit = auditFor({ unitId: closing.unitId, occurredOn: closing.date, action: 'REOPENED', entityType: 'CASH_CLOSING', entityId: closing.id, previousValue: closing, newValue: reopened, metadata: { reason: reason.trim() } });
+    batch.set(doc(db, 'financialAuditEvents', audit.id), cleanUndefined(audit));
     batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date}`), { unitId: closing.unitId, period: closing.date, closingId: closing.id, active: false, updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
     const otherClosedDay = cashClosings.find(item => item.id !== closing.id && item.unitId === closing.unitId && item.date.startsWith(closing.date.slice(0, 7)) && item.status !== 'REOPENED');
     batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date.slice(0, 7)}`), { unitId: closing.unitId, period: closing.date.slice(0, 7), closingId: otherClosedDay?.id || closing.id, active: Boolean(otherClosedDay), updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
@@ -635,10 +673,15 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       }
     };
 
-    const deleteTransaction = async (id: string) => {
+  const deleteTransaction = async (id: string) => {
     const existing = transactions.find(item => item.id === id);
     if (existing) assertFinancialPeriodOpen(existing.unitId, existing.date, cashClosings);
-    await deleteDoc(doc(db, 'transactions', id));
+    if (!existing) throw new Error('Lançamento não encontrado para exclusão.');
+    const event = auditFor({ unitId: existing.unitId, occurredOn: existing.date, action: 'DELETED', entityType: 'TRANSACTION', entityId: id, previousValue: existing });
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'transactions', id));
+    batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    await batch.commit();
   };
   
   const deleteEntry = async (id: string) => {
@@ -658,24 +701,44 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
   const updateMonthlyUnitStats = async (stats: MonthlyUnitStats) => {
     assertFinancialPeriodOpen(stats.unitId, stats.month, cashClosings);
-    await setDoc(doc(db, 'monthlyUnitStats', stats.id), stats);
+    const previous = monthlyUnitStats.find(item => item.id === stats.id);
+    const event = auditFor({ unitId: stats.unitId, occurredOn: `${stats.month}-01`, action: 'IMPORTED', entityType: 'IMPORT', entityId: stats.id, previousValue: previous, newValue: stats, metadata: { target: 'monthlyUnitStats' } });
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'monthlyUnitStats', stats.id), stats);
+    batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    await batch.commit();
   };
 
   const updateMonthlyBarberStats = async (stats: MonthlyBarberStats) => {
     assertFinancialPeriodOpen(stats.unitId, stats.month, cashClosings);
-    await setDoc(doc(db, 'monthlyBarberStats', stats.id), stats);
+    const previous = monthlyBarberStats.find(item => item.id === stats.id);
+    const event = auditFor({ unitId: stats.unitId, occurredOn: `${stats.month}-01`, action: 'IMPORTED', entityType: 'IMPORT', entityId: stats.id, previousValue: previous, newValue: stats, metadata: { target: 'monthlyBarberStats', barberId: stats.barberId } });
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'monthlyBarberStats', stats.id), stats);
+    batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    await batch.commit();
   };
 
   const deleteMonthlyBarberStats = async (id: string) => {
     const existing = monthlyBarberStats.find(item => item.id === id);
     if (existing) assertFinancialPeriodOpen(existing.unitId, existing.month, cashClosings);
-    await deleteDoc(doc(db, 'monthlyBarberStats', id));
+    if (!existing) throw new Error('Indicador do barbeiro não encontrado para exclusão.');
+    const event = auditFor({ unitId: existing.unitId, occurredOn: `${existing.month}-01`, action: 'DELETED', entityType: 'IMPORT', entityId: id, previousValue: existing, metadata: { target: 'monthlyBarberStats' } });
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'monthlyBarberStats', id));
+    batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    await batch.commit();
   };
 
   const deleteMonthlyUnitStats = async (id: string) => {
     const existing = monthlyUnitStats.find(item => item.id === id);
     if (existing) assertFinancialPeriodOpen(existing.unitId, existing.month, cashClosings);
-    await deleteDoc(doc(db, 'monthlyUnitStats', id));
+    if (!existing) throw new Error('Indicador da unidade não encontrado para exclusão.');
+    const event = auditFor({ unitId: existing.unitId, occurredOn: `${existing.month}-01`, action: 'DELETED', entityType: 'IMPORT', entityId: id, previousValue: existing, metadata: { target: 'monthlyUnitStats' } });
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'monthlyUnitStats', id));
+    batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    await batch.commit();
   };
 
   const updateGDVSettings = async (settings: GDVSettings) => {
@@ -918,7 +981,12 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const addPayment = async (payment: PaymentRecord) => {
     const unitId = payment.unitId || users.find(user => user.id === payment.userId)?.unit || 'ALL';
     assertFinancialPeriodOpen(unitId, payment.date, cashClosings);
-    await setDoc(doc(db, 'payments', payment.id), cleanUndefined({ ...payment, unitId }));
+    const value = { ...payment, unitId };
+    const event = auditFor({ unitId, occurredOn: payment.date, action: 'CREATED', entityType: 'PAYMENT', entityId: payment.id, newValue: value });
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'payments', payment.id), cleanUndefined(value));
+    batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    await batch.commit();
   };
 
   const updatePayment = async (payment: PaymentRecord) => {
@@ -926,13 +994,24 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unitId = payment.unitId || users.find(user => user.id === payment.userId)?.unit || 'ALL';
     if (previous) assertFinancialPeriodOpen(previous.unitId || users.find(user => user.id === previous.userId)?.unit || 'ALL', previous.date, cashClosings);
     assertFinancialPeriodOpen(unitId, payment.date, cashClosings);
-    await setDoc(doc(db, 'payments', payment.id), cleanUndefined({ ...payment, unitId }));
+    const value = { ...payment, unitId };
+    const event = auditFor({ unitId, occurredOn: payment.date, action: 'UPDATED', entityType: 'PAYMENT', entityId: payment.id, previousValue: previous, newValue: value });
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'payments', payment.id), cleanUndefined(value));
+    batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    await batch.commit();
   };
 
   const deletePayment = async (id: string) => {
     const existing = payments.find(item => item.id === id);
     if (existing) assertFinancialPeriodOpen(existing.unitId || users.find(user => user.id === existing.userId)?.unit || 'ALL', existing.date, cashClosings);
-    await deleteDoc(doc(db, 'payments', id));
+    if (!existing) throw new Error('Pagamento não encontrado para exclusão.');
+    const unitId = existing.unitId || users.find(user => user.id === existing.userId)?.unit || 'ALL';
+    const event = auditFor({ unitId, occurredOn: existing.date, action: 'DELETED', entityType: 'PAYMENT', entityId: id, previousValue: existing });
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'payments', id));
+    batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    await batch.commit();
   };
 
   const addNotification = async (notification: SystemNotification) => {
@@ -1001,8 +1080,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   return (
     <StoreContext.Provider value={{ 
       quarterlyRankingVisible, setQuarterlyRankingVisible,
-      financialCategories, suppliers, finClassifications, finSubclassifications, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
-      login, logout, addUser, updateUser, attachUserAuthentication, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
+      financialCategories, suppliers, finClassifications, finSubclassifications, financialAuditEvents, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
+      login, logout, addUser, updateUser, attachUserAuthentication, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing, recordFinancialAudit, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
       updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, addNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, addAnnouncement, updateAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
       isDarkMode, setIsDarkMode
     }}>

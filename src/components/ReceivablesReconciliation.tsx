@@ -2,6 +2,8 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../store';
 import { FinancialTransaction } from '../types';
 import { CheckSquare, Square, DollarSign, CreditCard, Calendar, Filter, Download, Upload, FileSpreadsheet, ChevronDown, Layers, List } from 'lucide-react';
+import { usePagination } from '../hooks/usePagination';
+import { Pagination } from './ui/Pagination';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -62,6 +64,22 @@ export function ReceivablesReconciliation() {
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [filteredReceivables]);
+
+  const { 
+    currentData: currentReceivablesByDate, 
+    currentPage: currentPageByDate, 
+    totalPages: totalPagesByDate, 
+    goToPage: goToPageByDate, 
+    totalItems: totalItemsByDate 
+  } = usePagination(receivablesByDate);
+
+  const { 
+    currentData: currentFilteredReceivables, 
+    currentPage: currentPageDetailed, 
+    totalPages: totalPagesDetailed, 
+    goToPage: goToPageDetailed, 
+    totalItems: totalItemsDetailed 
+  } = usePagination(filteredReceivables);
 
   const toggleDateExpansion = (date: string) => {
     setExpandedDates(current => {
@@ -413,7 +431,7 @@ export function ReceivablesReconciliation() {
                     Nenhuma conta a receber pendente neste filtro.
                   </td>
                 </tr>
-              ) : receivablesByDate.map(group => {
+              ) : currentReceivablesByDate.map(group => {
                 const expanded = expandedDates.has(group.date);
                 const allSelected = group.transactions.every(transaction => selectedIds.has(transaction.id));
                 const isOverdue = group.date < new Date().toISOString().split('T')[0];
@@ -507,6 +525,7 @@ export function ReceivablesReconciliation() {
               })}
             </tbody>
           </table>
+          <Pagination currentPage={currentPageByDate} totalPages={totalPagesByDate} onPageChange={goToPageByDate} totalItems={totalItemsByDate} />
         </div>
       )}
 
@@ -541,7 +560,7 @@ export function ReceivablesReconciliation() {
                 </td>
               </tr>
             ) : (
-              filteredReceivables.map(tx => {
+              currentFilteredReceivables.map(tx => {
                 const isSelected = selectedIds.has(tx.id);
                 const txDate = tx.dueDate || tx.date;
                 const match = matchedImportData[tx.id];
@@ -609,6 +628,7 @@ export function ReceivablesReconciliation() {
             </tfoot>
           )}
         </table>
+        <Pagination currentPage={currentPageDetailed} totalPages={totalPagesDetailed} onPageChange={goToPageDetailed} totalItems={totalItemsDetailed} />
       </div>
       )}
 

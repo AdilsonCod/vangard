@@ -228,6 +228,19 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Trilha financeira append-only. O cliente pode registrar apenas eventos
+    // atribuídos à própria sessão; somente a gerência consulta o histórico.
+    match /financialAuditEvents/{eventId} {
+      allow read: if isAdmin();
+      allow create: if canReadFinancialOperation() &&
+        request.resource.data.actorAuthUid == request.auth.uid &&
+        request.resource.data.actorId == request.auth.uid &&
+        request.resource.data.createdAt is string &&
+        request.resource.data.unitId is string &&
+        (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update, delete: if false;
+    }
+
     match /notifications/{notificationId} {
       allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
@@ -316,30 +329,24 @@ service cloud.firestore {
 
     match /message_dispatch_history/{documentId} {
       allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
-      allow create: if canManageCommunication() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
-      allow update: if canManageCommunication() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
-      allow delete: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create, update, delete: if false;
     }
 
     match /dispatch_audit/{documentId} {
       allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
-      allow create: if canManageCommunication() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     // Links inteligentes são públicos somente para resolução. A administração e
     // os dados analíticos continuam restritos aos perfis de comunicação.
     match /smart_links/{linkId} {
       allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
-      allow create: if canManageCommunication() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
-      allow update: if canManageCommunication() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
-      allow delete: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create, update, delete: if false;
     }
 
     match /smart_link_clicks/{clickId} {
       allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
-      allow create: if canManageCommunication() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     // Logs de auditoria são imutáveis pelo cliente. A gravação deve ocorrer no

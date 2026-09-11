@@ -13,7 +13,7 @@ const currentPeriod = () => new Date().toISOString().slice(0, 7);
 const emptyBracket = (unitId: string): CommissionBracket => ({ id: crypto.randomUUID(), unitId, minimumRevenue: 0, maximumRevenue: 0, percentage: 0 });
 
 export default function CommissionCalculationView() {
-  const { currentUser, systemUnits, users, monthlyBarberStats, payments } = useStore();
+  const { currentUser, systemUnits, users, monthlyBarberStats, payments, recordFinancialAudit } = useStore();
   const allowedUnits = useMemo(() => systemUnits.filter((unit) => currentUser && canAccessCommissionUnit(currentUser.role, currentUser.unit, unit.id)), [currentUser, systemUnits]);
   const [unitId, setUnitId] = useState("");
   const [period, setPeriod] = useState(currentPeriod());
@@ -66,6 +66,7 @@ export default function CommissionCalculationView() {
       const config: CommissionConfig = { id: unitId, unitId, brackets: normalized, schemaVersion: 1, updatedAt: now, updatedBy: currentUser.id };
       batch.set(doc(db, "commissionConfigs", unitId), config);
       await batch.commit();
+      await recordFinancialAudit({ unitId, occurredOn: `${period}-01`, action: 'CALCULATED', entityType: 'COMMISSION', entityId: `commission_config_${unitId}_${period}`, previousValue: brackets, newValue: normalized, metadata: { period } });
       setMessage({ type: "success", text: "Faixas de comissão salvas com sucesso." });
     } catch (error: any) {
       console.error(error);
@@ -90,7 +91,7 @@ export default function CommissionCalculationView() {
         if (existing?.status === "PAGO" || paid) { protectedPayments += 1; return; }
         const lastDay = new Date(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0).getDate();
         const payment: PaymentRecord = {
-          id: existing?.id || paymentId, userId: stat.barberId, date: `${period}-${lastDay}`,
+          id: existing?.id || paymentId, userId: stat.barberId, unitId, date: `${period}-${lastDay}`,
           commissionAvulso: result.commission,
           commissionProductGeneral: existing?.commissionProductGeneral || 0,
           commissionProductAvant: existing?.commissionProductAvant || 0,
@@ -105,6 +106,7 @@ export default function CommissionCalculationView() {
       });
       if (!transferred) { setMessage({ type: "error", text: "Nenhuma comissão foi transferida porque os pagamentos deste período já estão quitados." }); return; }
       await batch.commit();
+      await recordFinancialAudit({ unitId, occurredOn: `${period}-01`, action: 'TRANSFERRED', entityType: 'COMMISSION', entityId: `commission_transfer_${unitId}_${period}`, newValue: { transferred, protectedPayments }, metadata: { period } });
       setMessage({ type: "success", text: `${transferred} comissão(ões) transferida(s) para Pagamentos${protectedPayments ? `; ${protectedPayments} pagamento(s) quitado(s) foram preservados` : ""}.` });
     } catch (error: any) {
       console.error(error);

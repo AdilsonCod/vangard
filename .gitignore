@@ -5,6 +5,7 @@ build/
 .env.local
 .DS_Store
 .whatsapp-session/
+data/
 .kilo/
 firebase-debug.log
 firestore-debug.log

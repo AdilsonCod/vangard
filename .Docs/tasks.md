@@ -208,7 +208,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 18 — Criar trilha de auditoria financeira
 
-- [ ] Registrar operações críticas de caixa, pagamentos, conciliações, importações e comissões.
+- [x] Registrar operações críticas de caixa, pagamentos, conciliações, importações e comissões.
 
 **Critérios de aprovação**
 
@@ -221,7 +221,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 19 — Preparar serviço persistente para Baileys
 
-- [ ] Separar o serviço de mensagens da execução efêmera da Vercel e documentar sua hospedagem persistente.
+- [x] Separar o serviço de mensagens da execução efêmera da Vercel e documentar sua hospedagem persistente.
 
 **Critérios de aprovação**
 
@@ -232,7 +232,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 20 — Completar auditoria e proteção do disparo
 
-- [ ] Vincular cada conexão, início, interrupção e resultado de campanha ao usuário autenticado e à unidade.
+- [x] Vincular cada conexão, início, interrupção e resultado de campanha ao usuário autenticado e à unidade.
 
 **Critérios de aprovação**
 
@@ -243,7 +243,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 21 — Endurecer o módulo de links inteligentes
 
-- [ ] Aplicar autorização do servidor às operações de gestão e reforçar as proteções de redirecionamento e cloaking.
+- [x] Aplicar autorização do servidor às operações de gestão e reforçar as proteções de redirecionamento e cloaking.
 
 **Critérios de aprovação**
 
@@ -256,7 +256,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 22 — Remover `dist` do controle de versão
 
-- [ ] Concluir a remoção dos artefatos compilados do Git e deixar a Vercel gerar o build a partir do código-fonte.
+- [x] Concluir a remoção dos artefatos compilados do Git e deixar a Vercel gerar o build a partir do código-fonte.
 
 **Critérios de aprovação**
 
@@ -267,7 +267,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 23 — Dividir os componentes de conciliação e financeiro
 
-- [ ] Extrair regras, tabelas, filtros, modais e formulários dos componentes financeiros maiores, sem alterar comportamento.
+- [x] Extrair regras, tabelas, filtros, modais e formulários dos componentes financeiros maiores, sem alterar comportamento.
 
 **Critérios de aprovação**
 
@@ -278,7 +278,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 24 — Dividir importador e painel administrativo
 
-- [ ] Separar parsers, validações, persistência, pré-visualização e formulários administrativos em módulos menores.
+- [x] Separar parsers, validações, persistência, pré-visualização e formulários administrativos em módulos menores.
 
 **Critérios de aprovação**
 
@@ -289,7 +289,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 25 — Paginar e virtualizar listas extensas
 
-- [ ] Implementar paginação ou virtualização nos históricos e tabelas com potencial de crescimento contínuo.
+- [x] Implementar paginação ou virtualização nos históricos e tabelas com potencial de crescimento contínuo.
 
 **Critérios de aprovação**
 

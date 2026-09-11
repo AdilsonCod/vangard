@@ -2,14 +2,12 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { configureMessageDispatch } from "./message-dispatch-service";
 import { configureSmartLinks } from "./smart-links-service";
 import { createRequireAuth, requireRoles } from './server-auth';
 import { verifyFirebaseIdToken } from './server-firebase-admin';
 
 const requireAuth = createRequireAuth(verifyFirebaseIdToken);
 const requireMarketingAccess = requireRoles('ADMIN', 'MARKETING');
-const requireCommunicationAccess = requireRoles('ADMIN', 'MARKETING', 'RECEPTION');
 
 const DEEPSEEK_API_URL = (process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com').replace(/\/$/, '');
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
@@ -121,8 +119,7 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  configureMessageDispatch(app, requireAuth, requireCommunicationAccess);
-  configureSmartLinks(app, requireAuth, requireCommunicationAccess);
+  configureSmartLinks(app, requireAuth, requireRoles('ADMIN', 'MARKETING', 'RECEPTION'));
 
   app.post("/api/analyze-marketing", requireAuth, requireMarketingAccess, limitAiRequests, async (req, res) => {
     try {
