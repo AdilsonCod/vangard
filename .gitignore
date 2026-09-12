@@ -23,3 +23,4 @@ clean_*
 add_*
 remove_*
 .vercel
+.local-backups/

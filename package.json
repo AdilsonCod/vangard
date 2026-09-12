@@ -18,6 +18,8 @@
     "firestore:import:apply": "tsx scripts/import-firestore-backup.ts --apply",
     "auth:migrate:dry": "tsx scripts/migrate-firebase-auth.ts",
     "auth:migrate:apply": "tsx scripts/migrate-firebase-auth.ts --apply",
+    "auth:remove-unmatched:dry": "tsx scripts/remove-unmatched-user-profiles.ts",
+    "auth:remove-unmatched:apply": "tsx scripts/remove-unmatched-user-profiles.ts --apply",
     "test:auth-migration": "tsx --test scripts/user-uid-migration.test.ts",
     "test:auth-session": "tsx --test scripts/auth-session.test.ts",
     "test:auth-flow": "tsx --test scripts/auth-session.test.ts scripts/authentication-flow.test.ts",
