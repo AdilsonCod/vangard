@@ -25,6 +25,7 @@ import {
 } from './types';
 import { db, auth } from './firebase';
 import { collection, doc, documentId, setDoc, deleteDoc, getDoc, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
+import { commitCatalogMutation, planCategoryMutation, planSubcategoryMutation } from './services/catalogMutationPlan';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { seedDatabase } from './firebase-sync';
 import { authenticatedProfile, endAuthenticatedSession, startAuthenticatedSession } from './services/authSession';
@@ -135,9 +136,9 @@ interface StoreContextType extends AppState {
   deleteMonthlyBarberStats: (id: string) => Promise<void>;
   deleteMonthlyUnitStats: (id: string) => Promise<void>;
   updateTarget: (userId: string, target: Target) => void;
-  updateCatalog: (catalog: CatalogItem[]) => void;
-  updateCategories: (categories: Category[]) => void;
-  updateSubcategories: (subcategories: Subcategory[]) => void;
+  updateCatalog: (catalog: CatalogItem[]) => Promise<void>;
+  updateCategories: (categories: Category[]) => Promise<void>;
+  updateSubcategories: (subcategories: Subcategory[]) => Promise<void>;
   addPayment: (payment: PaymentRecord) => Promise<void>;
   updatePayment: (payment: PaymentRecord) => Promise<void>;
   addSystemUnit: (unit: SystemUnit) => Promise<void>;
@@ -164,7 +165,15 @@ interface StoreContextType extends AppState {
 
 const StoreContext = createContext<StoreContextType | null>(null);
 
-const SHOULD_SEED_DATABASE = (import.meta as any).env?.VITE_ENABLE_DATABASE_SEED === 'true';
+const SHOULD_SEED_DATABASE = import.meta.env.DEV && (import.meta as any).env?.VITE_ENABLE_DATABASE_SEED === 'true';
+const E2E_SESSION_ENABLED = import.meta.env.DEV && (import.meta as any).env?.VITE_ENABLE_E2E_SESSION === 'true';
+const getE2EUser = (): User | null => {
+  if (!E2E_SESSION_ENABLED) return null;
+  if (localStorage.getItem('vans_e2e_disabled') === 'true') return null;
+  const requestedRole = localStorage.getItem('vans_e2e_role');
+  const role = requestedRole && ['ADMIN', 'BARBER', 'MANICURE', 'FINANCIAL', 'MARKETING', 'RECEPTION'].includes(requestedRole) ? (requestedRole as User['role']) : 'ADMIN';
+  return { id: `e2e-${role.toLowerCase()}`, name: `Teste ${role}`, email: `${role.toLowerCase()}@e2e.local`, role, unit: role === 'ADMIN' ? null : 'UNIT_1', unitIds: role === 'ADMIN' ? ['UNIT_1', 'UNIT_2'] : ['UNIT_1'] };
+};
 
 // O ID do documento e o ID salvo no conteúdo podem divergir em importações
 // antigas. O caminho do Firestore é a referência canônica para atualizações e
@@ -210,7 +219,8 @@ const findAuthenticatedProfile = async (uid: string, authenticatedEmail?: string
 };
 
 export const StoreProvider = ({ children }: { children: ReactNode }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const e2eUser = getE2EUser();
+  const [currentUser, setCurrentUser] = useState<User | null>(e2eUser);
   const [quarterlyRankingVisible, setQuarterlyRankingVisibility] = useState<boolean | null>(null);
 
   const setQuarterlyRankingVisible = async (visible: boolean) => {
@@ -221,13 +231,13 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [hasLoadedUsers, setHasLoadedUsers] = useState(false);
 
-  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [catalog, setCatalog] = useState<CatalogItem[]>(E2E_SESSION_ENABLED ? DEFAULT_CATALOG : []);
   const [entries, setEntries] = useState<DailyEntry[]>([]);
   const [targets, setTargets] = useState<Record<string, Target>>({});
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
-  const [systemUnits, setSystemUnits] = useState<SystemUnit[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [categories, setCategories] = useState<Category[]>(E2E_SESSION_ENABLED ? DEFAULT_CATEGORIES : []);
+  const [subcategories, setSubcategories] = useState<Subcategory[]>(E2E_SESSION_ENABLED ? DEFAULT_SUBCATEGORIES : []);
+  const [systemUnits, setSystemUnits] = useState<SystemUnit[]>(E2E_SESSION_ENABLED ? DEFAULT_UNITS : []);
+  const [users, setUsers] = useState<User[]>(e2eUser ? [e2eUser] : []);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [gdvEntries, setGdvEntries] = useState<GDVEntry[]>([]);
   const [gdvSettings, setGdvSettings] = useState<GDVSettings[]>([]);
@@ -276,6 +286,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   });
 
   useEffect(() => {
+    if (E2E_SESSION_ENABLED) { setIsInitializing(false); return; }
     const init = async () => {
       try {
         // A carga inicial altera coleções vazias. Em bancos com dados reais ela
@@ -293,6 +304,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
+    if (E2E_SESSION_ENABLED) { setHasLoadedUsers(true); return; }
     if (isInitializing) return;
     let unsubscribeProfile = () => {};
     const unsubscribeAuth = onAuthStateChanged(auth, async fbUser => {
@@ -342,6 +354,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   }, [isInitializing]);
 
   useEffect(() => {
+    if (E2E_SESSION_ENABLED) return;
     if (isInitializing || !currentUser) return;
 
     const userUnit = currentUser.unit || (currentUser as any).unitId;
@@ -749,164 +762,62 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     try {
       const validNewCatalog = newCatalog.filter(item => item && item.id);
       const newCatalogIds = new Set(validNewCatalog.map(item => item.id));
-      
+      const batch = writeBatch(db);
       const itemsToDelete = catalog.filter(oldItem => oldItem && oldItem.id && !newCatalogIds.has(oldItem.id));
       for (const item of itemsToDelete) {
         if (!item.id) continue;
-        try {
-          await deleteDoc(doc(db, 'catalog', item.id));
-        } catch (err) {
-          console.error(`Erro ao deletar item ${item.id} do catálogo:`, err);
-        }
+        batch.delete(doc(db, 'catalog', item.id));
       }
-      
+
       // Salvar/Atualizar os que existem
       for (const item of validNewCatalog) {
         if (!item.id) continue;
-        try {
-          const cleanItem: any = {
-            id: item.id,
-            name: item.name || '',
-            type: item.type || '',
-            price: item.price || 0,
-          };
-          if (item.subcategoryId !== undefined) {
-             cleanItem.subcategoryId = item.subcategoryId || '';
-          } else {
-             cleanItem.subcategoryId = '';
-          }
-          if (item.unit !== undefined) {
-             cleanItem.unit = item.unit || 'ALL';
-          } else {
-             cleanItem.unit = 'ALL';
-          }
-          if (item.visibleToRoles !== undefined) {
-             cleanItem.visibleToRoles = item.visibleToRoles || [];
-          } else {
-             cleanItem.visibleToRoles = ['BARBER', 'MANICURE'];
-          }
-          await setDoc(doc(db, 'catalog', item.id), cleanItem);
-        } catch (err) {
-          console.error(`Erro ao salvar item ${item.id} no catálogo:`, err);
-        }
+        const cleanItem: any = {
+          id: item.id,
+          name: item.name || '',
+          type: item.type || '',
+          price: item.price || 0,
+          costPrice: item.costPrice || 0,
+          subcategoryId: item.subcategoryId || '',
+          unit: item.unit || 'ALL',
+          visibleToRoles: item.visibleToRoles || ['BARBER', 'MANICURE'],
+        };
+        batch.set(doc(db, 'catalog', item.id), cleanItem);
       }
+      await batch.commit();
     } catch (e) {
       console.error("Erro ao atualizar catálogo:", e);
-      alert("Erro ao atualizar catálogo: " + (e instanceof Error ? e.message : String(e)));
+      throw e;
     }
   };
 
   const updateCategories = async (newCategories: Category[]) => {
     try {
-      const validNewCategories = newCategories.filter(cat => cat && cat.id);
-      const newCategoriesIds = new Set(validNewCategories.map(cat => cat.id));
-      
-      const itemsToDelete = categories.filter(oldCat => oldCat && oldCat.id && !newCategoriesIds.has(oldCat.id));
-      for (const cat of itemsToDelete) {
-        if (!cat.id) continue;
-        try {
-          await deleteDoc(doc(db, 'categories', cat.id));
-        } catch (err) {
-          console.error(`Erro ao remover categoria ${cat.id}:`, err);
-        }
-
-        // Excluir subcategorias sob a categoria deletada
-        const affectedSubs = subcategories.filter(sub => sub && sub.categoryId === cat.id);
-        for (const sub of affectedSubs) {
-          if (!sub.id) continue;
-          try {
-            await deleteDoc(doc(db, 'subcategories', sub.id));
-          } catch (err) {
-            console.error(`Erro ao remover subcategoria associada ${sub.id}:`, err);
-          }
-        }
-
-        // Atualizar itens do catálogo que usavam essa categoria
-        const affectedItems = catalog.filter(item => item && item.type === cat.id);
-        for (const item of affectedItems) {
-          if (!item || !item.id) continue;
-          try {
-            const updatedItem = {
-              ...item,
-              type: 'SERVICE',
-              subcategoryId: ''
-            };
-            await setDoc(doc(db, 'catalog', item.id), updatedItem);
-          } catch (err) {
-            console.error(`Erro ao desvincular subcategoria do item ${item.id}:`, err);
-          }
-        }
-      }
-      
-      // Salvar/Atualizar os que existem
-      for (const cat of validNewCategories) {
-        if (!cat.id) continue;
-        try {
-          const cleanCat: any = {
-            id: cat.id,
-            name: cat.name || ''
-          };
-          if (cat.type) {
-            cleanCat.type = cat.type;
-          }
-          await setDoc(doc(db, 'categories', cat.id), cleanCat);
-        } catch (err) {
-          console.error(`Erro ao salvar categoria ${cat.id}:`, err);
-        }
-      }
+      const operations = planCategoryMutation(categories, newCategories, subcategories, catalog);
+      const batch = writeBatch(db);
+      await commitCatalogMutation(operations, {
+        delete: (collectionName, id) => batch.delete(doc(db, collectionName, id)),
+        set: (collectionName, id, data) => batch.set(doc(db, collectionName, id), Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined))),
+        commit: () => batch.commit(),
+      });
     } catch (e) {
       console.error("Erro ao atualizar categorias:", e);
-      alert("Erro ao atualizar categorias: " + (e instanceof Error ? e.message : String(e)));
+      throw new Error(`Não foi possível salvar as categorias. ${e instanceof Error ? e.message : 'Verifique sua conexão e tente novamente.'}`);
     }
   };
 
   const updateSubcategories = async (newSubcategories: Subcategory[]) => {
     try {
-      const validNewSubs = newSubcategories.filter(sub => sub && sub.id);
-      const newSubcategoriesIds = new Set(validNewSubs.map(sub => sub.id));
-      
-      const itemsToDelete = subcategories.filter(oldSub => oldSub && oldSub.id && !newSubcategoriesIds.has(oldSub.id));
-      for (const sub of itemsToDelete) {
-        if (!sub.id) continue;
-        try {
-          await deleteDoc(doc(db, 'subcategories', sub.id));
-        } catch (err) {
-          console.error(`Erro ao deletar subcategoria ${sub.id}:`, err);
-        }
-
-        // Limpar subcategoria dos itens do catálogo associados
-        const affectedItems = catalog.filter(item => item && item.subcategoryId === sub.id);
-        for (const item of affectedItems) {
-          if (!item || !item.id) continue;
-          try {
-            const updatedItem = {
-              ...item,
-              subcategoryId: ''
-            };
-            await setDoc(doc(db, 'catalog', item.id), updatedItem);
-          } catch (err) {
-            console.error(`Erro ao descontaminar item ${item.id} de subcategoria:`, err);
-          }
-        }
-      }
-      
-      // Salvar/Atualizar os que existem
-      for (const sub of validNewSubs) {
-        if (!sub.id) continue;
-        try {
-          const cleanSub = {
-            id: sub.id,
-            name: sub.name || '',
-            categoryId: sub.categoryId || ''
-          };
-          await setDoc(doc(db, 'subcategories', sub.id), cleanSub);
-        } catch (err) {
-          console.error(`Erro ao salvar subcategoria ${sub.id}:`, err);
-        }
-      }
+      const operations = planSubcategoryMutation(subcategories, newSubcategories, catalog);
+      const batch = writeBatch(db);
+      await commitCatalogMutation(operations, {
+        delete: (collectionName, id) => batch.delete(doc(db, collectionName, id)),
+        set: (collectionName, id, data) => batch.set(doc(db, collectionName, id), Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined))),
+        commit: () => batch.commit(),
+      });
     } catch (e) {
       console.error("Erro ao atualizar subcategorias:", e);
-      alert("Erro ao atualizar subcategorias: " + (e instanceof Error ? e.message : String(e)));
+      throw new Error(`Não foi possível salvar as subcategorias. ${e instanceof Error ? e.message : 'Verifique sua conexão e tente novamente.'}`);
     }
   };
 

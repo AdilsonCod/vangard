@@ -27,6 +27,8 @@ import { db } from "../firebase";
 import { authenticatedApi } from "../services/apiClient";
 import { useStore } from "../store";
 import { defaultUnitFor, scopedCollectionQuery } from "../services/firestoreScope";
+import { useConfirmation } from "./ui/ConfirmationDialog";
+import { demoControlsEnabledFor } from "../services/demoAccess";
 import {
   resolveSmartLink,
   rotatingStatus,
@@ -130,6 +132,8 @@ const labels: Record<SmartLinkMode, string> = {
 
 export default function SmartLinksDashboard() {
   const { currentUser } = useStore();
+  const demoAllowed = demoControlsEnabledFor(currentUser?.role);
+  const confirmAction = useConfirmation();
   const [links, setLinks] = useState<SmartLink[]>([]),
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState<Filter>("all");
@@ -322,7 +326,7 @@ export default function SmartLinksDashboard() {
   };
   const toggle = (x: SmartLink) => authenticatedApi.json(`/api/smart-links/${encodeURIComponent(x.id)}/toggle`, { method: "POST" });
   const remove = async (x: SmartLink) => {
-    if (confirm(`Excluir “${x.title}”?`))
+    if (await confirmAction({ title: 'Excluir link inteligente', description: `Deseja excluir “${x.title}”? O endereço curto deixará de funcionar e esta ação não pode ser desfeita.`, confirmText: 'Excluir link' }))
       await authenticatedApi.request(`/api/smart-links/${encodeURIComponent(x.id)}`, { method: "DELETE" });
   };
   return (
@@ -397,7 +401,7 @@ export default function SmartLinksDashboard() {
                 origin={origin}
                 edit={() => edit(x)}
                 qr={() => void showQr(x)}
-                simulate={() => setSimulation({ link: x, at: localNow() })}
+                simulate={demoAllowed ? () => setSimulation({ link: x, at: localNow() }) : undefined}
                 analytics={() => void showAnalytics(x)}
                 toggle={() => void toggle(x)}
                 remove={() => void remove(x)}
@@ -419,7 +423,7 @@ export default function SmartLinksDashboard() {
         />
       )}{" "}
       {qr && <Qr value={qr} close={() => setQr(null)} />}{" "}
-      {simulation && (
+      {demoAllowed && simulation && (
         <Simulator
           value={simulation}
           set={setSimulation}
@@ -458,7 +462,7 @@ function Card({
   origin: string;
   edit: () => void;
   qr: () => void;
-  simulate: () => void;
+  simulate?: () => void;
   analytics: () => void;
   toggle: () => void;
   remove: () => void;
@@ -529,10 +533,12 @@ function Card({
           Copiar link
         </AppButton>
         <AppButton onClick={edit}>Editar</AppButton>
-        <AppButton onClick={simulate}>
-          <TimerReset className="h-4 w-4" />
-          Simular
-        </AppButton>
+        {simulate && (
+          <AppButton onClick={simulate}>
+            <TimerReset className="h-4 w-4" />
+            Simular
+          </AppButton>
+        )}
         <AppButton onClick={analytics}>
           <BarChart3 className="h-4 w-4" />
           Analytics

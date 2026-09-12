@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { ProgressCard } from "./ProgressCard";
 import { AdminEntryModal } from "./AdminEntryModal";
 import { AppIconButton, AppLoadingState, appControlClass, cn } from "./ui/AppPrimitives";
+import { useConfirmation } from "./ui/ConfirmationDialog";
 import {
   getAvailablePeriods,
   formatEntryDate,
@@ -74,6 +75,7 @@ const OperationalControls = lazy(() => import("./OperationalControls"));
 const FinancialAuditTrail = lazy(() => import("./FinancialAuditTrail"));
 
 export default function AdminDashboard() {
+  const confirmAction = useConfirmation();
   const { currentUser, logout, themeLightBg, themeDarkBg, 
     users,
     entries,
@@ -224,7 +226,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className={`h-[100dvh] overflow-hidden w-full ${themeLightBg || "bg-gray-50"} ${themeDarkBg || "dark:bg-zinc-950"} text-gray-600 dark:text-zinc-300 flex transition-colors`}>
+    <div data-testid="management-shell" className={`h-[100dvh] overflow-hidden w-full ${themeLightBg || "bg-gray-50"} ${themeDarkBg || "dark:bg-zinc-950"} text-gray-600 dark:text-zinc-300 flex transition-colors`}>
       
       {/* Desktop Sidebar */}
       <aside className={cn(
@@ -406,14 +408,14 @@ export default function AdminDashboard() {
                         <span
                           role="button"
                           tabIndex={0}
-                          onClick={event => {
+                          onClick={async event => {
                             event.stopPropagation();
-                            deleteNotification(notification.id);
+                            if (await confirmAction({ title: 'Excluir notificação', description: `Deseja excluir a notificação “${notification.title}”?`, confirmText: 'Excluir notificação' })) await deleteNotification(notification.id);
                           }}
-                          onKeyDown={event => {
+                          onKeyDown={async event => {
                             if (event.key === "Enter" || event.key === " ") {
                               event.stopPropagation();
-                              deleteNotification(notification.id);
+                              if (await confirmAction({ title: 'Excluir notificação', description: `Deseja excluir a notificação “${notification.title}”?`, confirmText: 'Excluir notificação' })) await deleteNotification(notification.id);
                             }
                           }}
                           className="invisible rounded-md px-1.5 py-0.5 text-[10px] font-bold text-red-500 group-hover:visible focus:visible"
@@ -761,6 +763,7 @@ export default function AdminDashboard() {
 
 function AvisosManager() {
   const { announcements, addAnnouncement, deleteAnnouncement, systemUnits, currentUser } = useStore();
+  const confirmAction = useConfirmation();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [type, setType] = useState<'INFO' | 'IMPORTANT' | 'ALERT' | 'CELEBRATION'>("INFO");
@@ -922,7 +925,7 @@ function AvisosManager() {
                   
                   <button
                     onClick={async () => {
-                      if (confirm("Tem certeza que deseja apagar este comunicado?")) {
+                      if (await confirmAction({ title: 'Excluir comunicado', description: `Deseja excluir “${notice.title}”? Esta ação não pode ser desfeita.`, confirmText: 'Excluir comunicado' })) {
                         await deleteAnnouncement(notice.id);
                       }
                     }}
@@ -956,7 +959,7 @@ function CatalogEditor({
   tabView
 }: {
   catalog: CatalogItem[];
-  updateCatalog: (cat: CatalogItem[]) => void;
+  updateCatalog: (cat: CatalogItem[]) => Promise<void>;
   tabView: "PRODUCTS" | "SERVICES" | "CATEGORIES";
 }) {
   const { categories, subcategories, updateCategories, updateSubcategories, systemUnits } =
@@ -973,11 +976,14 @@ function CatalogEditor({
     unit?: string;
     visibleToRoles?: Role[];
     price?: number;
-  }>({ name: "", type: "SERVICE", subcategoryId: "", unit: "ALL", visibleToRoles: ["BARBER", "MANICURE"], price: 0 });
+    costPrice?: number;
+  }>({ name: "", type: "SERVICE", subcategoryId: "", unit: "ALL", visibleToRoles: ["BARBER", "MANICURE"], price: 0, costPrice: 0 });
 
   // Custom feedback states
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const triggerToast = (message: string, type: "success" | "error" | "info" = "success") => {
     setToast({ message, type });
@@ -989,9 +995,44 @@ function CatalogEditor({
     setItems(catalog);
   }, [catalog]);
 
-  const handleSave = () => {
-    updateCatalog(items);
-    triggerToast("Catálogo de serviços e produtos salvo com sucesso!", "success");
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setConfirmDeleteIds([]);
+  }, [tabView]);
+
+  const visibleItems = useMemo(() => items.filter((item) => {
+    const cat = categories.find(c => c.id === item.type);
+    const typeMatch = cat?.type || (item.type === "PRODUCT" ? "PRODUCT" : "SERVICE");
+    if (tabView === "PRODUCTS") return typeMatch === "PRODUCT";
+    return typeMatch === "SERVICE" || typeMatch === "SUBSCRIPTION";
+  }), [items, categories, tabView]);
+
+  const allVisibleSelected = visibleItems.length > 0 && visibleItems.every(item => selectedIds.has(item.id));
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds(current => {
+      const next = new Set(current);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllVisible = () => {
+    setSelectedIds(current => {
+      const next = new Set(current);
+      if (allVisibleSelected) visibleItems.forEach(item => next.delete(item.id));
+      else visibleItems.forEach(item => next.add(item.id));
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    try {
+      await updateCatalog(items);
+      triggerToast("Catálogo de serviços e produtos salvo com sucesso!", "success");
+    } catch (error) {
+      triggerToast(`Não foi possível salvar o catálogo: ${error instanceof Error ? error.message : "verifique sua conexão e tente novamente"}.`, "error");
+    }
   };
 
   const startEdit = (item: CatalogItem) => {
@@ -1003,26 +1044,41 @@ function CatalogEditor({
       unit: item.unit || "ALL",
       visibleToRoles: item.visibleToRoles || ["BARBER", "MANICURE"],
       price: item.price || 0,
+      costPrice: item.costPrice || 0,
     });
   };
 
-  const saveItem = () => {
+  const saveItem = async () => {
     const nextItems = items.map((i) => (i.id === editingId ? { ...i, ...editForm } : i));
-    setItems(nextItems);
-    updateCatalog(nextItems);
-    setEditingId(null);
-    triggerToast("Item do catálogo editado com sucesso!", "success");
+    try {
+      await updateCatalog(nextItems);
+      setItems(nextItems);
+      setEditingId(null);
+      triggerToast("Item do catálogo editado com sucesso!", "success");
+    } catch (error) {
+      triggerToast(`Não foi possível editar o item: ${error instanceof Error ? error.message : "verifique sua conexão e tente novamente"}.`, "error");
+    }
   };
 
-  const deleteItem = (id: string) => {
-    const nextItems = items.filter((i) => i.id !== id);
-    setItems(nextItems);
-    updateCatalog(nextItems);
-    setConfirmDeleteId(null);
-    triggerToast("Item excluído do catálogo.", "error");
+  const deleteItems = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setIsDeleting(true);
+    try {
+      const idSet = new Set(ids);
+      const nextItems = items.filter((i) => !idSet.has(i.id));
+      await updateCatalog(nextItems);
+      setItems(nextItems);
+      setSelectedIds(current => new Set([...current].filter(id => !idSet.has(id))));
+      setConfirmDeleteIds([]);
+      triggerToast(`${ids.length} ${ids.length === 1 ? "item excluído" : "itens excluídos"} do catálogo.`, "error");
+    } catch (error) {
+      triggerToast(`Não foi possível excluir: ${error instanceof Error ? error.message : "erro inesperado"}.`, "error");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
-  const addNew = () => {
+  const addNew = async () => {
     const defaultCat = categories.find(c => tabView === "PRODUCTS" ? c.type === "PRODUCT" : (c.type === "SERVICE" || c.type === "SUBSCRIPTION" || !c.type));
     const newItem: CatalogItem = {
       id: "item_" + Date.now(),
@@ -1032,12 +1088,17 @@ function CatalogEditor({
       unit: "ALL",
       visibleToRoles: ["BARBER", "MANICURE"],
       price: 0,
+      costPrice: 0,
     };
     const nextItems = [...items, newItem];
-    setItems(nextItems);
-    updateCatalog(nextItems);
-    startEdit(newItem);
-    triggerToast("Novo item inserido. Configure-o abaixo:", "info");
+    try {
+      await updateCatalog(nextItems);
+      setItems(nextItems);
+      startEdit(newItem);
+      triggerToast("Novo item inserido. Configure-o abaixo:", "info");
+    } catch (error) {
+      triggerToast(`Não foi possível adicionar o item: ${error instanceof Error ? error.message : "verifique sua conexão e tente novamente"}.`, "error");
+    }
   };
 
   return (
@@ -1049,25 +1110,20 @@ function CatalogEditor({
         </div>
       )}
 
-      {/* Inline Confirm Dialog Card */}
-      {confirmDeleteId && (
-        <div className="mb-4 p-4 bg-red-50 dark:bg-red-950/20 rounded-xl border border-red-100 dark:border-red-900/30 flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top duration-200">
-          <p className="text-sm text-red-800 dark:text-red-400 font-semibold text-center md:text-left">
-            Deseja realmente remover este item? Isso removerá a visualização no controle dos barbeiros e histórico de lançamentos.
-          </p>
-          <div className="flex gap-2 shrink-0">
-            <button
-              onClick={() => setConfirmDeleteId(null)}
-              className="px-3.5 py-1.5 border border-gray-200 dark:border-zinc-800 rounded-lg text-xs font-semibold text-gray-500 hover:text-gray-800 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={() => deleteItem(confirmDeleteId)}
-              className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow"
-            >
-              Confirmar Exclusão
-            </button>
+      {confirmDeleteIds.length > 0 && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="catalog-delete-title">
+          <div className="w-full max-w-md rounded-2xl border border-red-500/25 bg-white p-6 shadow-2xl dark:bg-zinc-900">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 text-red-500"><Trash2 className="h-6 w-6" /></div>
+            <h3 id="catalog-delete-title" className="text-xl font-black text-gray-900 dark:text-zinc-100">Confirmar exclusão</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-zinc-400">
+              Você está prestes a excluir <strong>{confirmDeleteIds.length} {confirmDeleteIds.length === 1 ? "item" : "itens"}</strong>. Os itens deixarão de aparecer no catálogo e nos novos lançamentos. Esta ação não pode ser desfeita.
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button disabled={isDeleting} onClick={() => setConfirmDeleteIds([])} className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800">Cancelar</button>
+              <button disabled={isDeleting} onClick={() => void deleteItems(confirmDeleteIds)} className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-wait disabled:opacity-60">
+                <Trash2 className="h-4 w-4" /> {isDeleting ? "Excluindo..." : "Excluir definitivamente"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1118,16 +1174,23 @@ function CatalogEditor({
       )}
 
       {activeSubTab === "ITEMS" ? (
-        <div className="divide-y border rounded-xl overflow-hidden shadow-sm">
-          {items.filter((item) => {
-             const cat = categories.find(c => c.id === item.type);
-             const typeMatch = cat?.type || (item.type === "PRODUCT" ? "PRODUCT" : "SERVICE");
-             if (tabView === "PRODUCTS") return typeMatch === "PRODUCT";
-             return typeMatch === "SERVICE" || typeMatch === "SUBSCRIPTION";
-          }).map((item) => (
+        <div className="overflow-hidden rounded-xl border shadow-sm">
+          <div className="flex flex-col gap-3 border-b bg-gray-50 p-3 dark:border-zinc-800 dark:bg-zinc-950/60 sm:flex-row sm:items-center sm:justify-between">
+            <label className="flex cursor-pointer items-center gap-3 text-sm font-bold text-gray-700 dark:text-zinc-200">
+              <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} className="h-4 w-4 rounded border-gray-300 accent-[var(--theme-color)]" />
+              Selecionar todos ({visibleItems.length})
+            </label>
+            {selectedIds.size > 0 && (
+              <button onClick={() => setConfirmDeleteIds([...selectedIds])} className="flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-red-700">
+                <Trash2 className="h-4 w-4" /> Excluir selecionados ({selectedIds.size})
+              </button>
+            )}
+          </div>
+          <div className="divide-y dark:divide-zinc-800">
+          {visibleItems.map((item) => (
             <div
               key={item.id}
-              className="flex items-center justify-between p-4 hover:bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 transition group"
+              className={`flex items-center justify-between p-4 text-gray-600 transition dark:text-zinc-300 ${selectedIds.has(item.id) ? "bg-[color-mix(in_srgb,var(--theme-color)_8%,transparent)]" : "hover:bg-gray-50 dark:hover:bg-zinc-800/40"}`}
             >
               {editingId === item.id ? (
                 <div className="flex-1 flex flex-col gap-4">
@@ -1150,6 +1213,21 @@ function CatalogEditor({
                         setEditForm({ ...editForm, price: parseFloat(e.target.value) || 0 })
                       }
                       placeholder="R$ 0,00"
+                      aria-label="Preço de venda"
+                      title="Preço de venda"
+                    />
+                    <input
+                      className="border border-amber-300 bg-amber-50 p-2 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[var(--theme-color)] dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-100 md:w-44 rounded-md"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editForm.costPrice === 0 ? "" : editForm.costPrice}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, costPrice: parseFloat(e.target.value) || 0 })
+                      }
+                      placeholder="Custo interno"
+                      aria-label="Preço de custo para venda interna"
+                      title="Preço de custo usado nas vendas internas"
                     />
                     <select
                       className="border border-gray-300 dark:border-zinc-700 p-2 rounded-md font-medium outline-none focus:ring-2 focus:ring-[var(--theme-color)] bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 w-full md:w-48"
@@ -1258,7 +1336,8 @@ function CatalogEditor({
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center gap-4">
+                  <div className="flex min-w-0 items-center gap-4">
+                    <input aria-label={`Selecionar ${item.name}`} type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelection(item.id)} className="h-4 w-4 shrink-0 rounded border-gray-300 accent-[var(--theme-color)]" />
                     <span className="text-gray-300">
                       <Grip className="w-4 h-4" />
                     </span>
@@ -1274,6 +1353,11 @@ function CatalogEditor({
                         {item.price !== undefined && item.price > 0 && (
                           <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 inline-block px-2.5 py-1 rounded-md border border-emerald-100 dark:border-emerald-900/30">
                             {item.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </span>
+                        )}
+                        {item.costPrice !== undefined && item.costPrice > 0 && (
+                          <span className="inline-block rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-400">
+                            Custo interno: {item.costPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                           </span>
                         )}
                         {item.subcategoryId && (
@@ -1308,7 +1392,7 @@ function CatalogEditor({
                       <Edit3 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => setConfirmDeleteId(item.id)}
+                      onClick={() => setConfirmDeleteIds([item.id])}
                       className="p-2 text-gray-400 dark:text-zinc-500 hover:text-red-600 transition"
                       title="Excluir item"
                     >
@@ -1319,11 +1403,12 @@ function CatalogEditor({
               )}
             </div>
           ))}
-          {items.length === 0 && (
+          {visibleItems.length === 0 && (
             <p className="text-center p-8 text-gray-500 dark:text-zinc-400">
               Nenhum item cadastrado.
             </p>
           )}
+          </div>
         </div>
       ) : activeSubTab === "CATEGORIES" ? (
         <CategoriesTab />
@@ -1335,6 +1420,7 @@ function CatalogEditor({
 }
 
 function CategoriesTab() {
+  const confirmAction = useConfirmation();
   const { categories, updateCategories, catalog, subcategories } = useStore();
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<'SERVICE' | 'PRODUCT' | 'SUBSCRIPTION'>('SERVICE');
@@ -1343,10 +1429,13 @@ function CategoriesTab() {
   const [editingType, setEditingType] = useState<'SERVICE' | 'PRODUCT' | 'SUBSCRIPTION'>('SERVICE');
 
   const [errorText, setErrorText] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [confirmDeleteMessage, setConfirmDeleteMessage] = useState<string | null>(null);
 
-  const handleAdd = (e: React.FormEvent) => {
+  const showPersistenceError = (error: unknown) => {
+    setErrorText(error instanceof Error ? error.message : "Não foi possível salvar as categorias. Verifique sua conexão e tente novamente.");
+    setTimeout(() => setErrorText(null), 6000);
+  };
+
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
     const newCat = {
@@ -1354,8 +1443,12 @@ function CategoriesTab() {
       name: newName.trim(),
       type: newType,
     };
-    updateCategories([...categories, newCat]);
-    setNewName("");
+    try {
+      await updateCategories([...categories, newCat]);
+      setNewName("");
+    } catch (error) {
+      showPersistenceError(error);
+    }
   };
 
   const handleStartEdit = (id: string, name: string, type?: 'SERVICE' | 'PRODUCT' | 'SUBSCRIPTION') => {
@@ -1364,17 +1457,21 @@ function CategoriesTab() {
     setEditingType(type || 'SERVICE');
   };
 
-  const handleSaveEdit = (id: string) => {
+  const handleSaveEdit = async (id: string) => {
     if (!editingName.trim()) return;
-    updateCategories(
-      categories.map((c) =>
-        c.id === id ? { ...c, name: editingName.trim(), type: editingType } : c,
-      ),
-    );
-    setEditingId(null);
+    try {
+      await updateCategories(
+        categories.map((c) =>
+          c.id === id ? { ...c, name: editingName.trim(), type: editingType } : c,
+        ),
+      );
+      setEditingId(null);
+    } catch (error) {
+      showPersistenceError(error);
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (["SERVICE", "EXTRA_SERVICE", "PRODUCT"].includes(id)) {
       setErrorText(
         "Esta categoria é do sistema padrão e não pode ser removida para não desestruturar o histórico de objetivos e relatórios.",
@@ -1390,8 +1487,14 @@ function CategoriesTab() {
       message = "Esta categoria possui subcategorias ou itens vinculados no catálogo. Se você a excluir, todas as subcategorias vinculadas serão removidas do banco de dados e os itens relacionados serão listados como 'Sem Subcategoria'. Deseja prosseguir?";
     }
 
-    setConfirmDeleteId(id);
-    setConfirmDeleteMessage(message);
+    const category = categories.find(item => item.id === id);
+    if (await confirmAction({ title: 'Excluir categoria', description: `${message} Categoria: “${category?.name || id}”.`, confirmText: 'Excluir categoria' })) {
+      try {
+        await updateCategories(categories.filter((c) => c.id !== id));
+      } catch (error) {
+        showPersistenceError(error);
+      }
+    }
   };
 
   return (
@@ -1404,16 +1507,6 @@ function CategoriesTab() {
         </div>
       )}
 
-      {/* Inline Sliding Confirmation Alert */}
-      {confirmDeleteId && (
-        <div className="p-4 bg-red-50 dark:bg-red-950/25 border border-red-150 dark:border-red-900/40 text-red-800 dark:text-red-400 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top duration-200">
-          <p className="text-sm font-semibold text-center md:text-left">{confirmDeleteMessage}</p>
-          <div className="flex gap-2 shrink-0">
-            <button onClick={() => { setConfirmDeleteId(null); setConfirmDeleteMessage(null); }} className="px-3 py-1.5 border hover:bg-gray-100 dark:hover:bg-zinc-800 dark:border-zinc-800 rounded-lg text-xs font-bold text-gray-550 dark:text-zinc-400">Cancelar</button>
-            <button onClick={() => { updateCategories(categories.filter((c) => c.id !== confirmDeleteId)); setConfirmDeleteId(null); setConfirmDeleteMessage(null); }} className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-sm">Confirmar</button>
-          </div>
-        </div>
-      )}
       <form
         onSubmit={handleAdd}
         className="bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 p-4 rounded-xl border border-gray-200 dark:border-zinc-800 flex flex-col md:flex-row gap-3 items-end"
@@ -1533,6 +1626,7 @@ function CategoriesTab() {
 }
 
 function SubcategoriesTab() {
+  const confirmAction = useConfirmation();
   const { categories, subcategories, updateSubcategories, catalog } =
     useStore();
   const [newName, setNewName] = useState("");
@@ -1540,9 +1634,13 @@ function SubcategoriesTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [editingParentId, setEditingParentId] = useState("");
+  const [errorText, setErrorText] = useState<string | null>(null);
 
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [confirmDeleteMessage, setConfirmDeleteMessage] = useState<string | null>(null);
+  const showPersistenceError = (error: unknown) => {
+    setErrorText(error instanceof Error ? error.message : "Não foi possível salvar as subcategorias. Verifique sua conexão e tente novamente.");
+    setTimeout(() => setErrorText(null), 6000);
+  };
+
 
   // Set default parent category
   useEffect(() => {
@@ -1551,7 +1649,7 @@ function SubcategoriesTab() {
     }
   }, [categories, parentCatId]);
 
-  const handleAdd = (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim() || !parentCatId) return;
     const newSub = {
@@ -1559,8 +1657,12 @@ function SubcategoriesTab() {
       name: newName.trim(),
       categoryId: parentCatId,
     };
-    updateSubcategories([...subcategories, newSub]);
-    setNewName("");
+    try {
+      await updateSubcategories([...subcategories, newSub]);
+      setNewName("");
+    } catch (error) {
+      showPersistenceError(error);
+    }
   };
 
   const handleStartEdit = (sub: Subcategory) => {
@@ -1569,39 +1671,45 @@ function SubcategoriesTab() {
     setEditingParentId(sub.categoryId);
   };
 
-  const handleSaveEdit = (id: string) => {
+  const handleSaveEdit = async (id: string) => {
     if (!editingName.trim() || !editingParentId) return;
-    updateSubcategories(
-      subcategories.map((s) =>
-        s.id === id
-          ? { ...s, name: editingName.trim(), categoryId: editingParentId }
-          : s,
-      ),
-    );
-    setEditingId(null);
+    try {
+      await updateSubcategories(
+        subcategories.map((s) =>
+          s.id === id
+            ? { ...s, name: editingName.trim(), categoryId: editingParentId }
+            : s,
+        ),
+      );
+      setEditingId(null);
+    } catch (error) {
+      showPersistenceError(error);
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const usedInCatalog = catalog.some((item) => item.subcategoryId === id);
     let message = "Deseja realmente excluir esta subcategoria?";
     if (usedInCatalog) {
       message = "Esta subcategoria está associada a itens do catálogo. Se você excluí-la, essa associação de categoria será limpa. Deseja prosseguir?";
     }
 
-    setConfirmDeleteId(id);
-    setConfirmDeleteMessage(message);
+    const subcategory = subcategories.find(item => item.id === id);
+    if (await confirmAction({ title: 'Excluir subcategoria', description: `${message} Subcategoria: “${subcategory?.name || id}”.`, confirmText: 'Excluir subcategoria' })) {
+      try {
+        await updateSubcategories(subcategories.filter((s) => s.id !== id));
+      } catch (error) {
+        showPersistenceError(error);
+      }
+    }
   };
 
   return (
     <div className="space-y-6 relative">
-      {/* Inline sliding confirmation block */}
-      {confirmDeleteId && (
-        <div className="p-4 bg-red-50 dark:bg-red-950/25 border border-red-150 dark:border-red-900/40 text-red-800 dark:text-red-400 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top duration-200">
-          <p className="text-sm font-semibold text-center md:text-left">{confirmDeleteMessage}</p>
-          <div className="flex gap-2 shrink-0">
-            <button onClick={() => { setConfirmDeleteId(null); setConfirmDeleteMessage(null); }} className="px-3 py-1.5 border hover:bg-gray-100 dark:hover:bg-zinc-800 dark:border-zinc-800 rounded-lg text-xs font-bold text-gray-550 dark:text-zinc-400">Cancelar</button>
-            <button onClick={() => { updateSubcategories(subcategories.filter((s) => s.id !== confirmDeleteId)); setConfirmDeleteId(null); setConfirmDeleteMessage(null); }} className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-sm">Confirmar</button>
-          </div>
+      {errorText && (
+        <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-900/30 rounded-xl flex items-center justify-between gap-4 animate-in slide-in-from-top duration-300">
+          <p className="text-sm font-semibold">{errorText}</p>
+          <button onClick={() => setErrorText(null)} className="text-amber-600 dark:text-amber-500 font-bold hover:text-amber-800 text-xs uppercase p-1">Fechar</button>
         </div>
       )}
       <form
@@ -1728,6 +1836,7 @@ function SubcategoriesTab() {
 // --- BARBER DETAIL VIEW ---
 
 function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
+  const confirmAction = useConfirmation();
   const {
     updateUser,
     targets,
@@ -1750,8 +1859,6 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
       return true;
     });
   }, [rawCatalog, barber]);
-
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Initialize generic target structure if not present
   const defaultItemsTarget: Record<string, number> = {};
@@ -2306,33 +2413,6 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
           Histórico de Lançamentos
         </h3>
 
-        {/* Custom Confirmation Alert */}
-        {deleteConfirmId && (
-          <div className="mb-4 p-4 bg-red-50 dark:bg-red-950/20 rounded-xl border border-red-100 dark:border-red-900/30 flex items-center justify-between gap-4 animate-in slide-in-from-top duration-300">
-            <div>
-              <p className="text-sm text-red-800 dark:text-red-400 font-bold">Excluir lançamento permanente?</p>
-              <p className="text-xs text-red-600 dark:text-red-500 mt-1">Essa alteração alterará os relatórios e comissões do barbeiro.</p>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <button
-                onClick={() => setDeleteConfirmId(null)}
-                className="px-3 py-1.5 border border-gray-200 dark:border-zinc-800 rounded-lg text-xs font-semibold hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-zinc-800 transition"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  deleteEntry(deleteConfirmId);
-                  setDeleteConfirmId(null);
-                }}
-                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow"
-              >
-                Confirmar
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-gray-200 dark:border-zinc-800 overflow-hidden">
           {barberEntries.length === 0 ? (
             <p className="text-center py-8 text-gray-500 dark:text-zinc-400 font-medium">
@@ -2445,7 +2525,7 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
                                 <Edit3 className="w-4 h-4" /> Editar
                               </button>
                               <button
-                                onClick={() => setDeleteConfirmId(e.id)}
+                                onClick={async () => { if (await confirmAction({ title: 'Excluir lançamento do profissional', description: 'Deseja excluir este lançamento? A alteração afetará os relatórios e as comissões do profissional.', confirmText: 'Excluir lançamento' })) await deleteEntry(e.id); }}
                                 className="p-2 text-gray-400 dark:text-zinc-500 hover:text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/20 dark:hover:bg-red-950/25 rounded"
                                 title="Remover"
                               >

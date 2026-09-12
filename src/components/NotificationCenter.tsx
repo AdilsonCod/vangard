@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Bell, Check, CheckCheck, Filter, Megaphone, DollarSign, BarChart3, Trophy, Trash2, ExternalLink } from 'lucide-react';
 import { useStore } from '../store';
 import type { SystemNotification, NotificationEventType } from '../types';
+import { useConfirmation } from './ui/ConfirmationDialog';
 
 type FilterTab = 'ALL' | 'UNREAD' | 'mural' | 'financial' | 'analysis' | 'ranking';
 
@@ -49,6 +50,7 @@ interface NotificationCenterProps {
 }
 
 export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
+  const confirmAction = useConfirmation();
   const { currentUser, notifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } = useStore();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('ALL');
 
@@ -217,9 +219,9 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
                           {new Date(notification.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         <button
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation();
-                            deleteNotification(notification.id);
+                            if (await confirmAction({ title: 'Excluir notificação', description: `Deseja excluir a notificação “${notification.title}”?`, confirmText: 'Excluir notificação' })) await deleteNotification(notification.id);
                           }}
                           className="invisible rounded-lg p-1 text-gray-400 transition hover:bg-red-500/10 hover:text-red-500 group-hover:visible"
                           title="Excluir"

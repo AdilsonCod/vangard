@@ -3,6 +3,7 @@ import { StoreProvider, useStore } from './store';
 import Login from './components/Login';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import PublicLinkRedirect from './components/PublicLinkRedirect';
+import { ConfirmationProvider } from './components/ui/ConfirmationDialog';
 
 const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
 const BarberDashboard = React.lazy(() => import('./components/BarberDashboard'));
@@ -79,9 +80,11 @@ function AppContent() {
 export default function App() {
   return (
     <StoreProvider>
-      <ErrorBoundary>
-        <AppContent />
-      </ErrorBoundary>
+      <ConfirmationProvider>
+        <ErrorBoundary>
+          <AppContent />
+        </ErrorBoundary>
+      </ConfirmationProvider>
     </StoreProvider>
   );
 }

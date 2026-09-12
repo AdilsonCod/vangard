@@ -42,6 +42,8 @@ export interface CatalogItem {
   unit?: string; // ALL or Unit ID
   visibleToRoles?: Role[];
   price?: number;
+  /** Preço de custo aplicado nas vendas internas para colaboradores. */
+  costPrice?: number;
 }
 
 export interface Target {
@@ -161,6 +163,7 @@ export interface MonthlyUnitStats {
   vendasProdutosQtd?: number;
   extraCounts?: Record<string, number>; // itemId => quantity value
   extraValues?: Record<string, number>; // itemId => monetary value
+  simulated?: boolean; // Identifica explicitamente se os dados foram gerados em simulação
 }
 
 export interface MonthlyBarberStats {
@@ -283,6 +286,7 @@ export interface FinancialTransaction {
   clientName?: string;
   barberId?: string;
   itemName?: string;
+  catalogItemId?: string;
 }
 
 export interface CashClosing {

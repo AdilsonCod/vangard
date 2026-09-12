@@ -37,6 +37,7 @@ import {
 import { AppIconButton, AppLoadingState, cn } from "./ui/AppPrimitives";
 import { createGoalReachedNotification } from "../notificationService";
 import { NotificationCenter } from "./NotificationCenter";
+import { useConfirmation } from "./ui/ConfirmationDialog";
 // Logo imported via direct asset path
 
 import {
@@ -124,6 +125,7 @@ const Row = ({
 };
 
 export default function BarberDashboard() {
+  const confirmAction = useConfirmation();
   const { currentUser, logout, themeLightBg, themeDarkBg, 
     entries,
     targets,
@@ -433,7 +435,7 @@ export default function BarberDashboard() {
   };
 
   return (
-    <div className={`h-[100dvh] overflow-hidden w-full ${themeLightBg || "bg-gray-50"} ${themeDarkBg || "dark:bg-zinc-950"} text-gray-600 dark:text-zinc-300 flex transition-colors`}>
+    <div data-testid="professional-shell" className={`h-[100dvh] overflow-hidden w-full ${themeLightBg || "bg-gray-50"} ${themeDarkBg || "dark:bg-zinc-950"} text-gray-600 dark:text-zinc-300 flex transition-colors`}>
       
       {/* Desktop Sidebar */}
       <aside className={cn(
@@ -554,9 +556,9 @@ export default function BarberDashboard() {
                             <p className="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{notification.message}</p>
                           </div>
                           <button
-                            onClick={event => {
+                            onClick={async event => {
                               event.stopPropagation();
-                              deleteNotification(notification.id);
+                              if (await confirmAction({ title: 'Excluir notificação', description: `Deseja excluir a notificação “${notification.title}”?`, confirmText: 'Excluir notificação' })) await deleteNotification(notification.id);
                             }}
                             className="invisible rounded-md px-1.5 py-0.5 text-[10px] font-bold text-red-500 group-hover:visible focus:visible"
                           >
@@ -664,7 +666,7 @@ export default function BarberDashboard() {
                             </div>
                             <p className="text-xs text-gray-600 dark:text-zinc-300 mt-0.5 line-clamp-2">{notif.message}</p>
                             <div className="flex justify-end mt-2">
-                               <button onClick={(e) => { e.stopPropagation(); deleteNotification(notif.id); }} className="text-[10px] text-red-500 hover:text-red-700 font-medium">Excluir</button>
+                               <button onClick={async (e) => { e.stopPropagation(); if (await confirmAction({ title: 'Excluir notificação', description: `Deseja excluir a notificação “${notif.title}”?`, confirmText: 'Excluir notificação' })) await deleteNotification(notif.id); }} className="text-[10px] text-red-500 hover:text-red-700 font-medium">Excluir</button>
                             </div>
                           </div>
                         ))
