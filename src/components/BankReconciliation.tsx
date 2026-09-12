@@ -3,6 +3,7 @@ import Papa from 'papaparse';
 import { UploadCloud, FileText, CheckCircle, PlusCircle, Trash2, Link as LinkIcon, X, Wand2 } from 'lucide-react';
 import { useStore } from '../store';
 import { FinancialTransaction } from '../types';
+import { demoControlsEnabledFor } from '../services/demoAccess';
 
 interface ParsedTransaction {
   id: string;
@@ -13,13 +14,15 @@ interface ParsedTransaction {
 }
 
 export function BankReconciliation() {
-  const { financialCategories, suppliers, finClassifications, finSubclassifications, transactions, addTransaction, updateTransaction, systemUnits } = useStore();
+  const { currentUser, financialCategories, suppliers, finClassifications, finSubclassifications, transactions, addTransaction, updateTransaction, systemUnits } = useStore();
+  const demoAllowed = demoControlsEnabledFor(currentUser?.role);
   const [selectedUnit, setSelectedUnit] = useState('ALL');
   const unitTransactions = transactions.filter(transaction => selectedUnit === 'ALL' || transaction.unitId === selectedUnit);
   const [matchingTx, setMatchingTx] = useState<ParsedTransaction | null>(null);
   const [parsedTransactions, setParsedTransactions] = useState<ParsedTransaction[]>([]);
   const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [isDemoSession, setIsDemoSession] = useState(false);
   
   const [selectedAccount, setSelectedAccount] = useState<string>('');
 
@@ -27,17 +30,20 @@ export function BankReconciliation() {
 
   
   const loadDemoData = () => {
+    if (!demoAllowed) return;
     const demoTxs: ParsedTransaction[] = [
       { id: 'demo_1', date: new Date().toISOString().split('T')[0], amount: 150.00, description: 'PGTO FORNECEDOR', type: 'EXPENSE' },
       { id: 'demo_2', date: new Date().toISOString().split('T')[0], amount: 1200.50, description: 'RECEBIMENTO PIX', type: 'INCOME' },
       { id: 'demo_3', date: new Date().toISOString().split('T')[0], amount: 89.90, description: 'CONTA DE LUZ', type: 'EXPENSE' },
     ];
     setParsedTransactions(demoTxs);
+    setIsDemoSession(true);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setIsDemoSession(false);
 
     setError(null);
 
@@ -165,6 +171,7 @@ export function BankReconciliation() {
   };
 
   const handleImport = async (tx: ParsedTransaction) => {
+    if (isDemoSession) { setError('Dados de demonstração não podem ser gravados. Carregue um arquivo real para continuar.'); return; }
     if (!selectedAccount) {
       alert('Selecione uma conta (Banco/Caixa) de destino antes de importar.');
       return;
@@ -188,6 +195,7 @@ export function BankReconciliation() {
   };
 
   const handleMatch = async (parsed: ParsedTransaction, systemTxId: string) => {
+    if (isDemoSession) { setError('Dados de demonstração não podem alterar lançamentos reais.'); return; }
     const existing = unitTransactions.find(t => t.id === systemTxId);
     if (!existing) return;
     
@@ -207,6 +215,7 @@ export function BankReconciliation() {
   };
   
   const handleAutoConciliate = async () => {
+    if (isDemoSession) { setError('A conciliação demonstrativa é apenas para visualização e não altera lançamentos reais.'); return; }
     let matchCount = 0;
     const newImportedIds = new Set(importedIds);
 
@@ -319,6 +328,25 @@ export function BankReconciliation() {
         </div>
       </div>
 
+      {isDemoSession && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300/60 dark:border-amber-700/50 text-amber-800 dark:text-amber-300 p-4 rounded-xl mb-6 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-3xs font-black uppercase tracking-wider bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100">
+              Modo Demonstração
+            </span>
+            <p className="font-semibold">
+              Você está visualizando um extrato de demonstração. A gravação e a conciliação real estão bloqueadas para proteger os registros contábeis.
+            </p>
+          </div>
+          <button
+            onClick={() => { setParsedTransactions([]); setIsDemoSession(false); }}
+            className="text-xs font-bold underline hover:opacity-80 cursor-pointer whitespace-nowrap self-end sm:self-auto"
+          >
+            Limpar demonstração
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-xl mb-6 text-sm font-bold">
           {error}
@@ -330,12 +358,12 @@ export function BankReconciliation() {
           <FileText className="w-16 h-16 mb-4 opacity-50" />
           <p className="font-bold">Nenhum extrato importado</p>
           <p className="text-sm text-center max-w-md mt-2">Faça upload de um arquivo OFX/CSV para começar a conciliação.<br/><br/>O sistema irá comparar automaticamente as contas do seu extrato bancário com as Contas a Pagar/Receber pendentes no sistema.</p>
-          <button 
+          {demoAllowed && <button 
             onClick={loadDemoData}
             className="mt-6 px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 font-bold rounded-lg text-sm transition-colors"
           >
             Carregar Extrato de Teste
-          </button>
+          </button>}
         </div>
       ) : (
         <div className="flex-1 overflow-auto rounded-xl border border-gray-200 dark:border-zinc-800">

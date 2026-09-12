@@ -16,6 +16,8 @@ import {
 import { MonthlyUnitStats } from "../types";
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import { AppPageHeader, appControlClass } from "./ui/AppPrimitives";
+import { useConfirmation } from "./ui/ConfirmationDialog";
+import { demoControlsEnabledFor } from "../services/demoAccess";
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -347,6 +349,7 @@ function MiniChart({
 }
 
 export function UnitsAnalysisDashboard() {
+  const confirmAction = useConfirmation();
   const {
     systemUnits,
     catalog,
@@ -356,7 +359,9 @@ export function UnitsAnalysisDashboard() {
     users,
     transactions,
     entries,
+    currentUser,
   } = useStore();
+  const demoAllowed = demoControlsEnabledFor(currentUser?.role);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonthIdx, setSelectedMonthIdx] = useState(
     new Date().getMonth(),
@@ -403,6 +408,7 @@ export function UnitsAnalysisDashboard() {
   }, [catalog]);
 
   const handleSimulateStats = async (allMonths: boolean) => {
+    if (!demoAllowed) return;
     setIsSimulating(true);
     setIsShowingSimulateMenu(false);
 
@@ -624,6 +630,7 @@ export function UnitsAnalysisDashboard() {
             vendasProdutosQtd,
             extraCounts: extras,
             extraValues: extraVals,
+            simulated: true,
           };
 
           simulatedInSession[statsId] = record;
@@ -639,25 +646,20 @@ export function UnitsAnalysisDashboard() {
     }
   };
 
-  const [clearConfirmMsg, setClearConfirmMsg] = useState<string | null>(null);
-  const [clearConfirmAll, setClearConfirmAll] = useState<boolean>(false);
-
-  const handleClearStats = (allMonths: boolean) => {
+  const handleClearStats = async (allMonths: boolean) => {
     const confirmMsg = allMonths
       ? `Tem certeza que deseja apagar a simulação do ano completo (${selectedYear}) para esta unidade?`
       : `Tem certeza que deseja apagar a simulação do mês de ${MONTH_NAMES[selectedMonthIdx]} para esta unidade?`;
 
-    setClearConfirmMsg(confirmMsg);
-    setClearConfirmAll(allMonths);
     setIsShowingSimulateMenu(false);
+    if (await confirmAction({ title: allMonths ? 'Zerar ano da unidade' : 'Zerar mês da unidade', description: `${confirmMsg} Essa operação é permanente e não poderá ser desfeita.`, confirmText: allMonths ? 'Zerar ano completo' : 'Zerar mês' })) await executeClearStats(allMonths);
   };
 
-  const executeClearStats = async () => {
+  const executeClearStats = async (allMonths: boolean) => {
     setIsSimulating(true);
-    setClearConfirmMsg(null);
 
     try {
-      const monthsToClear = clearConfirmAll
+      const monthsToClear = allMonths
         ? MONTH_NAMES.map((_, idx) => String(idx + 1).padStart(2, "0"))
         : [String(selectedMonthIdx + 1).padStart(2, "0")];
 
@@ -940,32 +942,6 @@ export function UnitsAnalysisDashboard() {
         icon={<BarChart2 className="h-5 w-5" />}
       />
     <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
-      {clearConfirmMsg && (
-        <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-xl flex items-center justify-between gap-4 animate-in slide-in-from-top duration-300">
-          <div>
-            <p className="text-sm font-semibold text-red-900 dark:text-red-400">
-              {clearConfirmMsg}
-            </p>
-            <p className="text-xs text-red-500 mt-1">
-              Essa operação é permanente e não poderá ser desfeita.
-            </p>
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <button
-              onClick={() => setClearConfirmMsg(null)}
-              className="px-3.5 py-1.5 border border-gray-250 dark:border-zinc-800 text-gray-700 dark:text-zinc-350 hover:bg-gray-105 dark:hover:bg-zinc-800 text-xs font-bold rounded-lg transition"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={executeClearStats}
-              className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow transition"
-            >
-              Confirmar
-            </button>
-          </div>
-        </div>
-      )}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between mb-6 pb-4 border-b border-gray-200 dark:border-zinc-800 gap-4">
         <div>
           <div className="flex items-center gap-2 bg-gray-100 dark:bg-zinc-800 p-1.5 rounded-xl w-fit">
@@ -1034,61 +1010,63 @@ export function UnitsAnalysisDashboard() {
             </button>
           </div>
 
-          <div className="relative w-full lg:w-auto">
-            <button
-              disabled={isSimulating}
-              onClick={() => setIsShowingSimulateMenu(!isShowingSimulateMenu)}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-black shadow-sm transition-all active:scale-95 cursor-pointer select-none lg:w-auto ${
-                isSimulating
-                  ? "bg-zinc-850 text-zinc-500 border-zinc-700 cursor-not-allowed"
-                  : "bg-purple-600 hover:bg-purple-700 text-white border-purple-500"
-              }`}
-            >
-              <Sparkles className="w-4 h-4 text-purple-200" />
-              {isSimulating ? "Preenchendo..." : "Preenchimento Rápido"}
-            </button>
+          {demoAllowed && (
+            <div className="relative w-full lg:w-auto">
+              <button
+                disabled={isSimulating}
+                onClick={() => setIsShowingSimulateMenu(!isShowingSimulateMenu)}
+                className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-black shadow-sm transition-all active:scale-95 cursor-pointer select-none lg:w-auto ${
+                  isSimulating
+                    ? "bg-zinc-850 text-zinc-500 border-zinc-700 cursor-not-allowed"
+                    : "bg-purple-600 hover:bg-purple-700 text-white border-purple-500"
+                }`}
+              >
+                <Sparkles className="w-4 h-4 text-purple-200" />
+                {isSimulating ? "Preenchendo..." : "Preenchimento Rápido"}
+              </button>
 
-            {isShowingSimulateMenu && (
-              <div className="absolute left-0 right-0 z-50 mt-2 rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 text-left font-sans shadow-lg animate-in fade-in slide-in-from-top-1 sm:left-auto sm:w-64">
-                <div className="px-3 py-1.5 border-b border-zinc-800 text-3xs font-bold text-zinc-500 uppercase tracking-widest">
-                  Opções de Simulação
-                </div>
-                <button
-                  onClick={() => handleSimulateStats(false)}
-                  className="w-full text-left px-4 py-2 hover:bg-purple-950/20 text-xs font-bold text-zinc-100 transition flex items-center gap-2 cursor-pointer"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                  Simular Mês Atual ({MONTH_NAMES[selectedMonthIdx]})
-                </button>
-                <button
-                  onClick={() => handleSimulateStats(true)}
-                  className="w-full text-left px-4 py-2 hover:bg-purple-950/20 text-xs font-bold text-purple-400 transition flex items-center gap-2 cursor-pointer"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                  Simular Ano Completo ({selectedYear})
-                </button>
+              {isShowingSimulateMenu && (
+                <div className="absolute left-0 right-0 z-50 mt-2 rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 text-left font-sans shadow-lg animate-in fade-in slide-in-from-top-1 sm:left-auto sm:w-64">
+                  <div className="px-3 py-1.5 border-b border-zinc-800 text-3xs font-bold text-zinc-500 uppercase tracking-widest">
+                    Opções de Simulação
+                  </div>
+                  <button
+                    onClick={() => handleSimulateStats(false)}
+                    className="w-full text-left px-4 py-2 hover:bg-purple-950/20 text-xs font-bold text-zinc-100 transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                    Simular Mês Atual ({MONTH_NAMES[selectedMonthIdx]})
+                  </button>
+                  <button
+                    onClick={() => handleSimulateStats(true)}
+                    className="w-full text-left px-4 py-2 hover:bg-purple-950/20 text-xs font-bold text-purple-400 transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                    Simular Ano Completo ({selectedYear})
+                  </button>
 
-                <div className="border-t border-zinc-800 my-1"></div>
-                <div className="px-3 py-1 text-[10px] font-bold text-rose-500 uppercase tracking-widest select-none">
-                  Excluir / Zerar Dados
+                  <div className="border-t border-zinc-800 my-1"></div>
+                  <div className="px-3 py-1 text-[10px] font-bold text-rose-500 uppercase tracking-widest select-none">
+                    Excluir / Zerar Dados
+                  </div>
+                  <button
+                    onClick={() => handleClearStats(false)}
+                    className="w-full text-left px-4 py-2 hover:bg-rose-950/20 text-xs font-bold text-rose-450 transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                    Zerar Mês ({MONTH_NAMES[selectedMonthIdx]})
+                  </button>
+                  <button
+                    onClick={() => handleClearStats(true)}
+                    className="w-full text-left px-4 py-2 hover:bg-rose-950/20 text-xs font-bold text-rose-500 transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                    Zerar Ano Completo ({selectedYear})
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleClearStats(false)}
-                  className="w-full text-left px-4 py-2 hover:bg-rose-950/20 text-xs font-bold text-rose-450 transition flex items-center gap-2 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                  Zerar Mês ({MONTH_NAMES[selectedMonthIdx]})
-                </button>
-                <button
-                  onClick={() => handleClearStats(true)}
-                  className="w-full text-left px-4 py-2 hover:bg-rose-950/20 text-xs font-bold text-rose-500 transition flex items-center gap-2 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                  Zerar Ano Completo ({selectedYear})
-                </button>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1216,8 +1194,13 @@ export function UnitsAnalysisDashboard() {
                     <Calendar className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900 dark:text-zinc-100 text-sm sm:text-base">
-                      {row.monthName} / {selectedYear}
+                    <h3 className="font-bold text-gray-900 dark:text-zinc-100 text-sm sm:text-base flex items-center gap-2">
+                      <span>{row.monthName} / {selectedYear}</span>
+                      {row.simulated && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-3xs font-black uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/40">
+                          Simulado
+                        </span>
+                      )}
                     </h3>
                     <span className="text-3xs font-mono text-gray-400 dark:text-zinc-500 uppercase tracking-wider">
                       Mês {row.monthNum}

@@ -32,6 +32,7 @@ import { getLatestFinancialPeriod } from '../utils/financialPeriods';
 import { isValidFinancialAmountInput, parseFinancialAmount } from '../utils/financialAmount';
 import { AppBadge, AppEmptyState, AppPageHeader, appControlClass } from './ui/AppPrimitives';
 import { calculateTotalRevenue, summarizeCashMovements } from '../services/financialEngine';
+import { useConfirmation } from './ui/ConfirmationDialog';
 import { formatFinancialTransactionDate as formatTransactionDate, inferFinancialSourceChannel as inferSourceChannel } from '../services/financialPresentation';
 
 const BankReconciliation = lazy(() => import('./BankReconciliation').then(module => ({ default: module.BankReconciliation })));
@@ -100,6 +101,7 @@ const QUICK_OPERATION_PRESETS: { label: string; preset: Partial<FinancialTransac
 
 export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'DESPESAS' | 'CONCILIACAO_FINTECH' }) {
   const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, cashClosings, currentUser, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing } = useStore();
+  const confirmAction = useConfirmation();
   
   const activeTab = currentTab;
   
@@ -1726,9 +1728,9 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                          <Edit2 className="w-4 h-4" />
                        </button>
                        <button
-                         onClick={event => {
+                         onClick={async event => {
                            event.stopPropagation();
-                           deleteTransaction(t.id);
+                           if (await confirmAction({ title: 'Excluir lançamento', description: `Deseja excluir “${t.description}”? Esta ação será registrada na auditoria financeira.`, confirmText: 'Excluir lançamento' })) await deleteTransaction(t.id);
                          }}
                          aria-label={`Excluir ${t.description}`}
                          className="p-2 bg-white dark:bg-zinc-800 rounded-lg border border-gray-200 dark:border-zinc-700 hover:text-red-500 transition-colors"
@@ -2452,7 +2454,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                           <span className={`font-bold text-sm ${selectedClassForSub === c.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-zinc-100'}`}>{c.name}</span>
                           <span className={`ml-2 text-[9px] px-1.5 py-0.5 rounded uppercase ${c.type === 'INCOME' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{c.type === 'INCOME' ? 'Rec' : 'Desp'}</span>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); deleteFinClassification(c.id); }} className="text-red-500 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">
+                        <button onClick={async (e) => { e.stopPropagation(); if (await confirmAction({ title: 'Excluir classificação', description: `Deseja excluir a classificação “${c.name}”?`, confirmText: 'Excluir classificação' })) await deleteFinClassification(c.id); }} className="text-red-500 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -2475,7 +2477,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                         {(finSubclassifications || []).filter(s => s.classificationId === selectedClassForSub).map(s => (
                           <div key={s.id} className="flex items-center justify-between p-2 border border-gray-100 dark:border-zinc-800 rounded-lg bg-gray-50 dark:bg-zinc-900/50">
                             <span className="font-bold text-sm text-gray-900 dark:text-zinc-100">{s.name}</span>
-                            <button onClick={() => deleteFinSubclassification(s.id)} className="text-red-500 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">
+                            <button onClick={async () => { if (await confirmAction({ title: 'Excluir subclassificação', description: `Deseja excluir a subclassificação “${s.name}”?`, confirmText: 'Excluir subclassificação' })) await deleteFinSubclassification(s.id); }} className="text-red-500 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
@@ -2523,7 +2525,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                       <div>
                         <span className="font-bold text-sm text-gray-900 dark:text-zinc-100">{sup.name}</span>
                       </div>
-                      <button onClick={() => deleteSupplier(sup.id)} className="text-red-500 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">
+                      <button onClick={async () => { if (await confirmAction({ title: 'Excluir fornecedor', description: `Deseja excluir o fornecedor “${sup.name}”?`, confirmText: 'Excluir fornecedor' })) await deleteSupplier(sup.id); }} className="text-red-500 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -2625,7 +2627,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                           </div>
                         )}
                       </div>
-                      <button onClick={() => deleteFinancialCategory(cat.id)} className="text-red-500 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">
+                      <button onClick={async () => { if (await confirmAction({ title: 'Excluir conta', description: `Deseja excluir a conta “${cat.name}”? Esta ação pode afetar filtros de lançamentos existentes.`, confirmText: 'Excluir conta' })) await deleteFinancialCategory(cat.id); }} className="text-red-500 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>

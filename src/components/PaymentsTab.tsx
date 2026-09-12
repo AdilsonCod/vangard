@@ -5,8 +5,10 @@ import { FileText, Plus, Save, Trash2, Check, X, DollarSign, User as UserIcon, E
 import { AppEmptyState, AppPageHeader } from './ui/AppPrimitives';
 import { createBarberPaymentNotification } from '../notificationService';
 import { calculatePaymentTotals } from '../services/financialEngine';
+import { useConfirmation } from './ui/ConfirmationDialog';
 
 export function PaymentsTab() {
+  const confirmAction = useConfirmation();
   const { users, payments, addPayment, updatePayment, deletePayment, transactions, updateTransaction, addTransaction, deleteTransaction, catalog, systemUnits, addNotification } = useStore();
   
   const barbers = useMemo(() => {
@@ -14,7 +16,6 @@ export function PaymentsTab() {
   }, [users]);
 
   const [selectedBarberId, setSelectedBarberId] = useState<string>(barbers[0]?.id || '');
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [collapsedUnits, setCollapsedUnits] = useState<Record<string, boolean>>({});
 
   const toggleUnitCollapse = (groupKey: string) => {
@@ -324,7 +325,6 @@ export function PaymentsTab() {
       if (paymentToDelete) {
         await syncPaymentWithInternalSales(paymentToDelete, false);
       }
-      setDeleteConfirmId(null);
     } catch (error) {
       console.error('Erro ao excluir pagamento e lançamento do Caixa:', error);
       alert('Não foi possível excluir o pagamento. Tente novamente.');
@@ -613,18 +613,6 @@ export function PaymentsTab() {
                        </button>
                     </div>
 
-                    {deleteConfirmId && (
-                        <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-900/30 flex items-center justify-between gap-4 animate-in slide-in-from-top duration-300">
-                           <div>
-                              <p className="text-sm text-red-800 font-bold">Deseja realmente excluir este pagamento?</p>
-                              <p className="text-xs text-red-600 mt-1">Essa operação é permanente e removerá o registro financeiro anterior.</p>
-                           </div>
-                           <div className="flex gap-2 shrink-0">
-                              <button onClick={() => setDeleteConfirmId(null)} className="px-3.5 py-1.5 bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 rounded-lg text-xs font-semibold text-gray-700 dark:text-zinc-300 transition cursor-pointer">Cancelar</button>
-                              <button onClick={() => handleDeletePayment(deleteConfirmId)} className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow transition cursor-pointer">Excluir</button>
-                           </div>
-                        </div>
-                     )}
 
                      {barberPayments.length === 0 ? (
                        <div className="text-center py-10 bg-gray-50 dark:bg-zinc-800/40 rounded-xl border border-dashed border-gray-300 dark:border-zinc-700">
@@ -655,7 +643,7 @@ export function PaymentsTab() {
                                          <option value="PAGO">Pago</option>
                                       </select>
                                       <button onClick={() => startEditPayment(p)} className="text-gray-400 hover:text-blue-500 p-1" title="Editar pagamento"><Edit2 className="w-4 h-4"/></button>
-                                      <button onClick={() => setDeleteConfirmId(p.id)} className="text-gray-400 hover:text-red-500 p-1" title="Excluir pagamento"><Trash2 className="w-4 h-4"/></button>
+                                      <button onClick={async () => { if (await confirmAction({ title: 'Excluir pagamento', description: 'Deseja excluir este pagamento? A operação é permanente e removerá também o lançamento financeiro vinculado.', confirmText: 'Excluir pagamento' })) await handleDeletePayment(p.id); }} className="text-gray-400 hover:text-red-500 p-1" title="Excluir pagamento"><Trash2 className="w-4 h-4"/></button>
                                    </div>
                                 </div>
                                 <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-6">

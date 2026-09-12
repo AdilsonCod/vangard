@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { useStore } from '../store';
 import { AppBadge, AppButton, AppCard, AppEmptyState, AppSectionHeader, appControlClass } from './ui/AppPrimitives';
 import { scopedCollectionQuery } from '../services/firestoreScope';
+import { useConfirmation } from './ui/ConfirmationDialog';
 
 export type MarketingCampaignStatus = 'PLANEJADA' | 'ATIVA' | 'PAUSADA' | 'CONCLUIDA' | 'CANCELADA';
 
@@ -49,6 +50,7 @@ const shortDate = (value?: string) => value ? value.split('-').reverse().join('/
 
 export function MarketingOperations({ view, onNavigate }: { view: 'OVERVIEW' | 'CAMPAIGNS'; onNavigate: (view: 'CAMPAIGNS' | 'PRODUCTION') => void }) {
   const { systemUnits, users, currentUser } = useStore();
+  const confirmAction = useConfirmation();
   const [campaigns, setCampaigns] = useState<MarketingCampaign[]>([]);
   const [posts, setPosts] = useState<SocialPostSummary[]>([]);
   const [editing, setEditing] = useState<MarketingCampaign | null>(null);
@@ -136,7 +138,7 @@ export function MarketingOperations({ view, onNavigate }: { view: 'OVERVIEW' | '
           <Field label="Observações" wide><textarea className="min-h-24 w-full rounded-xl border border-gray-200 bg-white p-3 text-sm outline-none focus:border-[var(--theme-color)] dark:border-zinc-700 dark:bg-zinc-950" value={editing.notes} onChange={e=>setEditing({...editing,notes:e.target.value})}/></Field>
           {error && <p className="sm:col-span-2 text-sm font-bold text-red-500">{error}</p>}
         </div>
-        <div className="flex flex-col-reverse gap-2 border-t border-gray-200 p-4 dark:border-zinc-800 sm:flex-row sm:justify-between sm:px-6">{editing.id ? <AppButton variant="danger" onClick={async()=>{if(confirm('Excluir esta campanha?')){await deleteDoc(doc(db,'marketing_campaigns',editing.id));setEditing(null);}}}><Trash2 className="h-4 w-4"/>Excluir</AppButton>:<span/>}<div className="flex gap-2"><AppButton onClick={()=>setEditing(null)}>Cancelar</AppButton><AppButton variant="primary" disabled={saving} onClick={save}>{saving?'Salvando...':'Salvar campanha'}</AppButton></div></div>
+        <div className="flex flex-col-reverse gap-2 border-t border-gray-200 p-4 dark:border-zinc-800 sm:flex-row sm:justify-between sm:px-6">{editing.id ? <AppButton variant="danger" onClick={async()=>{if(await confirmAction({ title: 'Excluir campanha', description: `Deseja excluir a campanha “${editing.name}”? Esta ação não pode ser desfeita.`, confirmText: 'Excluir campanha' })){await deleteDoc(doc(db,'marketing_campaigns',editing.id));setEditing(null);}}}><Trash2 className="h-4 w-4"/>Excluir</AppButton>:<span/>}<div className="flex gap-2"><AppButton onClick={()=>setEditing(null)}>Cancelar</AppButton><AppButton variant="primary" disabled={saving} onClick={save}>{saving?'Salvando...':'Salvar campanha'}</AppButton></div></div>
       </div>
     </div>}
   </div>;

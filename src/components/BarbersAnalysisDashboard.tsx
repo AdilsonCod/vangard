@@ -5,6 +5,7 @@ import { MonthlyBarberStats, User } from '../types';
 import { ResponsiveContainer, BarChart, Bar, Tooltip, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from 'recharts';
 import { AppPageHeader, appControlClass } from './ui/AppPrimitives';
 import { calculateTotalRevenue, inferStandaloneRevenue } from '../services/financialEngine';
+import { useConfirmation } from './ui/ConfirmationDialog';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -63,6 +64,7 @@ const CardInput = ({
 };
 
 export function BarbersAnalysisDashboard() {
+  const confirmAction = useConfirmation();
   const { systemUnits, catalog, monthlyBarberStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, users } = useStore();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonthIdx, setSelectedMonthIdx] = useState(new Date().getMonth());
@@ -219,27 +221,20 @@ export function BarbersAnalysisDashboard() {
     }
   };
 
-  const [clearConfirmMsg, setClearConfirmMsg] = useState<string | null>(null);
-  const [clearConfirmAll, setClearConfirmAll] = useState<boolean>(false);
-
-  const handleClearStats = (allMonths: boolean) => {
+  const handleClearStats = async (allMonths: boolean) => {
     if (unitBarbers.length === 0) return;
     const confirmMsg = allMonths 
       ? `Tem certeza que deseja apagar a simulação do ano completo (${selectedYear}) para os barbeiros desta unidade?`
       : `Tem certeza que deseja apagar a simulação do mês de ${MONTH_NAMES[selectedMonthIdx]} para os barbeiros desta unidade?`;
-    
-    setClearConfirmMsg(confirmMsg);
-    clearConfirmAll; // keep reference or assign
-    setClearConfirmAll(allMonths);
     setIsShowingSimulateMenu(false);
+    if (await confirmAction({ title: allMonths ? 'Zerar ano dos profissionais' : 'Zerar mês dos profissionais', description: `${confirmMsg} Essa operação é permanente e não poderá ser desfeita.`, confirmText: allMonths ? 'Zerar ano completo' : 'Zerar mês' })) await executeClearStats(allMonths);
   };
 
-  const executeClearStats = async () => {
+  const executeClearStats = async (allMonths: boolean) => {
     setIsSimulating(true);
-    setClearConfirmMsg(null);
     
     try {
-      const monthsToClear = clearConfirmAll
+      const monthsToClear = allMonths
         ? MONTH_NAMES.map((_, idx) => String(idx + 1).padStart(2, '0'))
         : [String(selectedMonthIdx + 1).padStart(2, '0')];
 
@@ -429,28 +424,6 @@ export function BarbersAnalysisDashboard() {
         icon={<Users className="h-5 w-5" />}
       />
     <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
-      {clearConfirmMsg && (
-        <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-xl flex items-center justify-between gap-4 animate-in slide-in-from-top duration-300">
-          <div>
-            <p className="text-sm font-semibold text-red-900 dark:text-red-400">{clearConfirmMsg}</p>
-            <p className="text-xs text-red-500 mt-1">Essa operação é permanente e não poderá ser desfeita.</p>
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <button
-              onClick={() => setClearConfirmMsg(null)}
-              className="px-3.5 py-1.5 border border-gray-250 dark:border-zinc-800 text-gray-700 dark:text-zinc-350 hover:bg-gray-105 dark:hover:bg-zinc-800 text-xs font-bold rounded-lg transition"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={executeClearStats}
-              className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow transition"
-            >
-              Confirmar
-            </button>
-          </div>
-        </div>
-      )}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 pb-4 border-b border-gray-200 dark:border-zinc-800 gap-4">
         <div>
            <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">

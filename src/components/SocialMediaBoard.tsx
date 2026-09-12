@@ -6,6 +6,7 @@ import { useStore } from '../store';
 import { SystemUnit, User } from '../types';
 import { authenticatedApi } from '../services/apiClient';
 import { defaultUnitFor, scopedCollectionQuery } from '../services/firestoreScope';
+import { useConfirmation } from './ui/ConfirmationDialog';
 
 type PostStatus = 'Ideia' | 'Briefing' | 'Roteiro' | 'Aprovação' | 'Gravação' | 'Edição' | 'Revisão' | 'Agendado' | 'Publicado' | 'Mensurado' | 'Cancelado';
 type PostPriority = 'BAIXA' | 'NORMAL' | 'ALTA' | 'URGENTE';
@@ -387,6 +388,7 @@ function CalendarView({ posts, getPlatformIcon, onPostClick }: any) {
 
 function LibraryView() {
   const { currentUser } = useStore();
+  const confirmAction = useConfirmation();
   const [links, setLinks] = useState<any[]>([]);
   const [newLink, setNewLink] = useState({ title: '', url: '' });
 
@@ -404,7 +406,8 @@ function LibraryView() {
   };
 
   const del = async (id: string) => {
-    await deleteDoc(doc(db, 'social_library', id));
+    const link = links.find(item => item.id === id);
+    if (await confirmAction({ title: 'Excluir referência', description: `Deseja excluir “${link?.title || 'esta referência'}” da biblioteca?`, confirmText: 'Excluir referência' })) await deleteDoc(doc(db, 'social_library', id));
   };
 
   return (
@@ -435,6 +438,7 @@ function LibraryView() {
 }
 
 function PostModal({ post, onClose, users, campaigns, systemUnits, currentUser }: { post: SocialPost, onClose: () => void, users: User[], campaigns: CampaignOption[], systemUnits: SystemUnit[], currentUser: User | null }) {
+  const confirmAction = useConfirmation();
   const [form, setForm] = useState<SocialPost>(normalizePost(post));
   const [loading, setLoading] = useState(false);
   const [newChecklist, setNewChecklist] = useState('');
@@ -465,7 +469,7 @@ function PostModal({ post, onClose, users, campaigns, systemUnits, currentUser }
   };
 
   const deleteMode = async () => {
-    if (confirm("Deseja realmente excluir este card de conteúdo?")) {
+    if (await confirmAction({ title: 'Excluir pauta', description: `Deseja excluir “${form.title}”? O card e seu histórico serão removidos permanentemente.`, confirmText: 'Excluir pauta' })) {
       await deleteDoc(doc(db, 'social_posts', form.id));
       onClose();
     }
