@@ -29,7 +29,7 @@ Monte `/data` como volume persistente. O segredo deve permanecer no cofre de seg
 5. Configure no build da Vercel `VITE_MESSAGE_SERVICE_URL=https://mensagens.seu-dominio`.
 6. Confirme `GET /health` e então conecte o WhatsApp no painel.
 
-Em desenvolvimento, execute `npm run dev` e `npm run dev:messages` em terminais separados. O frontend usa `http://localhost:3001` como padrão local.
+Em desenvolvimento, use `npm run dev:all` para iniciar a aplicação web e o serviço de mensagens juntos. Também é possível executar `npm run dev` e `npm run dev:messages` em terminais separados. O frontend usa `http://localhost:3001` como padrão local.
 
 ## Falhas
 
@@ -38,5 +38,5 @@ Se o serviço estiver fora do ar, o painel mostra um aviso e desabilita as açõ
 ## Verificação
 
 - `npm run test:message-auth-store` comprova que o arquivo persistido não contém os dados em texto claro e pode ser restaurado.
+- `npm run test:message-service-health` inicia a API em uma porta temporária e valida a resposta pública de `/health` sem expor configurações ou segredos.
 - `npm run typecheck`, `npm run lint` e `npm run build` verificam os dois processos.
-
