@@ -30,9 +30,12 @@ before(async () => {
       { id: 'marketing', role: 'MARKETING', unitId: 'unit-a' },
       { id: 'reception', role: 'RECEPTION', unitId: 'unit-a' },
       { id: 'barber', role: 'BARBER', unitId: 'unit-a' },
+      { id: 'manicure', role: 'MANICURE', unitId: 'unit-a' },
       { id: 'finance-b', role: 'FINANCIAL', unitId: 'unit-b' },
       { id: 'marketing-b', role: 'MARKETING', unitId: 'unit-b' },
       { id: 'reception-b', role: 'RECEPTION', unitId: 'unit-b' },
+      { id: 'barber-b', role: 'BARBER', unitId: 'unit-b' },
+      { id: 'manicure-b', role: 'MANICURE', unitId: 'unit-b' },
       { id: 'inactive-admin', role: 'ADMIN', unitId: 'unit-a', isActive: false },
     ]) {
       await setDoc(doc(db, 'users', profile.id), profile);
@@ -44,6 +47,11 @@ before(async () => {
     await setDoc(doc(db, 'financialPeriodLocks', 'unit-a_2026-09'), { unitId: 'unit-a', period: '2026-09', closingId: closing.id, active: true });
     await setDoc(doc(db, 'smart_links', 'promo'), { unitId: 'unit-a', shortCode: 'promo', destinationUrl: 'https://example.com', totalClicks: 0, isActive: true });
     await setDoc(doc(db, 'smart_link_clicks', 'allowed'), { linkId: 'promo', unitId: 'unit-a', shortCode: 'promo', destinationUrl: 'https://example.com', phase: 'ACTIVE', timestamp: new Date(0).toISOString(), device: 'Desktop', simulated: false });
+    await setDoc(doc(db, 'transactions', 'unit-a-transaction'), { unitId: 'unit-a', date: '2026-09-09', type: 'INCOME', status: 'RECEBIDO', amount: 100 });
+    await setDoc(doc(db, 'marketing_campaigns', 'unit-a-campaign-seed'), { unitId: 'unit-a', name: 'Campanha A' });
+    await setDoc(doc(db, 'message_contact_lists', 'unit-a-list-seed'), { unitId: 'unit-a', name: 'Lista A' });
+    await setDoc(doc(db, 'entries', 'barber-entry'), { unitId: 'unit-a', userId: 'barber', date: '2026-09-09' });
+    await setDoc(doc(db, 'entries', 'manicure-entry'), { unitId: 'unit-a', userId: 'manicure', date: '2026-09-09' });
   });
 });
 
@@ -51,6 +59,39 @@ after(async () => environment?.cleanup());
 
 const authDb = (uid: string, role: string) =>
   environment.authenticatedContext(uid, { role }).firestore();
+
+test('matriz dos seis perfis aplica permissões reais por função', async () => {
+  const admin = authDb('admin', 'ADMIN');
+  const finance = authDb('finance', 'FINANCIAL');
+  const marketing = authDb('marketing', 'MARKETING');
+  const reception = authDb('reception', 'RECEPTION');
+  const barber = authDb('barber', 'BARBER');
+  const manicure = authDb('manicure', 'MANICURE');
+
+  await assertSucceeds(getDoc(doc(admin, 'transactions', 'unit-a-transaction')));
+  await assertSucceeds(getDoc(doc(finance, 'transactions', 'unit-a-transaction')));
+  await assertFails(getDoc(doc(marketing, 'transactions', 'unit-a-transaction')));
+  await assertSucceeds(getDoc(doc(marketing, 'marketing_campaigns', 'unit-a-campaign-seed')));
+  await assertFails(getDoc(doc(reception, 'marketing_campaigns', 'unit-a-campaign-seed')));
+  await assertSucceeds(getDoc(doc(reception, 'message_contact_lists', 'unit-a-list-seed')));
+  await assertFails(getDoc(doc(barber, 'message_contact_lists', 'unit-a-list-seed')));
+  await assertSucceeds(getDoc(doc(barber, 'entries', 'barber-entry')));
+  await assertFails(getDoc(doc(barber, 'entries', 'manicure-entry')));
+  await assertSucceeds(getDoc(doc(manicure, 'entries', 'manicure-entry')));
+  await assertFails(getDoc(doc(manicure, 'entries', 'barber-entry')));
+});
+
+test('todos os perfis não administrativos permanecem isolados da outra unidade', async () => {
+  for (const [uid, role, collectionName, documentId] of [
+    ['finance-b', 'FINANCIAL', 'transactions', 'unit-a-transaction'],
+    ['marketing-b', 'MARKETING', 'marketing_campaigns', 'unit-a-campaign-seed'],
+    ['reception-b', 'RECEPTION', 'message_contact_lists', 'unit-a-list-seed'],
+    ['barber-b', 'BARBER', 'entries', 'barber-entry'],
+    ['manicure-b', 'MANICURE', 'entries', 'manicure-entry'],
+  ] as const) {
+    await assertFails(getDoc(doc(authDb(uid, role), collectionName, documentId)));
+  }
+});
 
 test('coleções financeiras permitem Financeiro e negam Barbeiro', async () => {
   const finance = authDb('finance', 'FINANCIAL');
