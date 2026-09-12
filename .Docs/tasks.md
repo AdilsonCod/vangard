@@ -302,7 +302,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 26 — Testar fluxos financeiros completos
 
-- [ ] Criar testes de integração para importação, conciliação, fechamento, baixas, pagamentos, cortesias e vendas internas.
+- [x] Criar testes de integração para importação, conciliação, fechamento, baixas, pagamentos, cortesias e vendas internas.
 
 **Critérios de aprovação**
 
@@ -313,7 +313,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 27 — Testar perfis e responsividade
 
-- [ ] Cobrir os principais fluxos de cada perfil em desktop, tablet e telefone.
+- [x] Cobrir os principais fluxos de cada perfil em desktop, tablet e telefone.
 
 **Critérios de aprovação**
 
@@ -324,7 +324,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 28 — Executar auditoria final de segurança
 
-- [ ] Revisar regras, APIs, dependências, segredos, cabeçalhos e permissões antes do deploy de produção.
+- [x] Revisar regras, APIs, dependências, segredos, cabeçalhos e permissões antes do deploy de produção.
 
 **Critérios de aprovação**
 

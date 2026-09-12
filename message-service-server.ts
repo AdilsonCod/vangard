@@ -11,6 +11,10 @@ const allowedOrigins = new Set((process.env.MESSAGE_ALLOWED_ORIGINS || 'http://l
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   const origin = req.headers.origin;
   if (origin && allowedOrigins.has(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
@@ -31,4 +35,3 @@ app.listen(port, () => {
   console.log(`Serviço persistente de mensagens ativo na porta ${port}.`);
   if (process.env.MESSAGE_AUTO_CONNECT !== 'false') void startMessageDispatchConnection();
 });
-

@@ -9,21 +9,21 @@ service cloud.firestore {
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
+
+    function hasActiveProfile() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (!getUserData().keys().hasAny(['isActive']) || getUserData().isActive == true);
+    }
     
     function isAdmin() {
-      return isAuthenticated() && (
-        (request.auth.token.keys().hasAny(['role']) && request.auth.token.role == 'ADMIN') ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         getUserData().keys().hasAny(['role']) && getUserData().role == 'ADMIN')
-      );
+      return hasActiveProfile() &&
+        getUserData().keys().hasAny(['role']) && getUserData().role == 'ADMIN';
     }
 
     function hasRole(role) {
-      return isAuthenticated() && (
-        (request.auth.token.keys().hasAny(['role']) && request.auth.token.role == role) ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         getUserData().keys().hasAny(['role']) && getUserData().role == role)
-      );
+      return hasActiveProfile() &&
+        getUserData().keys().hasAny(['role']) && getUserData().role == role;
     }
 
     function canManageFinance() {

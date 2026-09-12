@@ -33,6 +33,7 @@ before(async () => {
       { id: 'finance-b', role: 'FINANCIAL', unitId: 'unit-b' },
       { id: 'marketing-b', role: 'MARKETING', unitId: 'unit-b' },
       { id: 'reception-b', role: 'RECEPTION', unitId: 'unit-b' },
+      { id: 'inactive-admin', role: 'ADMIN', unitId: 'unit-a', isActive: false },
     ]) {
       await setDoc(doc(db, 'users', profile.id), profile);
     }
@@ -230,4 +231,13 @@ test('coleções não inventariadas são negadas até para administrador', async
   const admin = authDb('admin', 'ADMIN');
   await assertFails(setDoc(doc(admin, 'unknown_private_collection', 'item'), { value: 1 }));
   await assertFails(getDoc(doc(admin, 'unknown_private_collection', 'item')));
+});
+
+test('claims isoladas e perfis inativos não concedem privilégios', async () => {
+  const missingProfile = authDb('claim-only-admin', 'ADMIN');
+  const inactiveAdmin = authDb('inactive-admin', 'ADMIN');
+  await assertFails(getDocs(collection(missingProfile, 'reconciliation_reports')));
+  await assertFails(getDocs(collection(inactiveAdmin, 'reconciliation_reports')));
+  await assertFails(setDoc(doc(missingProfile, 'systemUnits', 'forged'), { name: 'Forjada' }));
+  await assertFails(setDoc(doc(inactiveAdmin, 'systemUnits', 'inactive'), { name: 'Inativa' }));
 });

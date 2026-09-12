@@ -49,12 +49,15 @@ async function trustedProfile(uid: string, email?: string) {
 export async function verifyFirebaseIdToken(token: string): Promise<VerifiedFirebaseUser> {
   const decoded = await adminAuth.verifyIdToken(token);
   const profile = await trustedProfile(decoded.uid, decoded.email);
+  if (!profile || profile.isActive === false) {
+    throw new Error('Perfil de acesso inexistente ou inativo.');
+  }
   const unitId = profile?.unitId ?? profile?.unit;
 
   return {
     uid: decoded.uid,
     email: decoded.email,
-    role: normalizedRole(profile?.role ?? decoded.role),
+    role: normalizedRole(profile.role),
     unitId: typeof unitId === 'string' ? unitId : undefined,
     profileId: typeof profile?.id === 'string' ? profile.id : undefined,
   };
