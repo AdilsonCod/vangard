@@ -335,7 +335,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 29 — Publicar release candidata
 
-- [ ] Gerar uma release candidata em ambiente de homologação e executar o checklist operacional do PRD.
+- [x] Gerar uma release candidata em ambiente de homologação e executar o checklist operacional do PRD.
 
 **Critérios de aprovação**
 
