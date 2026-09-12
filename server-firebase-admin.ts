@@ -1,11 +1,14 @@
 import { applicationDefault, cert, getApps, initializeApp, type AppOptions } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
-import firebaseConfig from './firebase-applet-config.json';
 import type { VerifiedFirebaseUser } from './server-auth.js';
 
+const DEFAULT_FIREBASE_PROJECT_ID = 'vansmanagement-6ab54';
+
 function adminOptions(): AppOptions {
-  const projectId = process.env.FIREBASE_PROJECT_ID?.trim() || firebaseConfig.projectId;
+  const projectId = process.env.FIREBASE_PROJECT_ID?.trim()
+    || process.env.VITE_FIREBASE_PROJECT_ID?.trim()
+    || DEFAULT_FIREBASE_PROJECT_ID;
   const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
 
   if (rawServiceAccount) {
