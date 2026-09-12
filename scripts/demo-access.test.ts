@@ -55,3 +55,37 @@ test('seed automático do banco é restrito e inativo por padrão em produção'
   const storeCode = readFileSync(new URL('../src/store.tsx', import.meta.url), 'utf8');
   assert.match(storeCode, /SHOULD_SEED_DATABASE\s*=\s*import\.meta\.env\.DEV\s*&&/);
 });
+
+
+test('simulações de desempenho ficam locais e a limpeza não exclui estatísticas reais', () => {
+  for (const component of ['UnitsAnalysisDashboard', 'BarbersAnalysisDashboard']) {
+    const code = readFileSync(new URL('../src/components/' + component + '.tsx', import.meta.url), 'utf8');
+    const simulation = code.slice(code.indexOf('const handleSimulateStats'), code.indexOf('const handleClearStats'));
+    assert.match(simulation, /if \(!demoAllowed\) return/);
+    assert.match(simulation, /setDemoStats\(Object.values\(simulatedInSession\)\)/);
+    assert.doesNotMatch(simulation, /updateMonthly|deleteMonthly/);
+    assert.doesNotMatch(code, /deleteMonthly/);
+    assert.match(code, /simulated: true/);
+    assert.match(code, /demoAllowed && demoStats.length/);
+  }
+});
+
+test('carregar arquivo não libera dados demonstrativos para persistência', () => {
+  for (const component of ['BankReconciliation', 'FintechReconciliation']) {
+    const code = readFileSync(new URL('../src/components/' + component + '.tsx', import.meta.url), 'utf8');
+    const handlers = [...code.matchAll(/const handle\w*Upload = [\s\S]*?(?=\n  };)/g)];
+    assert.ok(handlers.length > 0);
+    for (const [handler] of handlers) {
+      assert.match(handler, /if \(isDemoSession\)/);
+      assert.doesNotMatch(handler, /setIsDemoSession\(false\)/);
+    }
+  }
+});
+
+test('todas as rotas de efetivação da conciliação recusam demonstração antes de gravar', () => {
+  const code = readFileSync(new URL('../src/components/FintechReconciliation.tsx', import.meta.url), 'utf8');
+  for (const name of ['handleSettleBatch', 'handleSettleSelected', 'handleSettleAll', 'handleSettleDailyBatch', 'processSettlement', 'syncPendingReceivables', 'handleSaveSession']) {
+    const body = code.slice(code.indexOf('const ' + name + ' ='));
+    assert.match(body, /^const [^\n]+\n    if \(isDemoSession\)/);
+  }
+});

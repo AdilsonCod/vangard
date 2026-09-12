@@ -5,6 +5,7 @@ import { MonthlyBarberStats, User } from '../types';
 import { ResponsiveContainer, BarChart, Bar, Tooltip, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from 'recharts';
 import { AppPageHeader, appControlClass } from './ui/AppPrimitives';
 import { calculateTotalRevenue, inferStandaloneRevenue } from '../services/financialEngine';
+import { demoControlsEnabledFor } from '../services/demoAccess';
 import { useConfirmation } from './ui/ConfirmationDialog';
 
 const MONTH_NAMES = [
@@ -65,7 +66,10 @@ const CardInput = ({
 
 export function BarbersAnalysisDashboard() {
   const confirmAction = useConfirmation();
-  const { systemUnits, catalog, monthlyBarberStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, users } = useStore();
+  const { systemUnits, catalog, currentUser, monthlyBarberStats: persistedStats, updateMonthlyBarberStats, users } = useStore();
+  const demoAllowed = demoControlsEnabledFor(currentUser?.role);
+  const [demoStats, setDemoStats] = useState<MonthlyBarberStats[]>([]);
+  const monthlyBarberStats = useMemo(() => demoAllowed && demoStats.length ? demoStats : persistedStats, [demoAllowed, demoStats, persistedStats]);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonthIdx, setSelectedMonthIdx] = useState(new Date().getMonth());
   const [isSimulating, setIsSimulating] = useState(false);
@@ -76,6 +80,7 @@ export function BarbersAnalysisDashboard() {
   }, [catalog]);
 
   const handleSimulateStats = async (allMonths: boolean) => {
+    if (!demoAllowed) return;
     if (unitBarbers.length === 0) return;
     setIsSimulating(true);
     setIsShowingSimulateMenu(false);
@@ -99,7 +104,6 @@ export function BarbersAnalysisDashboard() {
         return `${year}-${String(month - 1).padStart(2, '0')}`;
       };
 
-      const promises: Promise<void>[] = [];
 
       for (const mNum of monthsToFill) {
         const monthStr = `${selectedYear}-${mNum}`;
@@ -205,15 +209,16 @@ export function BarbersAnalysisDashboard() {
             clientesNovos,
             clientesSemPreferencia,
             extraCounts: extras,
-            extraValues: extraVals
+            extraValues: extraVals,
+            simulated: true
           };
 
           simulatedInSession[statsId] = record;
-          promises.push(updateMonthlyBarberStats(record));
+
         }
       }
 
-      await Promise.all(promises);
+      setDemoStats(Object.values(simulatedInSession));
     } catch (err) {
       console.error("Erro ao simular estatísticas:", err);
     } finally {
@@ -222,40 +227,13 @@ export function BarbersAnalysisDashboard() {
   };
 
   const handleClearStats = async (allMonths: boolean) => {
-    if (unitBarbers.length === 0) return;
-    const confirmMsg = allMonths 
-      ? `Tem certeza que deseja apagar a simulação do ano completo (${selectedYear}) para os barbeiros desta unidade?`
-      : `Tem certeza que deseja apagar a simulação do mês de ${MONTH_NAMES[selectedMonthIdx]} para os barbeiros desta unidade?`;
+    if (!demoAllowed) return;
     setIsShowingSimulateMenu(false);
-    if (await confirmAction({ title: allMonths ? 'Zerar ano dos profissionais' : 'Zerar mês dos profissionais', description: `${confirmMsg} Essa operação é permanente e não poderá ser desfeita.`, confirmText: allMonths ? 'Zerar ano completo' : 'Zerar mês' })) await executeClearStats(allMonths);
-  };
-
-  const executeClearStats = async (allMonths: boolean) => {
-    setIsSimulating(true);
-    
-    try {
-      const monthsToClear = allMonths
-        ? MONTH_NAMES.map((_, idx) => String(idx + 1).padStart(2, '0'))
-        : [String(selectedMonthIdx + 1).padStart(2, '0')];
-
-      const promises: Promise<void>[] = [];
-
-      for (const mNum of monthsToClear) {
-        const monthStr = `${selectedYear}-${mNum}`;
-        for (const barber of unitBarbers) {
-          const statsId = `${monthStr}_${barber.id}`;
-          promises.push(deleteMonthlyBarberStats(statsId));
-        }
-      }
-
-      await Promise.all(promises);
-    } catch (err) {
-      console.error("Erro ao apagar estatísticas:", err);
-    } finally {
-      setIsSimulating(false);
+    if (await confirmAction({ title: 'Limpar demonstração', description: 'Remove somente os exemplos desta tela e restaura a visualização dos dados reais.', confirmText: 'Limpar demonstração' })) {
+      setDemoStats(previous => previous.filter(row => allMonths ? !row.month.startsWith(String(selectedYear) + '-') : row.month !== String(selectedYear) + '-' + String(selectedMonthIdx + 1).padStart(2, '0')));
     }
   };
-  
+
   const availableUnits = useMemo(() => {
     const list = [...(systemUnits || [])];
     const statUnitIds = new Set((monthlyBarberStats || []).map(s => s.unitId).filter(Boolean));
@@ -356,6 +334,10 @@ export function BarbersAnalysisDashboard() {
       updatePayload[field] = val;
     }
 
+    if (demoAllowed && demoStats.length) {
+      setDemoStats(previous => previous.map(row => row.id === updatePayload.id ? { ...updatePayload, simulated: true } : row));
+      return;
+    }
     await updateMonthlyBarberStats(updatePayload);
   };
 
@@ -417,6 +399,7 @@ export function BarbersAnalysisDashboard() {
 
   return (
     <div className="space-y-6">
+      {demoAllowed && demoStats.length > 0 && <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">Demonstração: valores de exemplo apenas nesta tela. Edições não são gravadas. <button type="button" className="underline font-bold" onClick={() => setDemoStats([])}>Sair da demonstração</button></div>}
       <AppPageHeader
         eyebrow="Análises"
         title="Desempenho dos profissionais"
@@ -474,7 +457,7 @@ export function BarbersAnalysisDashboard() {
              </button>
            </div>
 
-            <div className="relative w-full lg:w-auto">
+            {demoAllowed && <div className="relative w-full lg:w-auto">
               <button
                 disabled={isSimulating}
                 onClick={() => setIsShowingSimulateMenu(!isShowingSimulateMenu)}
@@ -485,7 +468,7 @@ export function BarbersAnalysisDashboard() {
                 }`}
               >
                 <Sparkles className="w-4 h-4 text-purple-200" />
-                {isSimulating ? 'Preenchendo...' : 'Preenchimento Rápido'}
+                {isSimulating ? 'Preenchendo...' : 'Demonstração'}
               </button>
               
               {isShowingSimulateMenu && (
@@ -519,27 +502,27 @@ export function BarbersAnalysisDashboard() {
 
                       <div className="border-t border-zinc-800 my-1"></div>
                       <div className="px-3 py-1 text-[10px] font-bold text-rose-500 uppercase tracking-widest select-none">
-                        Excluir / Zerar Dados
+                        Limpar exemplos
                       </div>
                       <button
                         onClick={() => handleClearStats(false)}
                         className="w-full text-left px-4 py-2 hover:bg-rose-950/20 text-xs font-bold text-rose-450 transition flex items-center gap-2 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                        Zerar Mês ({MONTH_NAMES[selectedMonthIdx]})
+                        Limpar exemplos do mês ({MONTH_NAMES[selectedMonthIdx]})
                       </button>
                       <button
                         onClick={() => handleClearStats(true)}
                         className="w-full text-left px-4 py-2 hover:bg-rose-950/20 text-xs font-bold text-rose-500 transition flex items-center gap-2 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                        Zerar Ano Completo ({selectedYear})
+                        Limpar exemplos do ano ({selectedYear})
                       </button>
                     </>
                   )}
                 </div>
               )}
-            </div>
+            </div>}
          </div>
        </div>
 

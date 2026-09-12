@@ -75,6 +75,7 @@ type LinkDraft = {
   tags: string[];
 };
 type ClickLog = {
+  simulated?: boolean;
   id: string;
   timestamp: string;
   device: string;
@@ -321,6 +322,7 @@ export default function SmartLinksDashboard() {
       link: x,
       logs: s.docs
         .map((d) => ({ id: d.id, ...d.data() }) as ClickLog)
+        .filter(log => !log.simulated)
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
     });
   };

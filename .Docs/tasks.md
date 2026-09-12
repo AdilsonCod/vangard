@@ -435,6 +435,12 @@ As tarefas abaixo tratam as lacunas encontradas na auditoria técnica posterior 
 - O build de produção não oferece ação de simulação sem a permissão definida.
 - Teste cobre ambientes de desenvolvimento e produção.
 
+**Revalidação da tarefa 36 — 12/09/2026**
+
+- Corrigidas lacunas em simulações de profissionais/unidades, importação durante demonstração, efetivação parcial da conciliação e exemplos de marketing.
+- Simulações de desempenho permanecem em memória; limpar exemplos não exclui registros reais. Cliques simulados não entram nos totais de analytics.
+- Evidências e limites: [Revalidação da tarefa 36](./TAREFA_36_REVALIDACAO.md).
+
 ### Tarefa 37 — Atualizar dependências moderadamente vulneráveis
 
 - [x] Atualizar a cadeia Firebase Admin/Google Cloud de maneira controlada e validar incompatibilidades.

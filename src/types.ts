@@ -167,6 +167,7 @@ export interface MonthlyUnitStats {
 }
 
 export interface MonthlyBarberStats {
+  simulated?: boolean;
   id: string; // YYYY-MM_BARBER_ID
   barberId: string;
   unitId: string; // the unit the barber belongs to for this month

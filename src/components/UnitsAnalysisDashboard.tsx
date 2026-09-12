@@ -353,15 +353,16 @@ export function UnitsAnalysisDashboard() {
   const {
     systemUnits,
     catalog,
-    monthlyUnitStats,
+    monthlyUnitStats: persistedStats,
     updateMonthlyUnitStats,
-    deleteMonthlyUnitStats,
     users,
     transactions,
     entries,
     currentUser,
   } = useStore();
   const demoAllowed = demoControlsEnabledFor(currentUser?.role);
+  const [demoStats, setDemoStats] = useState<MonthlyUnitStats[]>([]);
+  const monthlyUnitStats = useMemo(() => demoAllowed && demoStats.length ? demoStats : persistedStats, [demoAllowed, demoStats, persistedStats]);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonthIdx, setSelectedMonthIdx] = useState(
     new Date().getMonth(),
@@ -436,7 +437,6 @@ export function UnitsAnalysisDashboard() {
         return `${year}-${String(month - 1).padStart(2, "0")}`;
       };
 
-      const promises: Promise<void>[] = [];
 
       for (const mNum of monthsToFill) {
         const monthStr = `${selectedYear}-${mNum}`;
@@ -634,11 +634,11 @@ export function UnitsAnalysisDashboard() {
           };
 
           simulatedInSession[statsId] = record;
-          promises.push(updateMonthlyUnitStats(record));
+
         }
       }
 
-      await Promise.all(promises);
+      setDemoStats(Object.values(simulatedInSession));
     } catch (err) {
       console.error("Erro ao simular estatísticas:", err);
     } finally {
@@ -647,42 +647,10 @@ export function UnitsAnalysisDashboard() {
   };
 
   const handleClearStats = async (allMonths: boolean) => {
-    const confirmMsg = allMonths
-      ? `Tem certeza que deseja apagar a simulação do ano completo (${selectedYear}) para esta unidade?`
-      : `Tem certeza que deseja apagar a simulação do mês de ${MONTH_NAMES[selectedMonthIdx]} para esta unidade?`;
-
+    if (!demoAllowed) return;
     setIsShowingSimulateMenu(false);
-    if (await confirmAction({ title: allMonths ? 'Zerar ano da unidade' : 'Zerar mês da unidade', description: `${confirmMsg} Essa operação é permanente e não poderá ser desfeita.`, confirmText: allMonths ? 'Zerar ano completo' : 'Zerar mês' })) await executeClearStats(allMonths);
-  };
-
-  const executeClearStats = async (allMonths: boolean) => {
-    setIsSimulating(true);
-
-    try {
-      const monthsToClear = allMonths
-        ? MONTH_NAMES.map((_, idx) => String(idx + 1).padStart(2, "0"))
-        : [String(selectedMonthIdx + 1).padStart(2, "0")];
-
-      const unitsToClear =
-        selectedUnitId === "ALL"
-          ? ["ALL", ...availableUnits.map((u) => u.id)]
-          : [selectedUnitId];
-
-      const promises: Promise<void>[] = [];
-
-      for (const mNum of monthsToClear) {
-        const monthStr = `${selectedYear}-${mNum}`;
-        for (const uid of unitsToClear) {
-          const statsId = `${monthStr}_${uid}`;
-          promises.push(deleteMonthlyUnitStats(statsId));
-        }
-      }
-
-      await Promise.all(promises);
-    } catch (err) {
-      console.error("Erro ao apagar estatísticas:", err);
-    } finally {
-      setIsSimulating(false);
+    if (await confirmAction({ title: 'Limpar demonstração', description: 'Remove somente os exemplos desta tela e restaura a visualização dos dados reais.', confirmText: 'Limpar demonstração' })) {
+      setDemoStats(previous => previous.filter(row => allMonths ? !row.month.startsWith(String(selectedYear) + '-') : row.month !== String(selectedYear) + '-' + String(selectedMonthIdx + 1).padStart(2, '0')));
     }
   };
 
@@ -860,6 +828,10 @@ export function UnitsAnalysisDashboard() {
 
     updatePayload.faturamentoReal = updatePayload.faturamentoTotal;
 
+    if (demoAllowed && demoStats.length) {
+      setDemoStats(previous => previous.map(row => row.id === updatePayload.id ? { ...updatePayload, simulated: true } : row));
+      return;
+    }
     await updateMonthlyUnitStats(updatePayload);
   };
 
@@ -935,6 +907,7 @@ export function UnitsAnalysisDashboard() {
 
   return (
     <div className="space-y-6">
+      {demoAllowed && demoStats.length > 0 && <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">Demonstração: valores de exemplo apenas nesta tela. Edições não são gravadas. <button type="button" className="underline font-bold" onClick={() => setDemoStats([])}>Sair da demonstração</button></div>}
       <AppPageHeader
         eyebrow="Análises"
         title="Desempenho das unidades"
@@ -1022,7 +995,7 @@ export function UnitsAnalysisDashboard() {
                 }`}
               >
                 <Sparkles className="w-4 h-4 text-purple-200" />
-                {isSimulating ? "Preenchendo..." : "Preenchimento Rápido"}
+                {isSimulating ? "Preenchendo..." : "Demonstração"}
               </button>
 
               {isShowingSimulateMenu && (
@@ -1047,21 +1020,21 @@ export function UnitsAnalysisDashboard() {
 
                   <div className="border-t border-zinc-800 my-1"></div>
                   <div className="px-3 py-1 text-[10px] font-bold text-rose-500 uppercase tracking-widest select-none">
-                    Excluir / Zerar Dados
+                    Limpar exemplos
                   </div>
                   <button
                     onClick={() => handleClearStats(false)}
                     className="w-full text-left px-4 py-2 hover:bg-rose-950/20 text-xs font-bold text-rose-450 transition flex items-center gap-2 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                    Zerar Mês ({MONTH_NAMES[selectedMonthIdx]})
+                    Limpar exemplos do mês ({MONTH_NAMES[selectedMonthIdx]})
                   </button>
                   <button
                     onClick={() => handleClearStats(true)}
                     className="w-full text-left px-4 py-2 hover:bg-rose-950/20 text-xs font-bold text-rose-500 transition flex items-center gap-2 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                    Zerar Ano Completo ({selectedYear})
+                    Limpar exemplos do ano ({selectedYear})
                   </button>
                 </div>
               )}
@@ -1562,7 +1535,6 @@ export function UnitsAnalysisDashboard() {
                   })}
                 </span>
               </div>
-
 
               <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-rose-100 dark:border-rose-950/50 shadow-sm">
                 <span className="text-2xs font-extrabold text-rose-500 block mb-1 uppercase tracking-wider">

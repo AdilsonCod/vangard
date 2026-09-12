@@ -36,6 +36,8 @@ export function BankReconciliation() {
       { id: 'demo_2', date: new Date().toISOString().split('T')[0], amount: 1200.50, description: 'RECEBIMENTO PIX', type: 'INCOME' },
       { id: 'demo_3', date: new Date().toISOString().split('T')[0], amount: 89.90, description: 'CONTA DE LUZ', type: 'EXPENSE' },
     ];
+    setMatchingTx(null);
+    setImportedIds(new Set());
     setParsedTransactions(demoTxs);
     setIsDemoSession(true);
   };
@@ -43,7 +45,7 @@ export function BankReconciliation() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setIsDemoSession(false);
+    if (isDemoSession) { setError('Limpe a demonstração antes de carregar arquivos reais.'); e.target.value = ''; return; }
 
     setError(null);
 
@@ -339,7 +341,7 @@ export function BankReconciliation() {
             </p>
           </div>
           <button
-            onClick={() => { setParsedTransactions([]); setIsDemoSession(false); }}
+            onClick={() => { setParsedTransactions([]); setMatchingTx(null); setImportedIds(new Set()); setIsDemoSession(false); }}
             className="text-xs font-bold underline hover:opacity-80 cursor-pointer whitespace-nowrap self-end sm:self-auto"
           >
             Limpar demonstração

@@ -7,6 +7,8 @@ import { AppPageHeader } from './ui/AppPrimitives';
 import { MarketingOperations } from './MarketingOperations';
 import { MarketingPerformance } from './MarketingPerformance';
 import { MarketingIntelligence } from './MarketingIntelligence';
+import { useStore } from '../store';
+import { demoControlsEnabledFor } from '../services/demoAccess';
 import { authenticatedApi } from '../services/apiClient';
 
 interface AlertaGargalo {
@@ -35,6 +37,9 @@ interface MarketingResponse {
 }
 
 export function MarketingDashboard() {
+  const { currentUser } = useStore();
+  const demoAllowed = demoControlsEnabledFor(currentUser?.role);
+  const [isDemoSession, setIsDemoSession] = useState(false);
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CAMPAIGNS' | 'PRODUCTION' | 'CALENDAR' | 'TRAFFIC' | 'RESULTS' | 'LIBRARY' | 'ANALYSIS'>('OVERVIEW');
   const [activeSubTab, setActiveSubTab] = useState<'DIAGNOSTIC' | 'CALCULATOR'>('DIAGNOSTIC');
 
@@ -96,6 +101,9 @@ export function MarketingDashboard() {
   }
 
   const fillExampleData = () => {
+    if (!demoAllowed) return;
+    setIsDemoSession(true);
+    setAnalysis(null);
     setConteudos("Segunda: Vídeo combo corte + barba\nQuarta: Reel motivacional barbeiros\nSexta: Foto cliente antes/depois");
     setMetricas("Investimento: R$ 350,00\nCliques: 120\nLeads (agendamentos direct): 15\nFaturamento estimado: R$ 900,00 (Ticket médio R$ 60)");
     setContexto("Unidade Centro com ociosidade nas tardes de terça a quinta. Precisa de mais movimento nesses horários. Finais de semana lotados.");
@@ -308,13 +316,14 @@ export function MarketingDashboard() {
                       )}
                     </button>
                     
-                    <button
+                    {demoAllowed && <button
                       onClick={fillExampleData}
                       type="button"
                       className="bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 font-bold py-3 px-6 rounded-xl shadow-sm transition"
                     >
                       Preencher Exemplo
-                    </button>
+                    </button>}
+                    {isDemoSession && <p role="status">Demonstração: o diagnóstico usa exemplos fictícios. <button type="button" className="underline" onClick={() => { setConteudos(''); setMetricas(''); setContexto(''); setAnalysis(null); setIsDemoSession(false); }}>Limpar demonstração</button></p>}
                   </div>
                   {error && <p className="text-red-500 text-sm mt-3 font-semibold">{error}</p>}
                 </div>

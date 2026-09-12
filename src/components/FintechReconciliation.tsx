@@ -412,7 +412,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const handlePdvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setIsDemoSession(false);
+    if (isDemoSession) { showToast('Saia da demonstração antes de carregar arquivos reais.'); e.target.value = ''; return; }
     try {
       const data = await parsePDVFile(file);
       setPdvData(data);
@@ -443,7 +443,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const handleClubeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setIsDemoSession(false);
+    if (isDemoSession) { showToast('Saia da demonstração antes de carregar arquivos reais.'); e.target.value = ''; return; }
     try {
       const data = await parseGatewayClubeFile(file);
       setClubeData(data);
@@ -475,7 +475,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const handleRedeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setIsDemoSession(false);
+    if (isDemoSession) { showToast('Saia da demonstração antes de carregar arquivos reais.'); e.target.value = ''; return; }
     try {
       const { pagamentos, recebidos, resumoInfo } = await parseRedeFile(file);
       setRedePagamentos(pagamentos);
@@ -526,7 +526,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const handlePrevisaoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setIsDemoSession(false);
+    if (isDemoSession) { showToast('Saia da demonstração antes de carregar arquivos reais.'); e.target.value = ''; return; }
     try {
       const data = await parsePrevisaoFile(file);
       setPrevisaoData(data);
@@ -540,6 +540,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   // Efetivar / Baixar no caixa da barbearia
   
   const handleSettleBatch = async (batchId: string) => {
+    if (isDemoSession) { showToast('Sessão demonstrativa: a efetivação está bloqueada para proteger os dados reais.'); return; }
     const batch = batches.find(b => b.id === batchId);
     if (!batch || settledItems.has(batch.id)) return;
 
@@ -578,6 +579,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   };
 
   const handleSettleSelected = async () => {
+    if (isDemoSession) { showToast('Sessão demonstrativa: a efetivação está bloqueada para proteger os dados reais.'); return; }
     if (selectedItemsToSettle.size === 0) {
       showToast('Selecione ao menos um item conciliado para efetivar no fluxo de caixa.');
       return;
@@ -627,6 +629,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   };
 
   const handleSettleDailyBatch = async (date: string) => {
+    if (isDemoSession) { showToast('Sessão demonstrativa: a efetivação está bloqueada para proteger os dados reais.'); return; }
     const batchItems = items.filter(i => i.dataVenda === date);
     const itemsToSettle = batchItems.filter(item =>
       isSettlementEligible(item) && !settledItems.has(item.id)
@@ -641,6 +644,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   };
 
   const processSettlement = async (itemsToProcess: ConciliationItem[]) => {
+    if (isDemoSession) { showToast('Sessão demonstrativa: a efetivação está bloqueada para proteger os dados reais.'); return; }
     const newSettled = new Set(settledItems);
     const unitId = selectedUnidade || currentUser?.unit || 'ALL';
 
@@ -692,6 +696,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   };
 
   const syncPendingReceivables = async () => {
+    if (isDemoSession) return 0;
     const unitId = selectedUnidade || currentUser?.unit || 'ALL';
     const pendingItems = items.filter(item => {
       if (!item.dataLiquidacaoPrevista || item.dataLiquidacaoEfetiva || item.valorLiquido <= 0) return false;
