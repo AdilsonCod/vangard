@@ -14,6 +14,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/api/smart-links/:path*", "destination": "/api/smart-links?__path=:path*" },
     { "source": "/r/:code", "destination": "/api/r/:code" }
   ]
 }
