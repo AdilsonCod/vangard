@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { Category, MonthlyBarberStats, MonthlyUnitStats } from "../types";
 import Papa from "papaparse";
-import * as XLSX from "xlsx";
+import type { WorkSheet } from "xlsx";
+import { loadXlsx } from "../services/lazyLibraries";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { hydrateXlsxSharedStrings } from "../utils/xlsxSharedStrings";
@@ -24,8 +25,10 @@ import { AppCard, AppPageHeader, appControlClass } from "./ui/AppPrimitives";
 import { calculatePaymentTotals, calculateTotalRevenue, inferStandaloneRevenue } from "../services/financialEngine";
 import { createImportFingerprint, DataImportType, detectImportTypeFromFilename, findImportHeaderIndex, parseImportCurrency as parseCurrency, parseImportWholeNumber as parseWholeNumber } from "../services/dataImportParsing";
 import { ImportPreviewHeader } from "./importer/ImportPreviewHeader";
+import { useConfirmation } from "./ui/ConfirmationDialog";
 
 export default function DataImporterView() {
+  const confirmAction = useConfirmation();
   const {
     users,
     systemUnits,
@@ -134,6 +137,7 @@ export default function DataImporterView() {
       setFileFingerprint(await createImportFingerprint(buffer));
 
       if (/\.xlsx?$/i.test(selectedFile.name)) {
+        const XLSX = await loadXlsx();
         const bytes = new Uint8Array(buffer);
         const workbook = XLSX.read(bytes, { type: "array" });
         hydrateXlsxSharedStrings(workbook, bytes);
@@ -147,7 +151,7 @@ export default function DataImporterView() {
     }
   };
 
-  const getWorksheetRows = (worksheet: XLSX.WorkSheet) => {
+  const getWorksheetRows = (XLSX: typeof import('xlsx'), worksheet: WorkSheet) => {
     const matrix = XLSX.utils.sheet_to_json<(string | number)[]>(worksheet, {
       header: 1,
       defval: "",
@@ -469,13 +473,14 @@ if (importType === "CASHBARBER_PRODUTOS") {
 
       if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
         try {
+          const XLSX = await loadXlsx();
           const bytes = new Uint8Array(await file.arrayBuffer());
           const workbook = XLSX.read(bytes, { type: "array" });
           const hydratedCells = hydrateXlsxSharedStrings(workbook, bytes);
           const sheetName = selectedSheet || workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
           if (!worksheet) throw new Error("A aba selecionada não existe no arquivo.");
-          const { rows, headerIndex } = getWorksheetRows(worksheet);
+          const { rows, headerIndex } = getWorksheetRows(XLSX, worksheet);
           const warnings: string[] = [];
           if (headerIndex > 0) warnings.push(`Cabeçalho identificado automaticamente na linha ${headerIndex + 1}.`);
           if (hydratedCells > 0) warnings.push(`${hydratedCells} célula(s) de texto do Excel foram recuperadas.`);
@@ -811,9 +816,12 @@ if (importType === "CASHBARBER_PRODUTOS") {
       }
 
       if (existingTargets.length > 0) {
-        const confirmed = window.confirm(
-          `Já existem dados preenchidos em: ${existingTargets.join(", ")}.\n\nDeseja substituir os dados existentes pelos valores deste arquivo? Esta ação não poderá ser desfeita automaticamente.`,
-        );
+        const confirmed = await confirmAction({
+          title: "Substituir dados existentes",
+          description: `Já existem dados preenchidos em: ${existingTargets.join(", ")}. Deseja substituí-los pelos valores deste arquivo? Esta ação não poderá ser desfeita automaticamente.`,
+          confirmText: "Substituir dados",
+          tone: "warning",
+        });
         if (!confirmed) {
           setErrorMessage("Importação cancelada. Os dados existentes foram preservados.");
           return;

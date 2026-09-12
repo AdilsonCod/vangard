@@ -18,9 +18,18 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           manualChunks(id: string) {
-            if (id.includes('node_modules/xlsx') || id.includes('node_modules/fflate')) return 'vendor-xlsx';
+            if (id.includes('preload-helper')) return 'vendor-react';
+            if (id.includes('node_modules/xlsx')) return 'vendor-xlsx';
             if (id.includes('node_modules/pdfjs-dist')) return 'vendor-pdf';
-            if (id.includes('node_modules/jspdf') || id.includes('node_modules/html2canvas') || id.includes('node_modules/html-to-image')) return 'vendor-export';
+            if (
+              id.includes('node_modules/jspdf') ||
+              id.includes('node_modules/html2canvas') ||
+              id.includes('node_modules/html-to-image') ||
+              id.includes('node_modules/fflate') ||
+              id.includes('node_modules/canvg') ||
+              id.includes('node_modules/fast-png') ||
+              id.includes('node_modules/@babel/runtime')
+            ) return 'vendor-export';
             if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) return 'vendor-charts';
             if (id.includes('node_modules/firebase') || id.includes('node_modules/@firebase')) return 'vendor-firebase';
             if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/scheduler')) return 'vendor-react';

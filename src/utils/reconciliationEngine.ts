@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
+import type { WorkBook } from 'xlsx';
+import { loadXlsx } from '../services/lazyLibraries';
 import { hydrateXlsxSharedStrings } from './xlsxSharedStrings';
 import { calculateFee } from '../services/financialEngine';
 import { 
@@ -166,6 +167,7 @@ export async function parsePDVFile(file: File): Promise<PDVMovimentacao[]> {
   const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
 
   if (isExcel) {
+    const XLSX = await loadXlsx();
     const arrayBuffer = await file.arrayBuffer();
     const workbook = XLSX.read(arrayBuffer, { type: 'array' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -440,9 +442,10 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
   let pagamentosRows: any[] = [];
 
   try {
+    const XLSX = await loadXlsx();
     const arrayBuffer = await file.arrayBuffer();
     const isTextFile = /\.(csv|txt)$/i.test(file.name);
-    let workbook: XLSX.WorkBook;
+    let workbook: WorkBook;
 
     if (isTextFile) {
       // SheetJS pode interpretar bytes UTF-8 de CSV como Windows-1252 (ex.:
@@ -658,6 +661,7 @@ export async function parseRedeFile(file: File): Promise<RedeParseResult> {
 
 // Ingestão 4: Previsão de Recebíveis Futuros (exportacao-relatorio-previsao...xlsx)
 export async function parsePrevisaoFile(file: File): Promise<PrevisaoRecebivel[]> {
+  const XLSX = await loadXlsx();
   const arrayBuffer = await file.arrayBuffer();
   const workbook = XLSX.read(arrayBuffer, { type: 'array' });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];

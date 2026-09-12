@@ -5,7 +5,7 @@ import { CheckSquare, Square, DollarSign, CreditCard, Calendar, Filter, Download
 import { usePagination } from '../hooks/usePagination';
 import { Pagination } from './ui/Pagination';
 import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../services/lazyLibraries';
 
 export function ReceivablesReconciliation() {
   const { transactions, updateTransaction, systemUnits } = useStore();
@@ -124,6 +124,7 @@ export function ReceivablesReconciliation() {
         reader.readAsText(file, "utf-8");
       });
     } else if (fileExt === 'xlsx' || fileExt === 'xls') {
+      const XLSX = await loadXlsx();
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: "array" });
       const firstSheetName = workbook.SheetNames[0];

@@ -42,7 +42,7 @@ import {
   Tooltip, 
   Legend 
 } from 'recharts';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../services/lazyLibraries';
 import { collection, doc, getDocs, query, setDoc } from 'firebase/firestore';
 import { useStore } from '../store';
 import { db } from '../firebase';
@@ -76,6 +76,7 @@ import { formatFinancialPeriod, getLatestFinancialPeriod } from '../utils/financ
 import { sanitizeFirestoreData } from '../utils/firestoreData';
 import { ReconciliationWorkspaceTabs, ReconciliationWorkspaceTab } from './reconciliation/ReconciliationWorkspaceTabs';
 import { countObjectiveBatches, filterAuditItems, filterObjectiveBatches, filterReconciliationBatches, ReconciliationBatchStatusFilter } from '../services/reconciliationFilters';
+import { demoControlsEnabledFor } from '../services/demoAccess';
 
 type FintechReconciliationProps = {
   onSettlementComplete?: (dates: string[]) => void;
@@ -109,6 +110,8 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     addFinSubclassification,
     recordFinancialAudit,
   } = useStore();
+  const demoAllowed = demoControlsEnabledFor(currentUser?.role);
+  const [isDemoSession, setIsDemoSession] = useState(false);
 
   // Estados dos arquivos brutos carregados
   const [pdvData, setPdvData] = useState<PDVMovimentacao[]>([]);
@@ -305,7 +308,9 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
 
   // Carrega dados simulados de demonstração da Barbearia Vangard
   const handleLoadDemo = () => {
+    if (!demoAllowed) return;
     setIsProcessing(true);
+    setIsDemoSession(true);
     const demo = getBarbeariaDemoData();
     setPdvData(demo.pdv);
     setClubeData(demo.clube);
@@ -343,6 +348,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
 
   // Limpa tudo
   const handleClear = () => {
+    setIsDemoSession(false);
     setPdvData([]);
     setClubeData([]);
     setRedePagamentos([]);
@@ -406,6 +412,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const handlePdvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setIsDemoSession(false);
     try {
       const data = await parsePDVFile(file);
       setPdvData(data);
@@ -436,6 +443,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const handleClubeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setIsDemoSession(false);
     try {
       const data = await parseGatewayClubeFile(file);
       setClubeData(data);
@@ -467,6 +475,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const handleRedeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setIsDemoSession(false);
     try {
       const { pagamentos, recebidos, resumoInfo } = await parseRedeFile(file);
       setRedePagamentos(pagamentos);
@@ -517,6 +526,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const handlePrevisaoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setIsDemoSession(false);
     try {
       const data = await parsePrevisaoFile(file);
       setPrevisaoData(data);
@@ -589,6 +599,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   };
 
   const handleSettleAll = async () => {
+    if (isDemoSession) { showToast('Sessão demonstrativa: a efetivação está bloqueada para proteger os dados reais.'); return; }
     try {
       const conciliatedItems = items.filter(item =>
         isSettlementEligible(item) && !settledItems.has(item.id)
@@ -736,6 +747,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   };
 
   const handleSaveSession = async () => {
+    if (isDemoSession) { showToast('Sessão demonstrativa: carregue arquivos reais antes de salvar a conciliação.'); return; }
     if (items.length === 0) {
       showToast('Nenhum dado para salvar. Execute a conciliação primeiro.');
       return;
@@ -989,12 +1001,13 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   };
 
   // Exportar Relatório Excel Consolidado
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (items.length === 0) {
       showToast('Nenhum dado conciliado para exportar.');
       return;
     }
 
+    const XLSX = await loadXlsx();
     const wb = XLSX.utils.book_new();
 
     // Aba 1: Resumo KPIs
@@ -1421,9 +1434,9 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
             </button>
             {showMoreActions && (
               <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900 sm:left-auto sm:w-56">
-                <button type="button" onClick={() => { handleLoadDemo(); setShowMoreActions(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-gray-100 dark:hover:bg-zinc-800">
+                {demoAllowed && <button type="button" onClick={() => { handleLoadDemo(); setShowMoreActions(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-gray-100 dark:hover:bg-zinc-800">
                   <Sparkles className="h-4 w-4 text-blue-500" /> Dados de exemplo
-                </button>
+                </button>}
                 <button type="button" onClick={() => { handleFetchSessions(); setShowMoreActions(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-gray-100 dark:hover:bg-zinc-800">
                   <Database className="h-4 w-4 text-blue-500" /> Carregar conciliações
                 </button>
@@ -1438,6 +1451,25 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
           </div>
         </div>
       </div>
+
+      {isDemoSession && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300/60 dark:border-amber-700/50 text-amber-800 dark:text-amber-300 p-4 rounded-xl text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-3xs font-black uppercase tracking-wider bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100">
+              Modo Demonstração
+            </span>
+            <p className="font-semibold">
+              Você está em uma sessão com dados de exemplo da Barbearia Vangard. A efetivação e gravação no Firestore estão bloqueadas para não afetar dados contábeis reais.
+            </p>
+          </div>
+          <button
+            onClick={() => { handleClear(); setIsDemoSession(false); }}
+            className="text-xs font-bold underline hover:opacity-80 cursor-pointer whitespace-nowrap self-end sm:self-auto"
+          >
+            Sair da demonstração
+          </button>
+        </div>
+      )}
 
       {false && <>
       <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -2718,12 +2750,12 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                           <DollarSign className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-zinc-600" />
                           <p className="font-bold text-sm">Nenhum comparativo processado ainda.</p>
                           <p className="text-xs text-gray-500 mt-1">Carregue os relatórios de PDV e Adquirente acima para visualizar o confronto.</p>
-                          <button
+                          {demoAllowed && <button
                             onClick={handleLoadDemo}
                             className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm"
                           >
                             Carregar Dados Exemplo Barbearia Vangard
-                          </button>
+                          </button>}
                         </td>
                       </tr>
                     )}

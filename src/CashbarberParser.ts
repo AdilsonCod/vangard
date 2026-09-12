@@ -1,10 +1,5 @@
 import Papa from "papaparse";
-import * as XLSX from "xlsx";
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
-if (typeof pdfjsWorker === 'string') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-}
+import { loadPdfJs, loadXlsx } from "./services/lazyLibraries";
 
 export interface CashbarberProductReport {
   barbers: {
@@ -18,6 +13,7 @@ export interface CashbarberProductReport {
 }
 
 export async function parseCashbarberProductsPDF(file: File): Promise<CashbarberProductReport> {
+  const pdfjsLib = await loadPdfJs();
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   
@@ -240,6 +236,7 @@ export async function parseCashbarberProductsSpreadsheet(file: File): Promise<Ca
     const parsed = Papa.parse(text, { skipEmptyLines: true });
     jsonData = parsed.data as any[][];
   } else {
+    const XLSX = await loadXlsx();
     const workbook = XLSX.read(arrayBuffer, { type: "array" });
     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
     jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as any[][];

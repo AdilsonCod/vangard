@@ -1,11 +1,5 @@
-import * as XLSX from "xlsx";
 import Papa from "papaparse";
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
-
-if (typeof pdfjsWorker === 'string') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-}
+import { loadPdfJs, loadXlsx } from "./services/lazyLibraries";
 
 export interface DPoteBarberData {
   name: string;
@@ -22,6 +16,7 @@ export interface DPoteReport {
 }
 
 export async function parseDPotePDF(file: File): Promise<DPoteReport> {
+  const pdfjsLib = await loadPdfJs();
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   type PdfRow = { page: number; y: number; items: { x: number; text: string }[]; text: string };
@@ -206,9 +201,9 @@ export function extractDPoteFrom2DArray(rows: any[][]): DPoteReport {
 }
 
 export async function parseDPoteSpreadsheet(file: File): Promise<DPoteReport> {
-  return new Promise((resolve, reject) => {
-    const fileName = file.name.toLowerCase();
-    if (fileName.endsWith('.csv') || fileName.endsWith('.txt')) {
+  const fileName = file.name.toLowerCase();
+  if (fileName.endsWith('.csv') || fileName.endsWith('.txt')) {
+    return new Promise((resolve, reject) => {
       Papa.parse(file, {
         header: false,
         skipEmptyLines: true,
@@ -219,19 +214,14 @@ export async function parseDPoteSpreadsheet(file: File): Promise<DPoteReport> {
         },
         error: reject
       });
-    } else {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = new Uint8Array(e.target?.result as ArrayBuffer);
-          const workbook = XLSX.read(data, { type: "array" });
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-          resolve(extractDPoteFrom2DArray(json));
-        } catch(err) { reject(err); }
-      };
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(file);
-    }
-  });
+    });
+  }
+
+  const XLSX = await loadXlsx();
+  const arrayBuffer = await file.arrayBuffer();
+  const data = new Uint8Array(arrayBuffer);
+  const workbook = XLSX.read(data, { type: "array" });
+  const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+  const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+  return extractDPoteFrom2DArray(json);
 }

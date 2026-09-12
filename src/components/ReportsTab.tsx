@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { toCanvas } from 'html-to-image';
-import { jsPDF } from 'jspdf';
+import { loadPdfExporter } from '../services/lazyLibraries';
 import { useStore } from '../store';
 import { Category, CatalogItem, DailyEntry } from '../types';
 import { 
@@ -142,6 +141,7 @@ export function ReportsTab() {
       if (document.fonts?.ready) await document.fonts.ready;
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
+      const { toCanvas, jsPDF } = await loadPdfExporter();
       const backgroundColor = getComputedStyle(clone).backgroundColor || '#18181b';
       const canvas = await toCanvas(clone, {
         pixelRatio: 2,
