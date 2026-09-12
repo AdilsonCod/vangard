@@ -477,3 +477,5 @@ As tarefas abaixo tratam as lacunas encontradas na auditoria técnica posterior 
 - Cada conjunto funcional está identificado no histórico.
 - Build e suítes críticas passam no commit candidato.
 - A versão local, o commit remoto e o deploy são rastreáveis.
+
+**Consolidação local em 12/09/2026:** revalidações das tarefas 36–38 versionadas, inicialização Windows revisada e suítes críticas aprovadas. A produção e o remoto continuam na versão anterior. Evidências e estado de publicação na [revalidação da tarefa 39](./TAREFA_39_REVALIDACAO.md).

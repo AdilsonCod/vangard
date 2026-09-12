@@ -39,7 +39,7 @@ test('segredos permanecem fora dos arquivos versionados e do bundle', () => {
 });
 
 test('servidores e Vercel aplicam cabeçalhos mínimos de segurança', () => {
-  const sources = [read('server.ts'), read('message-service-server.ts'), read('vercel.json')];
+  const sources = [read('server.ts'), read('message-service-app.ts'), read('vercel.json')];
   for (const source of sources) {
     for (const header of ['X-Content-Type-Options', 'X-Frame-Options', 'Referrer-Policy', 'Permissions-Policy']) {
       assert.match(source, new RegExp(header), `${header} ausente`);
@@ -55,7 +55,9 @@ test('dependências de produção não possuem vulnerabilidades altas ou crític
     : ['audit', '--omit=dev', '--json'];
   const audit = spawnSync(command, args, { encoding: 'utf8' });
   const report = JSON.parse(audit.stdout || '{}');
-  const vulnerabilities = report.metadata?.vulnerabilities ?? {};
+  assert.ok(audit.status === 0 || audit.status === 1, 'npm audit deve concluir a consulta');
+  assert.ok(report.metadata?.vulnerabilities, 'auditoria sem relatório não pode ser aprovada');
+  const vulnerabilities = report.metadata.vulnerabilities;
   assert.equal(vulnerabilities.high ?? 0, 0);
   assert.equal(vulnerabilities.critical ?? 0, 0);
 });
