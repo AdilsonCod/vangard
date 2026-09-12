@@ -34,7 +34,7 @@ function normalizedRole(value: unknown) {
   return typeof value === 'string' ? value.trim().toUpperCase() : undefined;
 }
 
-async function trustedProfile(uid: string, email?: string) {
+async function trustedProfile(uid: string, email?: string): Promise<(Record<string, unknown> & { id: string }) | undefined> {
   const direct = await adminDb.collection('users').doc(uid).get();
   if (direct.exists) return { id: direct.id, ...direct.data() };
 
