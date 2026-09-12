@@ -346,7 +346,7 @@ Este backlog decompõe em entregas pequenas os requisitos definidos no [PRD](./p
 
 ### Tarefa 30 — Publicar em produção e validar pós-deploy
 
-- [ ] Publicar a versão aprovada e executar validação pós-deploy com plano de reversão disponível.
+- [x] Publicar a versão aprovada e executar validação pós-deploy com plano de reversão disponível.
 
 **Critérios de aprovação**
 
