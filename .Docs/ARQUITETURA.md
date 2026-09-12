@@ -206,7 +206,7 @@ Versões declaradas ou observadas no ambiente desta validação:
 | Tailwind CSS | 4.3.3 |
 | Express | 5.2.1 |
 | Firebase Web SDK | 12.13.0 |
-| Firebase Admin SDK | 13.5.x, restrito a scripts/servidor |
+| Firebase Admin SDK | 14.4.x, restrito a scripts/servidor |
 | Firebase Rules Unit Testing | 5.x |
 | Firebase CLI / Emulator | 15.x |
 | Java para Firestore Emulator | 21 |
@@ -217,6 +217,32 @@ Versões declaradas ou observadas no ambiente desta validação:
 
 Para builds reproduzíveis, a referência efetiva é o `package-lock.json`. Atualizações de dependências devem ser revisadas e validadas antes do deploy.
 
+### 7.1 Decisão técnica de dependências e auditoria de segurança (Tarefa 37)
+
+A cadeia de dependências `firebase-admin` foi atualizada de forma controlada da versão `13.10.0` para `14.4.0` (sem o uso de `--force`), garantindo compatibilidade com a API modular do Firebase (`firebase-admin/app`, `firebase-admin/auth` e `firebase-admin/firestore`).
+
+- **Vulnerabilidades altas e críticas**: Zero relatadas em `npm audit --omit=dev`.
+- **Vulnerabilidades moderadas remanescentes (justificativa)**:
+  - Pacote transitivo: `uuid < 11.1.1` (GHSA-w5hq-g745-h8pq, falta de verificação de limites em buffer personalizado em funções de hash v3/v5/v6).
+  - Caminho de dependência: trazido via `google-auth-library 9` pela biblioteca opcional `@google-cloud/storage`.
+  - Avaliação de risco: O sistema não consome `@google-cloud/storage` (a persistência utiliza exclusivamente Firestore e Authentication) e não expõe geração de buffers de UUIDs customizados. A integridade de autenticação, verificação de ID tokens, autorização de rotas e banco de dados foi validada por testes e opera normalmente.
+
+### 7.2 Carregamento sob demanda de módulos pesados (Tarefa 38)
+
+Para otimizar o tempo de inicialização da aplicação e respeitar as restrições de rede móvel (PWA), todas as bibliotecas pesadas de terceiros foram desacopladas do bundle inicial:
+- **SheetJS (`xlsx`)**: ~500 kB uncompressed (~163 kB gzip).
+- **PDF.js (`pdfjs-dist`)**: ~541 kB uncompressed (~164 kB gzip) + worker de 2,39 MB.
+- **Exportadores visuais (`jspdf`, `html-to-image`)**: ~772 kB uncompressed (~237 kB gzip).
+
+Essas dependências são carregadas estritamente sob demanda através do utilitário centralizado `src/services/lazyLibraries.ts` (`loadXlsx()`, `loadPdfJs()`, `loadPdfExporter()`), acionadas apenas no momento em que o usuário clica em importar/exportar ou carrega telas específicas de importação/relatório. No Vite, os helpers de preload foram isolados no chunk `vendor-react`, garantindo que o `dist/index.html` não contenha tags `modulepreload` para essas bibliotecas pesadas. Em caso de falha de download assíncrono (ex.: perda de conexão), o sistema captura a exceção e exibe uma mensagem recuperável e em português ao usuário.
+
+### 7.3 Rastreabilidade de release e consolidação (Tarefa 39)
+
+Para garantir integridade e auditabilidade antes do deploy da Fase 7:
+- As alterações acumuladas foram organizadas em commits atômicos estruturados por tarefa e conjunto funcional.
+- Cada funcionalidade desenvolvida (confirmações destrutivas, atomicidade de catálogo, serviço de mensagens, testes E2E, testes de regras, isolamento de simulações, atualização de dependências e lazy loading) possui rastreabilidade direta no histórico do Git e suíte de testes automatizados associada.
+- O commit candidato foi validado por compilação completa (`npm run build`), verificação de tipos (`npm run typecheck`), análise estática (`npm run lint`) e suítes de regressão funcional, de segurança e de performance.
+
 ## 8. Comandos operacionais
 
 | Comando | Finalidade |
@@ -224,6 +250,7 @@ Para builds reproduzíveis, a referência efetiva é o `package-lock.json`. Atua
 | `npm run dev` | Iniciar Express e Vite localmente. |
 | `npm run typecheck` | Validar tipos sem emitir arquivos. |
 | `npm run lint` | Executar ESLint no projeto. |
+| `npm run test:lazy-loading` | Validar que o bundle inicial não faz preload de XLSX/PDF/exportação e testar carregadores. |
 | `npm run build` | Validar tipos, compilar frontend e empacotar servidor. |
 | `npm start` | Executar o servidor compilado. |
 | `npm run preview` | Visualizar somente o build Vite. |

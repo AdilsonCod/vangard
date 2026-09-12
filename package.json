@@ -6,12 +6,14 @@
   "scripts": {
     "dev": "tsx server.ts",
     "dev:messages": "tsx message-service-server.ts",
+    "dev:all": "tsx scripts/dev-all.ts",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs && npm run build:messages",
     "build:messages": "esbuild message-service-server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/message-service.cjs",
     "start": "node dist/server.cjs",
     "start:messages": "node dist/message-service.cjs",
     "lint": "eslint .",
+    "test:lazy-loading": "tsx --test scripts/lazy-loading.test.ts",
     "test:rede-parser": "tsx scripts/test-rede-parser.ts",
     "test:commission": "tsx --test scripts/commission-calculator.test.ts",
     "firestore:import:dry": "tsx scripts/import-firestore-backup.ts",
@@ -26,6 +28,8 @@
     "test:permissions-matrix": "tsx --test scripts/permissions-matrix.test.ts",
     "test:firestore:user-profile": "firebase emulators:exec --only firestore --project vans-task-8-rules \"tsx --test scripts/firestore-user-profile-rules.test.ts\"",
     "test:firestore:collections": "firebase emulators:exec --only firestore --project vans-task-9-rules \"tsx --test scripts/firestore-sensitive-collections-rules.test.ts\"",
+    "test:firestore:coverage": "tsx --test scripts/firestore-rules-coverage.test.ts",
+    "test:firestore:rules": "npm run test:firestore:coverage && npm run test:firestore:user-profile && npm run test:firestore:collections",
     "test:api-authorization": "tsx --test scripts/server-authorization.test.ts",
     "test:api-client": "tsx --test scripts/api-client.test.ts",
     "unit-ids:migrate:dry": "tsx scripts/migrate-unit-ids.ts",
@@ -40,11 +44,15 @@
     "test:financial-audit": "tsx --test scripts/financial-audit.test.ts",
     "test:financial-presentation": "tsx --test scripts/financial-presentation.test.ts",
     "test:data-import-modules": "tsx --test scripts/data-import-modules.test.ts",
+    "test:catalog-atomicity": "tsx --test scripts/catalog-mutation-plan.test.ts",
     "test:financial-workflows": "tsx --test scripts/financial-workflows.integration.test.ts",
     "test:profiles-responsive": "tsx --test scripts/profiles-responsive.test.ts",
+    "test:e2e": "playwright test",
     "test:security-audit": "tsx --test scripts/security-audit.test.ts",
+    "test:demo-controls": "tsx --test scripts/demo-access.test.ts",
     "test:message-auth-store": "tsx --test scripts/message-auth-store.test.ts",
     "test:message-dispatch-policy": "tsx --test scripts/message-dispatch-policy.test.ts",
+    "test:message-service-health": "tsx --test scripts/message-service-health.test.ts",
     "test:smart-link-security": "tsx --test scripts/smart-link-security.test.ts",
     "preview": "vite preview"
   },
@@ -64,7 +72,7 @@
     "express": "^5.2.1",
     "fflate": "^0.8.3",
     "firebase": "^12.13.0",
-    "firebase-admin": "^13.10.0",
+    "firebase-admin": "^14.4.0",
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
     "jimp": "^1.6.1",
@@ -87,6 +95,7 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
+    "@playwright/test": "^1.63.0",
     "firebase-tools": "^15.30.0"
   }
 }

@@ -364,3 +364,106 @@ Uma tarefa só pode receber `[x]` quando:
 - Não houver segredo ou artefato compilado indevido no commit.
 - A documentação afetada estiver atualizada por referência ao [PRD](./prd.md).
 - O commit da tarefa tiver sido revisado e não incluir mudanças fora do escopo.
+
+## Fase 7 — Lacunas identificadas na auditoria pós-release
+
+As tarefas abaixo tratam as lacunas encontradas na auditoria técnica posterior às tarefas 1–30. As regras funcionais continuam definidas no [PRD](./prd.md).
+
+### Tarefa 31 — Padronizar confirmações de ações destrutivas
+
+- [x] Substituir confirmações nativas, painéis embutidos e exclusões diretas por um popup global consistente para exclusão, inativação, limpeza, zeramento e substituição de dados.
+
+**Critérios de aprovação**
+
+- Toda ação destrutiva persistente exige confirmação em popup antes de executar.
+- O popup informa objeto, impacto e irreversibilidade quando aplicável.
+- Cancelar preserva os dados e confirmar executa a ação uma única vez.
+- A busca por `window.confirm` ou `confirm(` não encontra confirmações nativas na aplicação.
+
+### Tarefa 32 — Tornar catálogo, categorias e subcategorias atômicos
+
+- [x] Migrar salvamentos, exclusões e desvinculações relacionadas para lotes ou transações atômicas do Firestore.
+
+**Critérios de aprovação**
+
+- Uma falha não deixa categorias, subcategorias ou itens parcialmente atualizados.
+- Erros interrompem a operação e são exibidos em português.
+- Exclusões preservam a integridade das referências do catálogo.
+- Testes cobrem sucesso, falha e rollback lógico.
+
+### Tarefa 33 — Automatizar a execução e saúde do serviço de mensagens
+
+- [x] Documentar e implementar verificação de disponibilidade do serviço Baileys separadamente do frontend.
+
+**Critérios de aprovação**
+
+- A aplicação distingue frontend disponível de serviço de mensagens disponível.
+- O ambiente local possui comando documentado para iniciar ambos os serviços.
+- A interface mostra estado indisponível e instrução segura sem expor segredos.
+- Um teste de saúde valida a API do serviço de mensagens.
+
+### Tarefa 34 — Adicionar testes E2E reais de perfis e responsividade
+
+- [x] Criar testes em navegador para os fluxos críticos nos tamanhos de telefone, tablet e desktop.
+
+**Critérios de aprovação**
+
+- Os testes renderizam as páginas em navegador real, sem apenas inspecionar o código-fonte.
+- Login, navegação, modais, gráficos e tabelas são cobertos nos três tamanhos.
+- Falham quando existir sobreposição, rolagem horizontal indevida ou controle inacessível.
+- Produzem relatório e capturas das falhas.
+
+### Tarefa 35 — Fortalecer testes de regras no Firebase Emulator
+
+- [x] Incluir no pipeline os testes reais das regras para todas as coleções privadas e isoladas por unidade.
+
+**Critérios de aprovação**
+
+- Os testes executam no Emulator com usuários dos seis perfis.
+- Leitura e escrita cruzadas entre unidades são negadas.
+- Operações financeiras e administrativas autorizadas continuam funcionando.
+- O pipeline falha se uma coleção nova não possuir cobertura explícita.
+
+### Tarefa 36 — Isolar dados e controles de demonstração
+
+- [x] Restringir simulações e cargas de exemplo ao ambiente de desenvolvimento ou a uma permissão administrativa explícita.
+
+**Critérios de aprovação**
+
+- Usuários comuns não visualizam nem executam cargas demonstrativas em produção.
+- Dados simulados são claramente identificados e não contaminam registros reais.
+- O build de produção não oferece ação de simulação sem a permissão definida.
+- Teste cobre ambientes de desenvolvimento e produção.
+
+### Tarefa 37 — Atualizar dependências moderadamente vulneráveis
+
+- [x] Atualizar a cadeia Firebase Admin/Google Cloud de maneira controlada e validar incompatibilidades.
+
+**Critérios de aprovação**
+
+- `npm audit --omit=dev` não relata vulnerabilidade alta ou crítica e as moderadas remanescentes possuem justificativa.
+- Autenticação, Firestore Admin e APIs protegidas passam após a atualização.
+- Nenhuma correção usa atualização forçada sem revisão das mudanças incompatíveis.
+- Versões e decisão técnica ficam registradas na arquitetura.
+
+### Tarefa 38 — Reduzir o custo do carregamento inicial
+
+- [x] Carregar PDF, planilhas e exportadores apenas quando os respectivos módulos forem acessados.
+
+**Critérios de aprovação**
+
+- O bundle inicial não inclui bibliotecas pesadas de PDF, XLSX e exportação.
+- Importação e exportação continuam funcionando após carregamento sob demanda.
+- O build registra redução mensurável do pacote inicial.
+- Falha ao carregar um módulo apresenta mensagem recuperável ao usuário.
+
+### Tarefa 39 — Consolidar release e eliminar divergência local
+
+- [x] Revisar, testar e versionar as alterações acumuladas antes do próximo deploy.
+
+**Critérios de aprovação**
+
+- O status do Git não contém alterações inesperadas.
+- Cada conjunto funcional está identificado no histórico.
+- Build e suítes críticas passam no commit candidato.
+- A versão local, o commit remoto e o deploy são rastreáveis.
