@@ -24,3 +24,5 @@ add_*
 remove_*
 .vercel
 .local-backups/
+test-results/
+playwright-report/
