@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planUnitIdMigration, type MigrationDocument } from './unit-id-migration-core';
 
-const privateCollections = new Set(['payments', 'reports_manual_weeks', 'smart_links', 'smart_link_clicks', 'gdvEntries']);
+const privateCollections = new Set(['payments', 'reports_manual_weeks', 'smart_links', 'smart_link_clicks', 'gdvEntries', 'dataImportJobs']);
 const base: MigrationDocument[] = [
   { collection: 'systemUnits', id: 'unit-a', data: { name: 'A' } },
   { collection: 'systemUnits', id: 'unit-b', data: { name: 'B' } },
@@ -45,4 +45,13 @@ test('propaga a unidade do link para seus logs de clique', () => {
   ], privateCollections);
   assert.equal(plan[1].resolution.status, 'resolved');
   assert.equal(plan[1].resolution.status === 'resolved' && plan[1].resolution.unitId, 'unit-a');
+});
+
+test('classifica importação sem unidade alvo como global', () => {
+  const plan = planUnitIdMigration([
+    ...base,
+    { collection: 'dataImportJobs', id: 'global-import', data: { importType: 'CATALOGO', targetUnitId: null } },
+  ], privateCollections);
+  assert.equal(plan[0].resolution.status, 'resolved');
+  assert.equal(plan[0].resolution.status === 'resolved' && plan[0].resolution.unitId, 'ALL');
 });

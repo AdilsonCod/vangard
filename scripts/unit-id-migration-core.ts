@@ -64,6 +64,9 @@ export function resolveDocumentUnit(
   if (document.collection === 'commissionConfigs' && indexes.units.has(document.id)) {
     add(document.id, 'documentId->systemUnits');
   }
+  if (document.collection === 'dataImportJobs' && !text(document.data.targetUnitId)) {
+    add('ALL', 'importação global sem targetUnitId');
+  }
   if (document.collection === 'smart_link_clicks') {
     const linkId = text(document.data.linkId);
     add(indexes.documentUnits.get(`smart_links/${linkId}`) || '', 'linkId->smart_links');

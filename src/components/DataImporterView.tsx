@@ -1305,6 +1305,7 @@ if (importType === "CASHBARBER_PRODUTOS") {
         if (importJobRef && file) {
           await setDoc(importJobRef, {
             status: "COMPLETED",
+            unitId: targetUnitId || "ALL",
             fileName: file.name,
             fileSize: file.size,
             fileFingerprint,

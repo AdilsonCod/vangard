@@ -32,6 +32,8 @@
     "unit-ids:migrate:apply": "tsx scripts/migrate-unit-ids.ts --apply",
     "unit-ids:remove-unresolved:dry": "tsx scripts/remove-unresolved-unit-documents.ts",
     "unit-ids:remove-unresolved:apply": "tsx scripts/remove-unresolved-unit-documents.ts --apply",
+    "unit-ids:recover-backup:dry": "tsx scripts/recover-unit-ids-from-backup.ts",
+    "unit-ids:recover-backup:apply": "tsx scripts/recover-unit-ids-from-backup.ts --apply",
     "test:unit-id-migration": "tsx --test scripts/unit-id-migration.test.ts",
     "test:financial-engine": "tsx --test scripts/financial-engine.test.ts scripts/commission-calculator.test.ts",
     "test:financial-period-lock": "tsx --test scripts/financial-period-lock.test.ts",
