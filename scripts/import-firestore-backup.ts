@@ -1,13 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { deleteApp, initializeApp } from 'firebase/app';
-import {
-  collection,
-  doc,
-  getDocs,
-  initializeFirestore,
-  writeBatch,
-} from 'firebase/firestore';
+import { applicationDefault, cert, deleteApp, initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 type BackupDocument = Record<string, unknown> & {
@@ -72,9 +66,11 @@ if (
   );
 }
 
-const app = initializeApp(firebaseConfig, `backup-import-${Date.now()}`);
+const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
+const credential = serviceAccountJson ? cert(JSON.parse(serviceAccountJson)) : applicationDefault();
+const app = initializeApp({ credential, projectId: firebaseConfig.projectId }, `backup-import-${Date.now()}`);
 const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
-const db = initializeFirestore(app, {}, databaseId);
+const db = getFirestore(app, databaseId);
 
 console.log(`Origem: ${backup.metadata?.projectId || 'não informada'} / ${backup.metadata?.firestoreDatabaseId || 'não informado'}`);
 console.log(`Destino: ${firebaseConfig.projectId} / ${databaseId}`);
@@ -88,7 +84,7 @@ const documentsToCreate: Array<{
 let existingDocuments = 0;
 
 for (const [collectionName, backupDocuments] of collectionEntries) {
-  const currentSnapshot = await getDocs(collection(db, collectionName));
+  const currentSnapshot = await db.collection(collectionName).get();
   const currentIds = new Set(currentSnapshot.docs.map(currentDocument => currentDocument.id));
   let collectionNew = 0;
   let collectionExisting = 0;
@@ -118,11 +114,11 @@ if (!applyChanges) {
 }
 
 for (let offset = 0; offset < documentsToCreate.length; offset += 400) {
-  const batch = writeBatch(db);
+  const batch = db.batch();
   const chunk = documentsToCreate.slice(offset, offset + 400);
 
   for (const item of chunk) {
-    batch.set(doc(db, item.collectionName, item.documentId), item.data);
+    batch.set(db.collection(item.collectionName).doc(item.documentId), item.data);
   }
 
   await batch.commit();
