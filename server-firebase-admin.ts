@@ -2,7 +2,7 @@ import { applicationDefault, cert, getApps, initializeApp, type AppOptions } fro
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import firebaseConfig from './firebase-applet-config.json';
-import type { VerifiedFirebaseUser } from './server-auth';
+import type { VerifiedFirebaseUser } from './server-auth.js';
 
 function adminOptions(): AppOptions {
   const projectId = process.env.FIREBASE_PROJECT_ID?.trim() || firebaseConfig.projectId;

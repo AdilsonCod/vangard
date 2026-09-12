@@ -1,9 +1,9 @@
 import type express from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
-import { findSmartLinkByCode, resolveSmartLink, type SmartLink } from './src/smartLinks';
-import { adminDb } from './server-firebase-admin';
-import { authenticatedUser, type VerifiedFirebaseUser } from './server-auth';
-import { assertSafePublicUrl } from './smart-link-security';
+import { findSmartLinkByCode, resolveSmartLink, type SmartLink } from './src/smartLinks.js';
+import { adminDb } from './server-firebase-admin.js';
+import { authenticatedUser, type VerifiedFirebaseUser } from './server-auth.js';
+import { assertSafePublicUrl } from './smart-link-security.js';
 
 const escapeHtml=(value:string)=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]||char));
 const device=(agent='')=>/ipad|tablet/i.test(agent)?'tablet':/mobile|android|iphone/i.test(agent)?'mobile':'desktop';
