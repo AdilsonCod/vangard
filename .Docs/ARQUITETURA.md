@@ -240,6 +240,10 @@ Para otimizar o tempo de inicialização da aplicação e respeitar as restriç�
 
 Essas dependências são carregadas estritamente sob demanda através do utilitário centralizado `src/services/lazyLibraries.ts` (`loadXlsx()`, `loadPdfJs()`, `loadPdfExporter()`), acionadas apenas no momento em que o usuário clica em importar/exportar ou carrega telas específicas de importação/relatório. No Vite, os helpers de preload foram isolados no chunk `vendor-react`, garantindo que o `dist/index.html` não contenha tags `modulepreload` para essas bibliotecas pesadas. Em caso de falha de download assíncrono (ex.: perda de conexão), o sistema captura a exceção e exibe uma mensagem recuperável e em português ao usuário.
 
+Revalidação em 12/09/2026 (tarefa 38): o build gera `dist/.vite/manifest.json`, usado para percorrer todas as dependências estáticas da entrada. Medição: 939.059 bytes de JavaScript inicial (248.481 bytes na soma gzip), em três arquivos: entrada, React e Firebase. Os chunks de XLSX (500.059 bytes), PDF (541.292 bytes) e exportação (772.148 bytes) ficam fora desse grafo; total de 1.813.499 bytes, ou 565.475 bytes gzip, adiado além do worker PDF. Esses números medem o build atual; não são uma comparação de tempo de carregamento com uma release anterior.
+
+O cache/retry dos três loaders usa `createRetryableLoader`. O teste provoca falha de download, verifica mensagem e causa, compartilha requisições simultâneas, repete após falha e reutiliza o sucesso. `npm run test:lazy-loading`: seis testes aprovados, incluindo criação de XLSX/PDF em memória. Build/typecheck e lint aprovados.
+
 ### 7.3 Rastreabilidade de release e consolidação (Tarefa 39)
 
 Para garantir integridade e auditabilidade antes do deploy da Fase 7:

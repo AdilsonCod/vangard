@@ -13,6 +13,7 @@ export default defineConfig(() => {
     },
     build: {
       outDir: 'dist',
+      manifest: true,
       sourcemap: process.env.GENERATE_SOURCEMAP === 'true',
       emptyOutDir: true,
       rollupOptions: {

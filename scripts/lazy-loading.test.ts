@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRetryableLoader } from '../src/services/retryableLoader';
 import { loadXlsx, loadPdfJs, loadPdfExporter } from '../src/services/lazyLibraries';
 
 test('dist/index.html não faz modulepreload de bibliotecas pesadas de planilha, pdf ou exportação', () => {
@@ -54,11 +55,37 @@ test('serviço loadPdfExporter carrega jspdf e html-to-image sob demanda com suc
   assert.ok(doc.output('arraybuffer').byteLength > 0);
 });
 
-test('erros de carregamento exibem mensagens amigáveis em português', async () => {
-  const formatErrorMessage = (lib: string, err: any) =>
-    `Não foi possível carregar o módulo de ${lib}. Verifique sua conexão com a internet e tente novamente. (Detalhes: ${err?.message || err})`;
 
-  const msg = formatErrorMessage('planilhas (Excel)', new Error('Failed to fetch dynamically imported module'));
-  assert.match(msg, /Não foi possível carregar o módulo de planilhas/);
-  assert.match(msg, /Verifique sua conexão com a internet/);
+test('falha de download é recuperável, preserva causa e permite nova tentativa compartilhada', async () => {
+  let attempts = 0;
+  const failure = new Error('Network unavailable');
+  const module = { loaded: true };
+  const load = createRetryableLoader(async () => {
+    attempts++;
+    if (attempts === 1) throw failure;
+    return module;
+  }, 'Não foi possível carregar o módulo. Tente novamente.');
+  const first = load();
+  assert.equal(load(), first, 'requisições simultâneas compartilham a promessa');
+  await assert.rejects(first, error => error instanceof Error && error.cause === failure && /Tente novamente/.test(error.message));
+  assert.equal(await load(), module);
+  assert.equal(await load(), module);
+  assert.equal(attempts, 2, 'sucesso é reutilizado sem baixar outra vez');
+});
+
+test('grafo estático completo da entrada exclui PDF, XLSX e exportadores', () => {
+  const manifest = JSON.parse(fs.readFileSync('dist/.vite/manifest.json', 'utf8'));
+  const visited = new Set<string>();
+  const visit = (key: string) => {
+    if (visited.has(key)) return;
+    visited.add(key);
+    const chunk = manifest[key];
+    assert.ok(chunk, 'chunk deve constar no manifest: ' + key);
+    assert.doesNotMatch(chunk.file, /vendor-(xlsx|pdf|export)|pdf.worker/);
+    for (const dependency of chunk.imports || []) visit(dependency);
+  };
+  assert.ok(manifest['index.html']?.isEntry);
+  visit('index.html');
+  const bytes = [...visited].reduce((sum, key) => sum + fs.statSync(path.join('dist', manifest[key].file)).size, 0);
+  console.log('JavaScript inicial, incluindo dependências estáticas: ' + bytes + ' bytes em ' + visited.size + ' arquivos.');
 });

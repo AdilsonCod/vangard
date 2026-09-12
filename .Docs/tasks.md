@@ -465,6 +465,8 @@ As tarefas abaixo tratam as lacunas encontradas na auditoria técnica posterior 
 - O build registra redução mensurável do pacote inicial.
 - Falha ao carregar um módulo apresenta mensagem recuperável ao usuário.
 
+**Revalidação em 12/09/2026:** seis testes de carregamento aprovados, incluindo falha/nova tentativa real e grafo estático completo. Métricas do build e evidências na seção 7.2 da [arquitetura](./ARQUITETURA.md).
+
 ### Tarefa 39 — Consolidar release e eliminar divergência local
 
 - [x] Revisar, testar e versionar as alterações acumuladas antes do próximo deploy.
