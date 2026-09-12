@@ -54,7 +54,8 @@
     "test:message-dispatch-policy": "tsx --test scripts/message-dispatch-policy.test.ts",
     "test:message-service-health": "tsx --test scripts/message-service-health.test.ts",
     "test:smart-link-security": "tsx --test scripts/smart-link-security.test.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:admin-sdk": "firebase emulators:exec --only firestore --project demo-vans-admin-sdk \"tsx --test scripts/admin-sdk-compatibility.test.ts\""
   },
   "dependencies": {
     "@firebase/eslint-plugin-security-rules": "^0.0.2",

@@ -227,6 +227,10 @@ A cadeia de dependências `firebase-admin` foi atualizada de forma controlada da
   - Caminho de dependência: trazido via `google-auth-library 9` pela biblioteca opcional `@google-cloud/storage`.
   - Avaliação de risco: O sistema não consome `@google-cloud/storage` (a persistência utiliza exclusivamente Firestore e Authentication) e não expõe geração de buffers de UUIDs customizados. A integridade de autenticação, verificação de ID tokens, autorização de rotas e banco de dados foi validada por testes e opera normalmente.
 
+Revalidação em 12/09/2026 (tarefa 37): `npm audit --omit=dev` retorna 2 ocorrências moderadas (`gaxios 6.7.1` e `uuid 9.0.1`), nenhuma alta/crítica. A versão publicada de `@google-cloud/storage` continua 8.1.0 e exige `gaxios ^6`; não foi aplicado override de major nem `audit fix --force`. No código instalado, gaxios usa apenas `uuid.v4()` sem buffer externo. O [aviso GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq) descreve as funções v3/v5/v6 com buffer externo; a manutenção da exceção é uma análise de exposição, não a remoção da vulnerabilidade do pacote.
+
+Validações: `npm run test:admin-sdk` executa leitura, escrita, transação, consulta e exclusão usando o Firebase Admin 14.4.0 e Firestore 9.1.0 no Emulator local; também verifica rejeição de token malformado. Não valida login de produção nem token real. Os 10 testes de fluxo de autenticação e 5 de autorização passaram; build/typecheck e lint aprovados. O lockfile permanece sem alterações de dependências.
+
 ### 7.2 Carregamento sob demanda de módulos pesados (Tarefa 38)
 
 Para otimizar o tempo de inicialização da aplicação e respeitar as restrições de rede móvel (PWA), todas as bibliotecas pesadas de terceiros foram desacopladas do bundle inicial:

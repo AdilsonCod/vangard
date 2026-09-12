@@ -452,6 +452,8 @@ As tarefas abaixo tratam as lacunas encontradas na auditoria técnica posterior 
 - Nenhuma correção usa atualização forçada sem revisão das mudanças incompatíveis.
 - Versões e decisão técnica ficam registradas na arquitetura.
 
+**Revalidação em 12/09/2026:** dependências mantidas após análise das duas ocorrências moderadas; sem alta/crítica. Adicionado teste real de compatibilidade do Admin SDK no Emulator. Decisão e validações na seção 7.1 da [arquitetura](./ARQUITETURA.md).
+
 ### Tarefa 38 — Reduzir o custo do carregamento inicial
 
 - [x] Carregar PDF, planilhas e exportadores apenas quando os respectivos módulos forem acessados.
