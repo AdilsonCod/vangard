@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assertSafePublicUrl, isPrivateNetworkAddress } from '../smart-link-security';
+import { maskedDestinationPage } from '../smart-links-service';
 
 const publicDns = async () => [{ address: '93.184.216.34' }];
 
@@ -21,3 +22,11 @@ test('bloqueia nomes e endereços de redes internas', async () => {
   await assert.rejects(() => assertSafePublicUrl('https://example.com', async () => [{ address: '10.1.2.3' }]), /internos/);
 });
 
+test('página mascarada isola o destino externo do contexto do aplicativo', () => {
+  const html = maskedDestinationPage('https://example.com/path?a=1&b=2', 'Campanha <segura>');
+  assert.match(html, /sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts"/);
+  assert.doesNotMatch(html, /allow-same-origin/);
+  assert.match(html, /referrerpolicy="no-referrer"/);
+  assert.match(html, /https:\/\/example\.com\/path\?a=1&amp;b=2/);
+  assert.doesNotMatch(html, /Campanha <segura>/);
+});

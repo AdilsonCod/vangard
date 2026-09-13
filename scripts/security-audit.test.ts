@@ -48,6 +48,13 @@ test('servidores e Vercel aplicam cabeçalhos mínimos de segurança', () => {
   assert.match(sources[2], /Strict-Transport-Security/);
 });
 
+test('conteúdo mascarado não executa HTML externo no contexto do aplicativo', () => {
+  const source = read('smart-links-service.ts');
+  assert.match(source, /sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts"/);
+  assert.doesNotMatch(source, /allow-same-origin/);
+  assert.doesNotMatch(source, /unsafe-eval/);
+});
+
 test('dependências de produção não possuem vulnerabilidades altas ou críticas', () => {
   const command = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : 'npm';
   const args = process.platform === 'win32'

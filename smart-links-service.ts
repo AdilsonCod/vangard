@@ -7,24 +7,12 @@ import { assertSafePublicUrl } from './smart-link-security.js';
 
 const escapeHtml=(value:string)=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]||char));
 const device=(agent='')=>/ipad|tablet/i.test(agent)?'tablet':/mobile|android|iphone/i.test(agent)?'mobile':'desktop';
-async function fetchPublicHtml(raw:string){
-  let url=await assertSafePublicUrl(raw);
-  for(let redirect=0;redirect<4;redirect++){
-    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8_000);
-    try{
-      const response=await fetch(url,{redirect:'manual',signal:controller.signal,headers:{'user-agent':'Mozilla/5.0 TempoLink/1.0','accept':'text/html,application/xhtml+xml'}});
-      if(response.status>=300&&response.status<400&&response.headers.get('location')){url=await assertSafePublicUrl(new URL(response.headers.get('location')!,url).toString());continue;}
-      if(!response.ok||!(response.headers.get('content-type')||'').includes('text/html'))return null;
-      const declared=Number(response.headers.get('content-length')||0);if(declared>2_500_000)return null;
-      if(!response.body)return null;const reader=response.body.getReader();const chunks:Uint8Array[]=[];let size=0;
-      while(true){const {done,value}=await reader.read();if(done)break;if(value){size+=value.byteLength;if(size>2_500_000){await reader.cancel();return null;}chunks.push(value);}}
-      const html=new TextDecoder().decode(Buffer.concat(chunks));return {html,url};
-    }finally{clearTimeout(timer);}
-  }
-  return null;
-}
-
 function statusPage(title:string,message:string,status:number){return {status,html:`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#09090b;color:#fafafa;font:15px system-ui;padding:20px;box-sizing:border-box}.c{max-width:480px;padding:34px;border:1px solid #3f3f46;border-radius:22px;background:#18181b;text-align:center}h1{font-size:22px}p{color:#a1a1aa;line-height:1.6}</style></head><body><div class="c"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></div></body></html>`};}
+
+export function maskedDestinationPage(rawUrl:string,title:string){
+  const url=escapeHtml(rawUrl),safeTitle=escapeHtml(title);
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><style>html,body,iframe{width:100%;height:100%;margin:0;border:0;background:#fff}iframe{display:block}</style></head><body><iframe src="${url}" title="${safeTitle}" sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts" referrerpolicy="no-referrer"></iframe></body></html>`;
+}
 
 async function allLinks(){const snapshot=await adminDb.collection('smart_links').get();return snapshot.docs.map(item=>({id:item.id,...item.data()} as SmartLink));}
 
@@ -67,11 +55,10 @@ export async function smartLinkRedirectHandler(req:express.Request,res:express.R
         adminDb.collection('smart_link_clicks').add({linkId:link.id,unitId:link.unitId,shortCode:routeParam(req.params.code),destinationUrl:resolution.url,phase:resolution.phase,cycleNumber:resolution.cycleNumber||null,timestamp:new Date().toISOString(),device:device(req.headers['user-agent']),referrer:req.headers.referer||'',simulated:false}),
       ]);
       if(!link.maskUrl)return res.redirect(302,resolution.url);
-      const result=await fetchPublicHtml(resolution.url);if(!result){const page=statusPage('Conteúdo indisponível','Não foi possível exibir este destino com segurança.',502);return res.status(page.status).send(page.html);}
-      let html=result.html.replace(/<title[^>]*>[\s\S]*?<\/title>/i,'').replace(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*>/gi,'');
-      const title=escapeHtml(link.maskTitle||link.title);const favicon=link.maskFavicon?`<link rel="icon" href="${escapeHtml(link.maskFavicon)}">`:'';
-      const injection=`<base href="${escapeHtml(new URL('.',result.url).href)}" target="_self"><title>${title}</title>${favicon}`;
-      html=/<head[^>]*>/i.test(html)?html.replace(/<head[^>]*>/i,match=>`${match}${injection}`):`${injection}${html}`;
-      res.setHeader('Content-Security-Policy',"default-src https: data: blob: 'unsafe-inline' 'unsafe-eval'; object-src 'none'; frame-ancestors 'none'; form-action https:; base-uri https:");res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('content-type','text/html; charset=utf-8');return res.send(html);
+      res.setHeader('Content-Security-Policy',"default-src 'none'; frame-src https:; style-src 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+      res.setHeader('X-Content-Type-Options','nosniff');
+      res.setHeader('Referrer-Policy','no-referrer');
+      res.setHeader('content-type','text/html; charset=utf-8');
+      return res.send(maskedDestinationPage(resolution.url,link.maskTitle||link.title));
     }catch{const page=statusPage('Destino indisponível','Não foi possível abrir este link com segurança.',502);return res.status(page.status).send(page.html);}
 }
