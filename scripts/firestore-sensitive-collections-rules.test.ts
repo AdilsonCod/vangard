@@ -52,6 +52,8 @@ before(async () => {
     await setDoc(doc(db, 'message_contact_lists', 'unit-a-list-seed'), { unitId: 'unit-a', name: 'Lista A' });
     await setDoc(doc(db, 'entries', 'barber-entry'), { unitId: 'unit-a', userId: 'barber', date: '2026-09-09' });
     await setDoc(doc(db, 'entries', 'manicure-entry'), { unitId: 'unit-a', userId: 'manicure', date: '2026-09-09' });
+    await setDoc(doc(db, 'notifications', 'admin-notification'), { userId: 'admin', title: 'Aviso da gerência', read: false });
+    await setDoc(doc(db, 'notifications', 'finance-notification'), { userId: 'finance', title: 'Aviso financeiro', read: false });
   });
 });
 
@@ -241,6 +243,15 @@ test('administrador mantém visão consolidada das unidades autorizadas globalme
   const ids = reports.docs.map(item => item.id);
   assert.equal(ids.includes('unit-a-report'), true);
   assert.equal(ids.includes('unit-b-report'), true);
+});
+
+test('usuário pode excluir a própria notificação sem acessar notificações alheias', async () => {
+  const admin = authDb('admin', 'ADMIN');
+  const finance = authDb('finance', 'FINANCIAL');
+
+  await assertFails(deleteDoc(doc(admin, 'notifications', 'finance-notification')));
+  await assertSucceeds(deleteDoc(doc(admin, 'notifications', 'admin-notification')));
+  await assertSucceeds(deleteDoc(doc(finance, 'notifications', 'finance-notification')));
 });
 
 test('auditoria permite leitura administrativa, nega leitura comum e toda escrita cliente', async () => {
