@@ -53,6 +53,8 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     onConfirm: () => void;
     confirmText?: string;
     confirmColor?: 'red' | 'emerald';
+    secondaryText?: string;
+    onSecondary?: () => void;
   } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -194,20 +196,30 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
   };
 
   const handleDeleteUserClick = (id: string, userName: string) => {
+    const existingUser = users.find((user) => user.id === id);
+    if (!existingUser) return;
     setConfirmModal({
-      title: 'Inativar Usuário',
-      description: `Tem certeza que deseja inativar "${userName}"? O usuário não poderá mais acessar o sistema.`,
-      confirmText: 'Inativar Usuário',
-      confirmColor: 'red',
+      title: 'Remover perfil',
+      description: `O que deseja fazer com "${userName}"? Inativar bloqueia o acesso e permite reativação. Excluir remove somente o perfil; os lançamentos, pagamentos, metas e históricos permanecem preservados.`,
+      confirmText: 'Inativar perfil',
+      confirmColor: 'emerald',
+      secondaryText: 'Excluir perfil',
       onConfirm: async () => {
-        const existingUser = users.find((user) => user.id === id);
-        if (!existingUser) return;
         try {
           await updateUser({ ...existingUser, isActive: false });
           showToast('Usuário inativado com sucesso.', 'info');
           setConfirmModal(null);
         } catch {
           showToast('Não foi possível inativar o usuário.', 'error');
+        }
+      },
+      onSecondary: async () => {
+        try {
+          await deleteUser(id);
+          showToast(existingUser.role === 'BARBER' ? 'Perfil excluído. Os dados do barbeiro foram preservados.' : 'Perfil excluído com sucesso.', 'info');
+          setConfirmModal(null);
+        } catch {
+          showToast('Não foi possível excluir o perfil.', 'error');
         }
       }
     });
@@ -334,6 +346,13 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
               >
                 Cancelar
               </button>
+              {confirmModal.onSecondary && <button
+                type="button"
+                onClick={confirmModal.onSecondary}
+                className="px-4 py-2 rounded-xl border border-red-300 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/30"
+              >
+                {confirmModal.secondaryText || 'Excluir perfil'}
+              </button>}
               <button
                 type="button"
                 onClick={confirmModal.onConfirm}

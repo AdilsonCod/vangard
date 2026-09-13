@@ -893,18 +893,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const deleteUser = async (id: string) => {
-    const userToSoftDelete = users.find(u => u.id === id);
-    if (userToSoftDelete) {
-      const sanitized: any = withoutLegacyPassword({ ...userToSoftDelete, isActive: false });
-      Object.keys(sanitized).forEach(k => {
-        if (sanitized[k] === undefined) delete sanitized[k];
-      });
-      try {
-        await setDoc(doc(db, 'users', id), sanitized);
-      } catch (err) {
-        console.error("Error softly deleting user:", err);
-      }
-    }
+    if (currentUser?.id === id) throw new Error('Não é possível excluir o perfil da sessão atual.');
+    await deleteDoc(doc(db, 'users', id));
   };
 
   const addPayment = async (payment: PaymentRecord) => {
