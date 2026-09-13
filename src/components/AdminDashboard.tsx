@@ -74,6 +74,7 @@ const SmartLinksDashboard = lazy(() => import("./SmartLinksDashboard"));
 const CommissionCalculationView = lazy(() => import("./CommissionCalculationView"));
 const OperationalControls = lazy(() => import("./OperationalControls"));
 const FinancialAuditTrail = lazy(() => import("./FinancialAuditTrail"));
+const AuditHistory = lazy(() => import("./AuditHistory"));
 
 export default function AdminDashboard() {
   const confirmAction = useConfirmation();
@@ -663,6 +664,8 @@ export default function AdminDashboard() {
           <CommissionCalculationView />
         ) : activeTab === "FINANCIAL_AUDIT" ? (
           <FinancialAuditTrail />
+        ) : activeTab === "AUDIT_HISTORY" ? (
+          <AuditHistory />
         ) : activeTab === "COURTESY_CONTROL" ? (
           <OperationalControls kind="COURTESY" selectedUnit={selectedUnit} strictUnitScope={currentUser?.role === 'RECEPTION'} />
         ) : activeTab === "INTERNAL_SALES" ? (

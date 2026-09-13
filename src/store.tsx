@@ -561,9 +561,11 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
         (await findAuthenticatedProfile(uid, authenticatedEmail))?.profile || null,
     }, email, pass);
     if (!user) {
+      void fetch('/api/audit-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ succeeded: false, identifier: email }) }).catch(() => undefined);
       clearPrivateState();
       return false;
     }
+    void auth.currentUser?.getIdToken().then(token => fetch('/api/audit-login', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ succeeded: true }) })).catch(() => undefined);
     setCurrentUser(user);
     return true;
   };

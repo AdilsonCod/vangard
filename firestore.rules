@@ -356,6 +356,21 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /loginAudit/{documentId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /dataAudit/{documentId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /auditArchives/{documentId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
     // Defesa em profundidade: qualquer coleção não inventariada permanece negada.
     match /{document=**} {
       allow read, write: if false;

@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, Briefcase, Calculator, ClipboardList, DollarSign, FileText, Gift, LayoutDashboard, Link2, Megaphone, MessagesSquare, PieChart, Settings, ShoppingBag, TrendingUp, Upload, Users } from 'lucide-react';
+import { BarChart3, BookOpen, Briefcase, Calculator, ClipboardList, DollarSign, FileText, Gift, History, LayoutDashboard, Link2, Megaphone, MessagesSquare, PieChart, Settings, ShoppingBag, TrendingUp, Upload, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Role } from '../types';
 
@@ -40,6 +40,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { id: 'REPORTS', label: 'Relatórios', section: 'Dados', icon: FileText },
   { id: 'IMPORT', label: 'Importações', section: 'Dados', icon: Upload },
   { id: 'CONFIG', label: 'Configurações', section: 'Sistema', icon: Settings },
+  { id: 'AUDIT_HISTORY', label: 'Histórico Auditável', section: 'Sistema', icon: History },
 ];
 
 const ROLE_NAV_IDS: Partial<Record<Role, ReadonlySet<string>>> = {

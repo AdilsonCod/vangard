@@ -41,6 +41,8 @@ before(async () => {
       await setDoc(doc(db, 'users', profile.id), profile);
     }
     await setDoc(doc(db, 'auditLogs', 'seed'), { action: 'SEEDED_FOR_TEST' });
+    await setDoc(doc(db, 'loginAudit', 'login-seed'), { userId: 'admin', action: 'login_sucesso', timestamp: new Date(0).toISOString() });
+    await setDoc(doc(db, 'dataAudit', 'data-seed'), { userId: 'admin', action: 'alteracao_campo', timestamp: new Date(0).toISOString() });
     const closing = { id: 'cash_closing_unit-a_2026-09-10', unitId: 'unit-a', date: '2026-09-10', status: 'CLOSED', openingBalance: 0, cashIncome: 100, cashOutflow: 0, expectedBalance: 100, countedBalance: 100, difference: 0, closedAt: new Date(0).toISOString(), closedBy: 'finance' };
     await setDoc(doc(db, 'cashClosings', closing.id), closing);
     await setDoc(doc(db, 'financialPeriodLocks', 'unit-a_2026-09-10'), { unitId: 'unit-a', period: '2026-09-10', closingId: closing.id, active: true });
@@ -262,6 +264,18 @@ test('auditoria permite leitura administrativa, nega leitura comum e toda escrit
   assert.equal(snapshot.exists(), true);
   await assertFails(getDoc(doc(barber, 'auditLogs', 'seed')));
   await assertFails(setDoc(doc(admin, 'auditLogs', 'client-write'), { action: 'INVALID' }));
+});
+
+test('novos históricos são legíveis somente pela gerência e imutáveis no cliente', async () => {
+  const admin = authDb('admin', 'ADMIN');
+  const finance = authDb('finance', 'FINANCIAL');
+  for (const [collectionName, id] of [['loginAudit', 'login-seed'], ['dataAudit', 'data-seed']] as const) {
+    await assertSucceeds(getDoc(doc(admin, collectionName, id)));
+    await assertFails(getDoc(doc(finance, collectionName, id)));
+    await assertFails(setDoc(doc(admin, collectionName, 'forged'), { action: 'forged' }));
+    await assertFails(updateDoc(doc(admin, collectionName, id), { action: 'forged' }));
+    await assertFails(deleteDoc(doc(admin, collectionName, id)));
+  }
 });
 
 test('trilha financeira aceita inclusão atribuída ao autor e permanece imutável', async () => {
