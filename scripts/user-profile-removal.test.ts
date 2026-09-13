@@ -15,3 +15,8 @@ test('exclusão remove somente o documento de perfil', () => {
   assert.match(implementation, /deleteDoc\(doc\(db, 'users', id\)\)/);
   assert.doesNotMatch(implementation, /entries|payments|targets|transactions/);
 });
+
+test('preservação de dados é informada e aplicada a todos os perfis', () => {
+  assert.match(dashboard, /Todos os dados operacionais e históricos do usuário foram preservados/);
+  assert.doesNotMatch(dashboard, /existingUser\.role === 'BARBER'/);
+});

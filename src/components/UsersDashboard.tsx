@@ -216,7 +216,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
       onSecondary: async () => {
         try {
           await deleteUser(id);
-          showToast(existingUser.role === 'BARBER' ? 'Perfil excluído. Os dados do barbeiro foram preservados.' : 'Perfil excluído com sucesso.', 'info');
+          showToast('Perfil excluído. Todos os dados operacionais e históricos do usuário foram preservados.', 'info');
           setConfirmModal(null);
         } catch {
           showToast('Não foi possível excluir o perfil.', 'error');
