@@ -1,17 +1,38 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useStore } from "../store";
-import { 
-  Palette, 
-} from "lucide-react";
+import { ImagePlus, Palette, RotateCcw, Upload } from "lucide-react";
 import { AppPageHeader } from "./ui/AppPrimitives";
+import { DEFAULT_DARK_LOGO, DEFAULT_LIGHT_LOGO, prepareLogoImage } from '../services/logoCustomization';
 
 export function ConfigEditor() {
   const { 
     isDarkMode, 
     setIsDarkMode,
     themeColor,
-    setThemeColor, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg
+    setThemeColor, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
+    lightLogo, setLightLogo, darkLogo, setDarkLogo,
   } = useStore();
+  const lightInputRef = useRef<HTMLInputElement>(null);
+  const darkInputRef = useRef<HTMLInputElement>(null);
+  const [logoError, setLogoError] = useState('');
+  const [loadingLogo, setLoadingLogo] = useState<'light' | 'dark' | null>(null);
+
+  const uploadLogo = async (mode: 'light' | 'dark', file?: File) => {
+    if (!file) return;
+    setLogoError('');
+    setLoadingLogo(mode);
+    try {
+      const logo = await prepareLogoImage(file);
+      if (mode === 'light') setLightLogo(logo);
+      else setDarkLogo(logo);
+    } catch (error) {
+      setLogoError(error instanceof Error ? error.message : 'Não foi possível carregar a imagem.');
+    } finally {
+      setLoadingLogo(null);
+      if (mode === 'light' && lightInputRef.current) lightInputRef.current.value = '';
+      if (mode === 'dark' && darkInputRef.current) darkInputRef.current.value = '';
+    }
+  };
 
   const lightBgOptions = [
     { id: 'bg-white', label: 'Branco Puro', bg: '#ffffff' },
@@ -96,6 +117,39 @@ export function ConfigEditor() {
                      </button>
                    ))}
                 </div>
+             </div>
+
+             <div className="pt-6 border-t dark:border-zinc-800/80">
+               <div className="mb-4 flex items-center gap-2">
+                 <ImagePlus className="h-5 w-5 text-[var(--theme-color)]" />
+                 <div>
+                   <h3 className="text-sm font-bold text-gray-900 dark:text-white">Logos do sistema</h3>
+                   <p className="text-xs text-gray-500 dark:text-zinc-400">PNG, JPG ou WebP de até 3 MB. A imagem é ajustada e salva neste navegador.</p>
+                 </div>
+               </div>
+               <div className="grid gap-4 lg:grid-cols-2">
+                 {([
+                   { mode: 'light' as const, label: 'Logo — Fundo (Modo Claro)', logo: lightLogo, fallback: DEFAULT_LIGHT_LOGO, inputRef: lightInputRef },
+                   { mode: 'dark' as const, label: 'Logo — Fundo (Modo Escuro)', logo: darkLogo, fallback: DEFAULT_DARK_LOGO, inputRef: darkInputRef },
+                 ]).map(option => (
+                   <div key={option.mode} className={`rounded-xl border p-4 ${option.mode === 'dark' ? 'border-zinc-700 bg-[#061b1b]' : 'border-gray-200 bg-white'}`}>
+                     <p className={`mb-3 text-sm font-semibold ${option.mode === 'dark' ? 'text-white' : 'text-gray-800'}`}>{option.label}</p>
+                     <div className="mb-4 flex h-28 items-center justify-center rounded-lg border border-dashed border-gray-300/70 bg-black/[.03] p-3 dark:bg-white/[.04]">
+                       <img src={option.logo} alt={`Pré-visualização: ${option.label}`} className="h-full max-w-full object-contain" />
+                     </div>
+                     <input ref={option.inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" aria-label={option.label} onChange={event => void uploadLogo(option.mode, event.target.files?.[0])} />
+                     <div className="flex flex-wrap gap-2">
+                       <button type="button" disabled={loadingLogo !== null} onClick={() => option.inputRef.current?.click()} className="inline-flex items-center gap-2 rounded-lg bg-[var(--theme-color)] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">
+                         <Upload className="h-4 w-4" />{loadingLogo === option.mode ? 'Processando...' : 'Carregar imagem'}
+                       </button>
+                       <button type="button" disabled={option.logo === option.fallback} onClick={() => option.mode === 'light' ? setLightLogo(option.fallback) : setDarkLogo(option.fallback)} className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold disabled:opacity-40 ${option.mode === 'dark' ? 'border-zinc-600 text-zinc-200' : 'border-gray-300 text-gray-700'}`}>
+                         <RotateCcw className="h-4 w-4" />Restaurar padrão
+                       </button>
+                     </div>
+                   </div>
+                 ))}
+               </div>
+               {logoError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700 dark:bg-red-950/30 dark:text-red-300">{logoError}</p>}
              </div>
 
           </div>

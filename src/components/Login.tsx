@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useStore } from "../store";
-import VansLogo from "./VansLogo";
+import BrandLogo from './BrandLogo';
 import { Sun, Moon } from "lucide-react";
 
 export default function Login() {
@@ -44,18 +44,7 @@ export default function Login() {
 
         <div className="mb-6 flex flex-col items-center sm:mb-8">
           <div className="mb-2 flex h-32 w-32 items-center justify-center filter drop-shadow-lg transition-transform duration-350 hover:scale-105 sm:mb-4 sm:h-48 sm:w-48">
-            <img
-              src="/logo-escura.png"
-              alt="Logo Van's Management"
-              className="w-full h-full object-contain block dark:hidden"
-              referrerPolicy="no-referrer"
-            />
-            <img
-              src="/logo-clara.png"
-              alt="Logo Van's Management"
-              className="w-full h-full object-contain hidden dark:block"
-              referrerPolicy="no-referrer"
-            />
+            <BrandLogo className="h-full w-full object-contain" referrerPolicy="no-referrer" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-zinc-100 font-sans text-center">
             Van's Management

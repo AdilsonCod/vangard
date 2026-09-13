@@ -28,6 +28,7 @@ import { collection, doc, documentId, setDoc, deleteDoc, getDoc, getDocs, limit,
 import { commitCatalogMutation, planCategoryMutation, planSubcategoryMutation } from './services/catalogMutationPlan';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { seedDatabase } from './firebase-sync';
+import { DEFAULT_DARK_LOGO, DEFAULT_LIGHT_LOGO } from './services/logoCustomization';
 import { authenticatedProfile, endAuthenticatedSession, startAuthenticatedSession } from './services/authSession';
 import { assertFinancialPeriodOpen, validateReopening } from './services/financialPeriodLock';
 import { createFinancialAuditEvent } from './services/financialAudit';
@@ -159,6 +160,10 @@ interface StoreContextType extends AppState {
   setThemeLightBg: (color: string) => void;
   themeDarkBg: string;
   setThemeDarkBg: (color: string) => void;
+  lightLogo: string;
+  setLightLogo: (logo: string) => void;
+  darkLogo: string;
+  setDarkLogo: (logo: string) => void;
   isDarkMode: boolean;
   setIsDarkMode: (isDark: boolean) => void;
 }
@@ -280,6 +285,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [themeDarkBg, setThemeDarkBg] = useState<string>(() => {
     return localStorage.getItem('barber_theme_dark_bg') || 'dark:bg-zinc-950';
   });
+  const [lightLogo, setLightLogo] = useState<string>(() => localStorage.getItem('barber_logo_light') || DEFAULT_LIGHT_LOGO);
+  const [darkLogo, setDarkLogo] = useState<string>(() => localStorage.getItem('barber_logo_dark') || DEFAULT_DARK_LOGO);
 
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
      return localStorage.getItem('barber_theme_dark') === 'true';
@@ -533,6 +540,15 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     localStorage.setItem('barber_theme_dark', String(isDarkMode));
   }, [isDarkMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('barber_logo_light', lightLogo);
+      localStorage.setItem('barber_logo_dark', darkLogo);
+    } catch {
+      console.error('Não foi possível salvar os logos personalizados neste navegador.');
+    }
+  }, [lightLogo, darkLogo]);
 
   const login = async (email: string, pass: string) => {
     const user = await startAuthenticatedSession({
@@ -994,7 +1010,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       financialCategories, suppliers, finClassifications, finSubclassifications, financialAuditEvents, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
       login, logout, addUser, updateUser, attachUserAuthentication, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing, recordFinancialAudit, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
       updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, addNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, addAnnouncement, updateAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
-      isDarkMode, setIsDarkMode
+      lightLogo, setLightLogo, darkLogo, setDarkLogo, isDarkMode, setIsDarkMode
     }}>
       {children}
     </StoreContext.Provider>

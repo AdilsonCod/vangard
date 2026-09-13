@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from "react";
 import { useStore } from "../store";
+import BrandLogo from './BrandLogo';
 import { ProgressCard } from "./ProgressCard";
 import { DailyEntry, Target, CatalogItem } from "../types";
 import {
@@ -446,8 +447,7 @@ export default function BarberDashboard() {
         <div className="app-sidebar sticky top-0 z-10 flex h-[72px] items-center justify-between border-b border-gray-100 bg-white px-4 dark:border-white/5 dark:bg-[#061b1b]">
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-2 overflow-hidden w-full">
-              <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
-              <img src="/logo-clara.png" alt="Van's Logo" className="hidden dark:block w-8 h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
+              <BrandLogo className="h-8 w-8 shrink-0 object-contain" referrerPolicy="no-referrer" />
                <div className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-black text-gray-950 dark:text-white">Van's Management</span>
                   <span className="block truncate text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--theme-color)]">Área profissional</span>
@@ -456,8 +456,7 @@ export default function BarberDashboard() {
           )}
           {isSidebarCollapsed && (
             <div className="mx-auto w-full flex justify-center">
-              <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain" referrerPolicy="no-referrer" />
-              <img src="/logo-clara.png" alt="Van's Logo" className="hidden dark:block w-8 h-8 object-contain" referrerPolicy="no-referrer" />
+              <BrandLogo className="h-8 w-8 object-contain" referrerPolicy="no-referrer" />
             </div>
           )}
         </div>
@@ -611,8 +610,7 @@ export default function BarberDashboard() {
         <header className="app-global-header sticky top-0 z-40 border-b border-gray-200 bg-white/95 text-gray-900 backdrop-blur-xl dark:border-zinc-800 dark:bg-[#041616]/95 dark:text-zinc-100 xl:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex min-w-0 items-center gap-2.5">
-              <img src="/logo-escura.png" alt="Van's Logo" className="block dark:hidden w-8 h-8 object-contain" referrerPolicy="no-referrer" />
-              <img src="/logo-clara.png" alt="Van's Logo" className="hidden dark:block w-8 h-8 object-contain" referrerPolicy="no-referrer" />
+              <BrandLogo className="h-8 w-8 object-contain" referrerPolicy="no-referrer" />
               <div className="min-w-0">
                 <p className="truncate text-[9px] font-black uppercase tracking-[0.16em] text-[var(--theme-color)]">{currentUnitName}</p>
                 <h1 className="truncate text-sm font-black">{activePage?.label || "Visão Geral"}</h1>

@@ -50,6 +50,7 @@
     "test:e2e": "playwright test",
     "test:security-audit": "tsx --test scripts/security-audit.test.ts",
     "test:demo-controls": "tsx --test scripts/demo-access.test.ts",
+    "test:logo-customization": "tsx --test scripts/logo-customization.test.ts",
     "test:message-auth-store": "tsx --test scripts/message-auth-store.test.ts",
     "test:message-dispatch-policy": "tsx --test scripts/message-dispatch-policy.test.ts",
     "test:message-service-health": "tsx --test scripts/message-service-health.test.ts",
