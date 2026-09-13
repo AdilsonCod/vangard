@@ -1,6 +1,6 @@
 import express from 'express';
-import { celcoinConfigurationStatus, fetchCelcoinTransactions, testCelcoinConnection, type CelcoinCredentials } from '../celcoin-service.js';
-import { createRequireAuth, requireRoles } from '../server-auth.js';
+import { celcoinConfigurationStatus, decryptCelcoinCredentials, encryptCelcoinCredentials, fetchCelcoinTransactions, testCelcoinConnection, type CelcoinCredentials } from '../celcoin-service.js';
+import { authenticatedUser, createRequireAuth, requireRoles } from '../server-auth.js';
 import { verifyFirebaseIdToken } from '../server-firebase-admin.js';
 
 const app = express();
@@ -33,7 +33,16 @@ app.get('/api/celcoin', async (req, res) => {
 
 app.post('/api/celcoin', async (req, res) => {
   try {
-    const credentials = req.body?.credentials as CelcoinCredentials | undefined;
+    const supplied = req.body?.credentials as CelcoinCredentials | undefined;
+    const credentials = req.body?.encryptedConfig ? decryptCelcoinCredentials(req.body.encryptedConfig) : supplied;
+    if (req.query.action === 'encrypt') {
+      if (String(authenticatedUser(req)?.role || '').toUpperCase() !== 'ADMIN') {
+        res.status(403).json({ error: 'Somente a gerência pode alterar as credenciais.' });
+        return;
+      }
+      res.json({ encryptedConfig: encryptCelcoinCredentials(credentials || {}) });
+      return;
+    }
     if (req.query.action === 'transactions') {
       res.json(await fetchCelcoinTransactions({ from: req.body?.from, to: req.body?.to, limit: req.body?.limit }, fetch, credentials));
       return;

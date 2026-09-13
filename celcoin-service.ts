@@ -1,3 +1,5 @@
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+
 const SANDBOX_URL = 'https://api.sandbox.cel.cash/v2';
 const PRODUCTION_URL = 'https://api-celcash.celcoin.com.br/v2';
 
@@ -22,7 +24,39 @@ type CelcoinConfig = { id: string; hash: string; environment: CelcoinEnvironment
 type TokenEntry = { value: string; expiresAt: number };
 const cachedTokens = new Map<string, TokenEntry>();
 
-export type CelcoinCredentials = { id?: string; hash?: string; environment?: CelcoinEnvironment };
+export type CelcoinCredentials = { id?: string; hash?: string; environment?: CelcoinEnvironment; webhookToken?: string; publicToken?: string };
+export type EncryptedCelcoinConfig = { version: 1; iv: string; tag: string; data: string };
+
+function encryptionKey() {
+  const encoded = process.env.CELCOIN_CONFIG_ENCRYPTION_KEY?.trim() || '';
+  const key = Buffer.from(encoded, 'base64');
+  if (key.length !== 32) throw new Error('Chave de criptografia da integração não configurada no servidor.');
+  return key;
+}
+
+export function encryptCelcoinCredentials(credentials: CelcoinCredentials): EncryptedCelcoinConfig {
+  const current = config(credentials);
+  if (!current.id || !current.hash) throw new Error('Galax ID e Galax Hash são obrigatórios.');
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', encryptionKey(), iv);
+  const payload = JSON.stringify({
+    id: current.id, hash: current.hash, environment: current.environment,
+    webhookToken: typeof credentials.webhookToken === 'string' ? credentials.webhookToken.trim().slice(0, 256) : '',
+    publicToken: typeof credentials.publicToken === 'string' ? credentials.publicToken.trim().slice(0, 1024) : '',
+  });
+  const data = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
+  return { version: 1, iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') };
+}
+
+export function decryptCelcoinCredentials(value: unknown): CelcoinCredentials {
+  const encrypted = value as Partial<EncryptedCelcoinConfig> | null;
+  if (!encrypted || encrypted.version !== 1 || typeof encrypted.iv !== 'string' || typeof encrypted.tag !== 'string' || typeof encrypted.data !== 'string') {
+    throw new Error('Configuração Celcoin armazenada é inválida.');
+  }
+  const decipher = createDecipheriv('aes-256-gcm', encryptionKey(), Buffer.from(encrypted.iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(encrypted.tag, 'base64'));
+  return JSON.parse(Buffer.concat([decipher.update(Buffer.from(encrypted.data, 'base64')), decipher.final()]).toString('utf8')) as CelcoinCredentials;
+}
 
 function config(override?: CelcoinCredentials): CelcoinConfig {
   const suppliedId = typeof override?.id === 'string' ? override.id.trim().slice(0, 64) : '';

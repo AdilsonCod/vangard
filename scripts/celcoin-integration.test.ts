@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { fetchCelcoinTransactions, normalizeCelcoinTransaction, testCelcoinConnection } from '../celcoin-service';
+import { decryptCelcoinCredentials, encryptCelcoinCredentials, fetchCelcoinTransactions, normalizeCelcoinTransaction, testCelcoinConnection } from '../celcoin-service';
 
 const interfaceSource = readFileSync(new URL('../src/components/CelcoinIntegration.tsx', import.meta.url), 'utf8');
 
@@ -16,8 +16,20 @@ test('interface permite configurar sem persistir o segredo no navegador', () => 
   assert.match(interfaceSource, /Configurar conexão/);
   assert.match(interfaceSource, /Galax ID/);
   assert.match(interfaceSource, /Galax Hash/);
-  assert.match(interfaceSource, /Conectar e usar nesta sessão/);
+  assert.match(interfaceSource, /Salvar configuração e conectar/);
   assert.doesNotMatch(interfaceSource, /localStorage|sessionStorage|indexedDB/);
+});
+
+test('credenciais persistentes são cifradas e recuperadas apenas no servidor', () => {
+  const previous = process.env.CELCOIN_CONFIG_ENCRYPTION_KEY;
+  process.env.CELCOIN_CONFIG_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
+  try {
+    const encrypted = encryptCelcoinCredentials({ id: '43129', hash: 'hash-secreto', environment: 'production', webhookToken: 'webhook', publicToken: 'public' });
+    assert.doesNotMatch(JSON.stringify(encrypted), /43129|hash-secreto|webhook|public/);
+    assert.deepEqual(decryptCelcoinCredentials(encrypted), { id: '43129', hash: 'hash-secreto', environment: 'production', webhookToken: 'webhook', publicToken: 'public' });
+  } finally {
+    if (previous === undefined) delete process.env.CELCOIN_CONFIG_ENCRYPTION_KEY; else process.env.CELCOIN_CONFIG_ENCRYPTION_KEY = previous;
+  }
 });
 
 test('autentica com escopo somente leitura e separa recebíveis futuros', async () => {

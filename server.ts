@@ -3,9 +3,9 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { configureSmartLinks } from "./smart-links-service";
-import { createRequireAuth, requireRoles } from './server-auth';
+import { authenticatedUser, createRequireAuth, requireRoles } from './server-auth';
 import { verifyFirebaseIdToken } from './server-firebase-admin';
-import { celcoinConfigurationStatus, fetchCelcoinTransactions, testCelcoinConnection, type CelcoinCredentials } from './celcoin-service';
+import { celcoinConfigurationStatus, decryptCelcoinCredentials, encryptCelcoinCredentials, fetchCelcoinTransactions, testCelcoinConnection, type CelcoinCredentials } from './celcoin-service';
 
 const requireAuth = createRequireAuth(verifyFirebaseIdToken);
 const requireMarketingAccess = requireRoles('ADMIN', 'MARKETING');
@@ -141,7 +141,12 @@ async function startServer() {
 
   app.post('/api/celcoin', requireAuth, requireRoles('ADMIN', 'FINANCIAL'), async (req, res) => {
     try {
-      const credentials = req.body?.credentials as CelcoinCredentials | undefined;
+      const supplied = req.body?.credentials as CelcoinCredentials | undefined;
+      const credentials = req.body?.encryptedConfig ? decryptCelcoinCredentials(req.body.encryptedConfig) : supplied;
+      if (req.query.action === 'encrypt') {
+        if (String(authenticatedUser(req)?.role || '').toUpperCase() !== 'ADMIN') return res.status(403).json({ error: 'Somente a gerência pode alterar as credenciais.' });
+        return res.json({ encryptedConfig: encryptCelcoinCredentials(credentials || {}) });
+      }
       if (req.query.action === 'transactions') return res.json(await fetchCelcoinTransactions({ from: req.body?.from, to: req.body?.to, limit: req.body?.limit }, fetch, credentials));
       if (req.query.action !== 'test') return res.status(400).json({ error: 'Ação Celcoin inválida.' });
       return res.json({ ...(await testCelcoinConnection(fetch, credentials)), connected: true });
