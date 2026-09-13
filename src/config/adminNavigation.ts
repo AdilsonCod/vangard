@@ -16,6 +16,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     { id: 'FINANCE_RESUMO', label: 'Resumo' }, { id: 'FINANCE_CAIXA', label: 'Caixa & Contas' },
     { id: 'FINANCE_CONCILIACAO_FINTECH', label: 'Conciliação' }, { id: 'FINANCE_CONCILIACAO', label: 'Conciliação OFX' },
     { id: 'FINANCE_RECEBIMENTOS', label: 'Baixa de Recebimentos' }, { id: 'FINANCE_DESPESAS', label: 'Baixa de Despesas' },
+    { id: 'FINANCE_CELCOIN', label: 'Integração Celcoin' },
   ] },
   { id: 'PAYMENTS', label: 'Pagamentos', section: 'Financeiro', icon: DollarSign },
   { id: 'COMMISSION_CALCULATION', label: 'Cálculo de Comissão', section: 'Financeiro', icon: Calculator },

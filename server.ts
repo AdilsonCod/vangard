@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { configureSmartLinks } from "./smart-links-service";
 import { createRequireAuth, requireRoles } from './server-auth';
 import { verifyFirebaseIdToken } from './server-firebase-admin';
+import { celcoinConfigurationStatus, fetchCelcoinTransactions, testCelcoinConnection } from './celcoin-service';
 
 const requireAuth = createRequireAuth(verifyFirebaseIdToken);
 const requireMarketingAccess = requireRoles('ADMIN', 'MARKETING');
@@ -120,6 +121,32 @@ async function startServer() {
   });
 
   configureSmartLinks(app, requireAuth, requireRoles('ADMIN', 'MARKETING', 'RECEPTION'));
+
+  app.get('/api/celcoin', requireAuth, requireRoles('ADMIN', 'FINANCIAL'), async (req, res) => {
+    try {
+      const action = String(req.query.action || 'status');
+      if (action === 'status') return res.json(celcoinConfigurationStatus());
+      if (action === 'transactions') {
+        return res.json(await fetchCelcoinTransactions({
+          from: typeof req.query.from === 'string' ? req.query.from : undefined,
+          to: typeof req.query.to === 'string' ? req.query.to : undefined,
+          limit: Number(req.query.limit) || 100,
+        }));
+      }
+      return res.status(400).json({ error: 'Ação Celcoin inválida.' });
+    } catch (error) {
+      return res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao consultar a Celcoin.' });
+    }
+  });
+
+  app.post('/api/celcoin', requireAuth, requireRoles('ADMIN', 'FINANCIAL'), async (req, res) => {
+    try {
+      if (req.query.action !== 'test') return res.status(400).json({ error: 'Ação Celcoin inválida.' });
+      return res.json({ ...(await testCelcoinConnection()), connected: true });
+    } catch (error) {
+      return res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao conectar à Celcoin.' });
+    }
+  });
 
   app.post("/api/analyze-marketing", requireAuth, requireMarketingAccess, limitAiRequests, async (req, res) => {
     try {
