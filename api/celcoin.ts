@@ -1,5 +1,5 @@
 import express from 'express';
-import { celcoinConfigurationStatus, fetchCelcoinTransactions, testCelcoinConnection } from '../celcoin-service.js';
+import { celcoinConfigurationStatus, fetchCelcoinTransactions, testCelcoinConnection, type CelcoinCredentials } from '../celcoin-service.js';
 import { createRequireAuth, requireRoles } from '../server-auth.js';
 import { verifyFirebaseIdToken } from '../server-firebase-admin.js';
 
@@ -33,11 +33,16 @@ app.get('/api/celcoin', async (req, res) => {
 
 app.post('/api/celcoin', async (req, res) => {
   try {
+    const credentials = req.body?.credentials as CelcoinCredentials | undefined;
+    if (req.query.action === 'transactions') {
+      res.json(await fetchCelcoinTransactions({ from: req.body?.from, to: req.body?.to, limit: req.body?.limit }, fetch, credentials));
+      return;
+    }
     if (req.query.action !== 'test') {
       res.status(400).json({ error: 'Ação Celcoin inválida.' });
       return;
     }
-    res.json({ ...(await testCelcoinConnection()), connected: true });
+    res.json({ ...(await testCelcoinConnection(fetch, credentials)), connected: true });
   } catch (error) {
     res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao conectar à Celcoin.' });
   }

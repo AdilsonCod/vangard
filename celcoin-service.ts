@@ -20,12 +20,18 @@ export type CelcoinReportItem = {
 
 type CelcoinConfig = { id: string; hash: string; environment: CelcoinEnvironment; baseUrl: string };
 type TokenEntry = { value: string; expiresAt: number };
-let cachedToken: TokenEntry | undefined;
+const cachedTokens = new Map<string, TokenEntry>();
 
-function config(): CelcoinConfig {
-  const id = process.env.CELCOIN_GALAX_ID?.trim() || '';
-  const hash = process.env.CELCOIN_GALAX_HASH?.trim() || '';
-  const environment = process.env.CELCOIN_ENVIRONMENT?.trim().toLowerCase() === 'sandbox' ? 'sandbox' : 'production';
+export type CelcoinCredentials = { id?: string; hash?: string; environment?: CelcoinEnvironment };
+
+function config(override?: CelcoinCredentials): CelcoinConfig {
+  const suppliedId = typeof override?.id === 'string' ? override.id.trim().slice(0, 64) : '';
+  const suppliedHash = typeof override?.hash === 'string' ? override.hash.trim().slice(0, 256) : '';
+  const id = suppliedId || process.env.CELCOIN_GALAX_ID?.trim() || '';
+  const hash = suppliedHash || process.env.CELCOIN_GALAX_HASH?.trim() || '';
+  const environment = override?.environment === 'sandbox' || override?.environment === 'production'
+    ? override.environment
+    : process.env.CELCOIN_ENVIRONMENT?.trim().toLowerCase() === 'sandbox' ? 'sandbox' : 'production';
   const baseUrl = (process.env.CELCOIN_API_URL?.trim() || (environment === 'sandbox' ? SANDBOX_URL : PRODUCTION_URL)).replace(/\/$/, '');
   return { id, hash, environment, baseUrl };
 }
@@ -48,9 +54,11 @@ async function responseJson(response: Response) {
   return payload;
 }
 
-async function accessToken(fetcher: typeof fetch = fetch) {
+async function accessToken(fetcher: typeof fetch = fetch, credentials?: CelcoinCredentials) {
+  const current = config(credentials);
+  const cacheKey = `${current.environment}:${current.id}:${current.hash}`;
+  const cachedToken = cachedTokens.get(cacheKey);
   if (cachedToken && cachedToken.expiresAt > Date.now() + 30_000) return cachedToken.value;
-  const current = config();
   if (!current.id || !current.hash) throw new Error('Credenciais Celcoin não configuradas no servidor.');
   const basic = Buffer.from(`${current.id}:${current.hash}`, 'utf8').toString('base64');
   const response = await fetcher(`${current.baseUrl}/token`, {
@@ -62,13 +70,14 @@ async function accessToken(fetcher: typeof fetch = fetch) {
   const token = typeof payload?.access_token === 'string' ? payload.access_token : '';
   if (!token) throw new Error('A Celcoin não retornou um token de acesso.');
   const expiresIn = Number(payload?.expires_in) || 600;
-  cachedToken = { value: token, expiresAt: Date.now() + expiresIn * 1000 };
+  cachedTokens.set(cacheKey, { value: token, expiresAt: Date.now() + expiresIn * 1000 });
   return token;
 }
 
-export async function testCelcoinConnection(fetcher: typeof fetch = fetch) {
-  await accessToken(fetcher);
-  return celcoinConfigurationStatus();
+export async function testCelcoinConnection(fetcher: typeof fetch = fetch, credentials?: CelcoinCredentials) {
+  await accessToken(fetcher, credentials);
+  const current = config(credentials);
+  return { configured: true, environment: current.environment, account: `••••${current.id.slice(-4)}` };
 }
 
 const text = (value: unknown) => typeof value === 'string' ? value : '';
@@ -97,9 +106,9 @@ export function normalizeCelcoinTransaction(value: unknown): CelcoinReportItem |
   };
 }
 
-export async function fetchCelcoinTransactions(options: { from?: string; to?: string; limit?: number }, fetcher: typeof fetch = fetch) {
-  const current = config();
-  const token = await accessToken(fetcher);
+export async function fetchCelcoinTransactions(options: { from?: string; to?: string; limit?: number }, fetcher: typeof fetch = fetch, credentials?: CelcoinCredentials) {
+  const current = config(credentials);
+  const token = await accessToken(fetcher, credentials);
   const limit = Math.min(Math.max(Number(options.limit) || 100, 1), 500);
   const response = await fetcher(`${current.baseUrl}/transactions?limit=${limit}&startAt=0`, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },

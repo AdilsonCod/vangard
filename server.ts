@@ -5,7 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { configureSmartLinks } from "./smart-links-service";
 import { createRequireAuth, requireRoles } from './server-auth';
 import { verifyFirebaseIdToken } from './server-firebase-admin';
-import { celcoinConfigurationStatus, fetchCelcoinTransactions, testCelcoinConnection } from './celcoin-service';
+import { celcoinConfigurationStatus, fetchCelcoinTransactions, testCelcoinConnection, type CelcoinCredentials } from './celcoin-service';
 
 const requireAuth = createRequireAuth(verifyFirebaseIdToken);
 const requireMarketingAccess = requireRoles('ADMIN', 'MARKETING');
@@ -141,8 +141,10 @@ async function startServer() {
 
   app.post('/api/celcoin', requireAuth, requireRoles('ADMIN', 'FINANCIAL'), async (req, res) => {
     try {
+      const credentials = req.body?.credentials as CelcoinCredentials | undefined;
+      if (req.query.action === 'transactions') return res.json(await fetchCelcoinTransactions({ from: req.body?.from, to: req.body?.to, limit: req.body?.limit }, fetch, credentials));
       if (req.query.action !== 'test') return res.status(400).json({ error: 'Ação Celcoin inválida.' });
-      return res.json({ ...(await testCelcoinConnection()), connected: true });
+      return res.json({ ...(await testCelcoinConnection(fetch, credentials)), connected: true });
     } catch (error) {
       return res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao conectar à Celcoin.' });
     }

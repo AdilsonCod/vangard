@@ -1,12 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { fetchCelcoinTransactions, normalizeCelcoinTransaction, testCelcoinConnection } from '../celcoin-service';
+
+const interfaceSource = readFileSync(new URL('../src/components/CelcoinIntegration.tsx', import.meta.url), 'utf8');
 
 test('normaliza valores em centavos e campos de conciliação', () => {
   const item = normalizeCelcoinTransaction({ galaxPayId: 42, value: 12550, payday: '2026-09-20', status: 'pending', statusDescription: 'Pendente', Pix: {} });
   assert.equal(item?.id, 'celcoin_42');
   assert.equal(item?.amount, 125.5);
   assert.equal(item?.paymentMethod, 'PIX');
+});
+
+test('interface permite configurar sem persistir o segredo no navegador', () => {
+  assert.match(interfaceSource, /Configurar conexão/);
+  assert.match(interfaceSource, /Galax ID/);
+  assert.match(interfaceSource, /Galax Hash/);
+  assert.match(interfaceSource, /Conectar e usar nesta sessão/);
+  assert.doesNotMatch(interfaceSource, /localStorage|sessionStorage|indexedDB/);
 });
 
 test('autentica com escopo somente leitura e separa recebíveis futuros', async () => {
