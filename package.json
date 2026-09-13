@@ -46,6 +46,7 @@
     "test:financial-presentation": "tsx --test scripts/financial-presentation.test.ts",
     "test:data-import-modules": "tsx --test scripts/data-import-modules.test.ts",
     "test:catalog-atomicity": "tsx --test scripts/catalog-mutation-plan.test.ts",
+    "test:catalog-visibility": "tsx --test scripts/catalog-visibility.test.ts",
     "test:financial-workflows": "tsx --test scripts/financial-workflows.integration.test.ts",
     "test:profiles-responsive": "tsx --test scripts/profiles-responsive.test.ts",
     "test:e2e": "playwright test",

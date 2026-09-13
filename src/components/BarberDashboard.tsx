@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from "react";
 import { useStore } from "../store";
+import { isCatalogItemVisibleToRole } from '../services/catalogVisibility';
 import BrandLogo from './BrandLogo';
 import { ProgressCard } from "./ProgressCard";
 import { DailyEntry, Target, CatalogItem } from "../types";
@@ -143,12 +144,7 @@ export default function BarberDashboard() {
 
   const catalog = useMemo(() => {
     if (!currentUser) return rawCatalog;
-    return rawCatalog.filter((item) => {
-      if (item.visibleToRoles && item.visibleToRoles.length > 0) {
-        return item.visibleToRoles.includes(currentUser.role);
-      }
-      return true;
-    });
+    return rawCatalog.filter(item => isCatalogItemVisibleToRole(item, currentUser.role));
   }, [rawCatalog, currentUser]);
 
   const now = new Date();

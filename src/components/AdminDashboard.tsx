@@ -1043,7 +1043,7 @@ function CatalogEditor({
       type: item.type,
       subcategoryId: item.subcategoryId || "",
       unit: item.unit || "ALL",
-      visibleToRoles: item.visibleToRoles || ["BARBER", "MANICURE"],
+      visibleToRoles: item.visibleToRoles || [],
       price: item.price || 0,
       costPrice: item.costPrice || 0,
     });
@@ -1379,7 +1379,7 @@ function CatalogEditor({
                           </span>
                         ) : (
                           <span className="text-xs font-semibold bg-gray-100 text-gray-550 inline-block px-2.5 py-1 rounded-md border border-gray-200 dark:border-zinc-800 dark:bg-zinc-850 dark:text-zinc-400">
-                            Todos os Perfis
+                            Somente Administração
                           </span>
                         )}
                       </div>
@@ -1853,12 +1853,7 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
 
   const catalog = useMemo(() => {
     if (!barber) return rawCatalog;
-    return rawCatalog.filter((item) => {
-      if (item.visibleToRoles && item.visibleToRoles.length > 0) {
-        return item.visibleToRoles.includes(barber.role);
-      }
-      return true;
-    });
+    return rawCatalog.filter(item => item.visibleToRoles?.includes(barber.role) === true);
   }, [rawCatalog, barber]);
 
   // Initialize generic target structure if not present

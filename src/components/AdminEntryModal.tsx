@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DailyEntry, CatalogItem, Category, Subcategory } from '../types';
 import { X, Check } from 'lucide-react';
 import { useStore } from '../store';
+import { isCatalogItemVisibleToRole } from '../services/catalogVisibility';
 
 export function AdminEntryModal({
   entry,
@@ -23,12 +24,7 @@ export function AdminEntryModal({
   const userRole = entryUser?.role || 'BARBER';
 
   const filteredCatalog = React.useMemo(() => {
-    return catalog.filter(item => {
-      if (item.visibleToRoles && item.visibleToRoles.length > 0) {
-        return item.visibleToRoles.includes(userRole);
-      }
-      return true;
-    });
+    return catalog.filter(item => isCatalogItemVisibleToRole(item, userRole));
   }, [catalog, userRole]);
 
   const [date, setDate] = useState(entry.date);

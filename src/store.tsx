@@ -26,6 +26,7 @@ import {
 import { db, auth } from './firebase';
 import { collection, doc, documentId, setDoc, deleteDoc, getDoc, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { commitCatalogMutation, planCategoryMutation, planSubcategoryMutation } from './services/catalogMutationPlan';
+import { isCatalogItemVisibleToRole } from './services/catalogVisibility';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { seedDatabase } from './firebase-sync';
 import { DEFAULT_DARK_LOGO, DEFAULT_LIGHT_LOGO } from './services/logoCustomization';
@@ -415,7 +416,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     });
 
     const unsubCatalog = onSnapshot(collection(db, 'catalog'), snap => {
-      setCatalog(snap.docs.map(d => withDocumentId<CatalogItem>(d)));
+      const items = snap.docs.map(d => withDocumentId<CatalogItem>(d));
+      setCatalog(isAdmin ? items : items.filter(item => isCatalogItemVisibleToRole(item, currentUser.role)));
     });
     const entriesSource = isProfessional
       ? query(collection(db, 'entries'), where('unitId', '==', userUnit), where('userId', '==', professionalId))
@@ -798,7 +800,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
           costPrice: item.costPrice || 0,
           subcategoryId: item.subcategoryId || '',
           unit: item.unit || 'ALL',
-          visibleToRoles: item.visibleToRoles || ['BARBER', 'MANICURE'],
+          visibleToRoles: item.visibleToRoles ?? [],
         };
         batch.set(doc(db, 'catalog', item.id), cleanItem);
       }
