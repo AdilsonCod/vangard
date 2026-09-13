@@ -75,7 +75,7 @@
     "express": "^5.2.1",
     "fflate": "^0.8.3",
     "firebase": "^12.13.0",
-    "firebase-admin": "^14.4.0",
+    "firebase-admin": "13.6.0",
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
     "jimp": "^1.6.1",
