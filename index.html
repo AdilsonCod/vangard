@@ -21,8 +21,22 @@
     <!-- Apple Touch Icon (iOS Mobile Home Screen) -->
     <!-- (Defined above for light/dark scheme support) -->
     
-    <!-- Android Manifest (Google Chrome Add to Home Screen) -->
-    <link rel="manifest" href="/manifest.json" />
+    <!-- Android/PWA: escolhe o conjunto de ícones pelo tema do aparelho. -->
+    <link id="app-manifest" rel="manifest" href="/manifest-light.json" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-escura-180.png" />
+    <script>
+      (() => {
+        const darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+        const syncAppIcons = () => {
+          const suffix = darkScheme.matches ? 'dark' : 'light';
+          document.getElementById('app-manifest').href = `/manifest-${suffix}.json`;
+          const touchIcon = document.querySelector('link[rel="apple-touch-icon"]:not([media])');
+          if (touchIcon) touchIcon.href = darkScheme.matches ? '/icon-clara-180.png' : '/icon-escura-180.png';
+        };
+        syncAppIcons();
+        darkScheme.addEventListener?.('change', syncAppIcons);
+      })();
+    </script>
     
     <title>Van's Management</title>
   </head>
