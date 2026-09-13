@@ -3,9 +3,8 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { configureSmartLinks } from "./smart-links-service";
-import { authenticatedUser, createRequireAuth, requireRoles } from './server-auth';
+import { createRequireAuth, requireRoles } from './server-auth';
 import { verifyFirebaseIdToken } from './server-firebase-admin';
-import { celcoinConfigurationStatus, decryptCelcoinCredentials, encryptCelcoinCredentials, fetchCelcoinTransactions, testCelcoinConnection, type CelcoinCredentials } from './celcoin-service';
 
 const requireAuth = createRequireAuth(verifyFirebaseIdToken);
 const requireMarketingAccess = requireRoles('ADMIN', 'MARKETING');
@@ -121,39 +120,6 @@ async function startServer() {
   });
 
   configureSmartLinks(app, requireAuth, requireRoles('ADMIN', 'MARKETING', 'RECEPTION'));
-
-  app.get('/api/celcoin', requireAuth, requireRoles('ADMIN', 'FINANCIAL'), async (req, res) => {
-    try {
-      const action = String(req.query.action || 'status');
-      if (action === 'status') return res.json(celcoinConfigurationStatus());
-      if (action === 'transactions') {
-        return res.json(await fetchCelcoinTransactions({
-          from: typeof req.query.from === 'string' ? req.query.from : undefined,
-          to: typeof req.query.to === 'string' ? req.query.to : undefined,
-          limit: Number(req.query.limit) || 100,
-        }));
-      }
-      return res.status(400).json({ error: 'Ação Celcoin inválida.' });
-    } catch (error) {
-      return res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao consultar a Celcoin.' });
-    }
-  });
-
-  app.post('/api/celcoin', requireAuth, requireRoles('ADMIN', 'FINANCIAL'), async (req, res) => {
-    try {
-      const supplied = req.body?.credentials as CelcoinCredentials | undefined;
-      const credentials = req.body?.encryptedConfig ? decryptCelcoinCredentials(req.body.encryptedConfig) : supplied;
-      if (req.query.action === 'encrypt') {
-        if (String(authenticatedUser(req)?.role || '').toUpperCase() !== 'ADMIN') return res.status(403).json({ error: 'Somente a gerência pode alterar as credenciais.' });
-        return res.json({ encryptedConfig: encryptCelcoinCredentials(credentials || {}) });
-      }
-      if (req.query.action === 'transactions') return res.json(await fetchCelcoinTransactions({ from: req.body?.from, to: req.body?.to, limit: req.body?.limit }, fetch, credentials));
-      if (req.query.action !== 'test') return res.status(400).json({ error: 'Ação Celcoin inválida.' });
-      return res.json({ ...(await testCelcoinConnection(fetch, credentials)), connected: true });
-    } catch (error) {
-      return res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao conectar à Celcoin.' });
-    }
-  });
 
   app.post("/api/analyze-marketing", requireAuth, requireMarketingAccess, limitAiRequests, async (req, res) => {
     try {

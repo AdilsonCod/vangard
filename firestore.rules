@@ -42,13 +42,6 @@ service cloud.firestore {
       return canManageFinance() || hasRole('RECEPTION');
     }
 
-    match /integrationConfigs/{providerId} {
-      allow read: if canManageFinance();
-      allow create, update: if isAdmin() && providerId == 'celcoin'
-        && request.resource.data.keys().hasOnly(['encryptedConfig', 'updatedAt', 'updatedBy']);
-      allow delete: if false;
-    }
-
     function isUserInUnit(unitId) {
       return isAuthenticated() && (
         isAdmin() || 

@@ -39,7 +39,6 @@ const BankReconciliation = lazy(() => import('./BankReconciliation').then(module
 const ReceivablesReconciliation = lazy(() => import('./ReceivablesReconciliation').then(module => ({ default: module.ReceivablesReconciliation })));
 const FintechReconciliation = lazy(() => import('./FintechReconciliation').then(module => ({ default: module.FintechReconciliation })));
 const ExpenseSettlement = lazy(() => import('./ExpenseSettlement').then(module => ({ default: module.ExpenseSettlement })));
-const CelcoinIntegration = lazy(() => import('./CelcoinIntegration').then(module => ({ default: module.CelcoinIntegration })));
 
 type FinancialTransactionForm = Omit<Partial<FinancialTransaction>, 'amount'> & {
   amount?: number | string;
@@ -100,7 +99,7 @@ const QUICK_OPERATION_PRESETS: { label: string; preset: Partial<FinancialTransac
   { label: 'Cortesia / aniversário', preset: { type: 'EXPENSE', sourceChannel: 'COURTESY', paymentMethod: 'COURTESY', movementNature: 'NON_FINANCIAL', reconciliationStatus: 'PENDING', status: 'PAGO', description: 'Cortesia ou vale de aniversário' } },
 ];
 
-export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'DESPESAS' | 'CONCILIACAO_FINTECH' | 'CELCOIN' }) {
+export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'DESPESAS' | 'CONCILIACAO_FINTECH' }) {
   const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, cashClosings, currentUser, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing } = useStore();
   const confirmAction = useConfirmation();
   
@@ -1481,10 +1480,6 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
 
       {activeTab === 'DESPESAS' && (
         <ExpenseSettlement />
-      )}
-
-      {activeTab === 'CELCOIN' && (
-        <CelcoinIntegration />
       )}
 
       {activeTab === 'CAIXA' && (
