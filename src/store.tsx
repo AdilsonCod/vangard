@@ -851,6 +851,9 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
   const addUser = async (user: User) => {
     try {
+      if (!user.email?.trim()) {
+        throw new Error('O e-mail é obrigatório para cadastrar um usuário.');
+      }
       if (!user.authUid || user.id !== user.authUid) {
         throw new Error('O perfil deve usar o UID do Firebase Authentication como identificador.');
       }
@@ -869,6 +872,9 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
   const updateUser = async (user: User) => {
     try {
+      if (!user.email?.trim()) {
+        throw new Error('O e-mail é obrigatório para atualizar um usuário.');
+      }
       if (user.authUid && user.id !== user.authUid) {
         throw new Error('O perfil deve ser salvo no documento correspondente ao UID autenticado.');
       }

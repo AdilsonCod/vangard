@@ -85,6 +85,11 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
       showToast('O e-mail é obrigatório.', 'error');
       return;
     }
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      showToast('Informe um e-mail válido.', 'error');
+      return;
+    }
     if (!editingId && password.length < 6) {
       showToast('A senha temporária precisa ter pelo menos 6 caracteres.', 'error');
       return;
@@ -93,7 +98,6 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
       showToast('A senha temporária precisa ter pelo menos 6 caracteres.', 'error');
       return;
     }
-    const normalizedEmail = email.trim().toLowerCase();
     if (users.some((user) => user.id !== editingId && user.email?.trim().toLowerCase() === normalizedEmail)) {
       showToast('Já existe um usuário com este e-mail.', 'error');
       return;
@@ -498,9 +502,11 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
                 <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">Email</label>
                 <input
                   type="email"
-                  placeholder="E-mail (opcional)"
+                  placeholder="E-mail obrigatório"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
                   className="w-full border border-gray-250 dark:border-zinc-800 p-2 text-sm rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-color)] bg-white dark:bg-zinc-900 text-gray-900 dark:text-white placeholder-gray-400 font-medium"
                 />
              </div>

@@ -20,3 +20,12 @@ test('preservação de dados é informada e aplicada a todos os perfis', () => {
   assert.match(dashboard, /Todos os dados operacionais e históricos do usuário foram preservados/);
   assert.doesNotMatch(dashboard, /existingUser\.role === 'BARBER'/);
 });
+
+test('cadastro exige e valida o e-mail do usuário', () => {
+  assert.match(dashboard, /placeholder="E-mail obrigatório"/);
+  assert.match(dashboard, /type="email"[\s\S]*?required[\s\S]*?autoComplete="email"/);
+  assert.match(dashboard, /O e-mail é obrigatório/);
+  assert.match(dashboard, /Informe um e-mail válido/);
+  assert.match(store, /O e-mail é obrigatório para cadastrar um usuário/);
+  assert.match(store, /O e-mail é obrigatório para atualizar um usuário/);
+});
