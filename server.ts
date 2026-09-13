@@ -4,7 +4,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { configureSmartLinks } from "./smart-links-service";
 import { createRequireAuth, requireRoles } from './server-auth';
-import { verifyFirebaseIdToken } from './server-firebase-admin';
+import { adminDb, verifyFirebaseIdToken } from './server-firebase-admin';
 
 const requireAuth = createRequireAuth(verifyFirebaseIdToken);
 const requireMarketingAccess = requireRoles('ADMIN', 'MARKETING');
@@ -117,6 +117,35 @@ async function startServer() {
   // API routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  app.post('/api/audit-login', async (req, res) => {
+    const succeeded = req.body?.succeeded === true;
+    let userId = String(req.body?.identifier || '').trim().toLowerCase().slice(0, 254);
+    let userRole = 'UNKNOWN';
+    if (succeeded) {
+      try {
+        const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+        const user = await verifyFirebaseIdToken(token);
+        userId = user.profileId || user.uid;
+        userRole = user.role || 'UNKNOWN';
+      } catch {
+        return res.status(401).json({ error: 'Sessão inválida.' });
+      }
+    }
+    const id = crypto.randomUUID();
+    const ipAddress = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().slice(0, 64);
+    try {
+      await adminDb.collection('loginAudit').doc(id).set({
+        id, userId, userRole, action: succeeded ? 'login_sucesso' : 'login_falha',
+        timestamp: new Date().toISOString(), ipAddress,
+        userAgent: String(req.headers['user-agent'] || '').slice(0, 500),
+      });
+      return res.status(204).end();
+    } catch (error) {
+      console.error('Falha ao registrar auditoria de login:', error);
+      return res.status(500).json({ error: 'Falha ao registrar auditoria de login.' });
+    }
   });
 
   configureSmartLinks(app, requireAuth, requireRoles('ADMIN', 'MARKETING', 'RECEPTION'));
