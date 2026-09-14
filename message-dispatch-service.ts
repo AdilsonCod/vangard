@@ -5,14 +5,14 @@ import QRCode from 'qrcode';
 import { authenticatedUser } from './server-auth';
 import { adminDb } from './server-firebase-admin';
 import { useEncryptedAuthState } from './message-auth-store';
-import { authorizeDispatchUnit, safeInterruptionReason } from './message-dispatch-policy';
+import { authorizeDispatchUnit, safeInterruptionReason, waitForCampaignReady } from './message-dispatch-policy';
 import type { VerifiedFirebaseUser } from './server-auth';
 
 type DispatchLog = { id:string; time:string; text:string; type:'info'|'success'|'warning' };
 type DispatchError = { contact:string; error:string };
 type DispatchState = {
   enabled:boolean; connectionStatus:'disconnected'|'connecting'|'qr'|'connected'; currentQr:string; isSending:boolean;
-  progress:number; total:number; currentAction:string; logs:DispatchLog[]; campaignStatus:'idle'|'running'|'completed'|'stopped';
+  progress:number; total:number; currentAction:string; logs:DispatchLog[]; campaignStatus:'idle'|'running'|'paused'|'completed'|'stopped';
   successCount:number; errorCount:number; errorDetails:DispatchError[]; runId:string; activeUnitId:string;
 };
 
@@ -21,6 +21,8 @@ const MAX_CONTACTS=200;
 const state:DispatchState={enabled:true,connectionStatus:'disconnected',currentQr:'',isSending:false,progress:0,total:0,currentAction:'Aguardando conexão.',logs:[],campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],runId:'',activeUnitId:''};
 let socket:ReturnType<typeof makeWASocket>|null=null;
 let connecting=false;
+let workerActive=false;
+const waitUntilResumed=()=>waitForCampaignReady(state);
 let connectionActor:VerifiedFirebaseUser|undefined;
 let connectionUnitId='ALL';
 
@@ -68,6 +70,18 @@ const requireUnit=(req:express.Request,res:express.Response)=>{const decision=au
 export function configureMessageDispatch(app:express.Express, requireAuth: express.RequestHandler, requireRole: express.RequestHandler){
   app.get('/api/message-dispatch/status', requireAuth, requireRole, (req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const view=publicState();if(state.activeUnitId&&unitId!=='ALL'&&state.activeUnitId!==unitId)res.json({...view,isSending:false,progress:0,total:0,campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],runId:'',activeUnitId:''});else res.json(view);});
   app.post('/api/message-dispatch/connect', requireAuth, requireRole, async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req);await auditLog('CONNECTION_REQUESTED',user,unitId);void connect(user,unitId);res.json({success:true});});
+  for(const action of ['pause','resume'] as const){
+    app.post(`/api/message-dispatch/${action}`,requireAuth,requireRole,async(req,res)=>{
+      const unitId=requireUnit(req,res);if(!unitId)return;
+      if(state.activeUnitId&&unitId!=='ALL'&&state.activeUnitId!==unitId){res.status(403).json({error:'Esta campanha pertence a outra unidade.'});return;}
+      if(!state.isSending){res.status(409).json({error:'Não existe campanha ativa.'});return;}
+      state.campaignStatus=action==='pause'?'paused':'running';
+      state.currentAction=action==='pause'?'Campanha pausada. Retome para continuar a fila.':'Retomando campanha...';
+      addLog(state.currentAction);
+      await auditLog(action==='pause'?'CAMPAIGN_PAUSED':'CAMPAIGN_RESUMED',authenticatedUser(req),state.activeUnitId,{runId:state.runId,processed:state.progress});
+      res.json({success:true});
+    });
+  }
   app.post('/api/message-dispatch/stop', requireAuth, requireRole, async(req,res)=>{
     const unitId=requireUnit(req,res);if(!unitId)return;if(state.activeUnitId&&unitId!=='ALL'&&state.activeUnitId!==unitId){res.status(403).json({error:'Esta campanha pertence a outra unidade.'});return;}
     const user=authenticatedUser(req);const reason=safeInterruptionReason(req.body?.reason);
@@ -78,7 +92,7 @@ export function configureMessageDispatch(app:express.Express, requireAuth: expre
   });
   app.post('/api/message-dispatch/start', requireAuth, requireRole, async(req,res)=>{
     const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req);const userEmail=user?.email||'unknown';
-    if(state.isSending){res.status(409).json({error:'Já existe uma campanha em andamento.'});return;}
+    if(workerActive){res.status(409).json({error:'Já existe uma campanha em andamento.'});return;}
     if(state.connectionStatus!=='connected'||!socket){res.status(409).json({error:'Conecte o WhatsApp antes de iniciar.'});return;}
     const message=typeof req.body?.message==='string'?req.body.message.trim():'';
     const rawContacts=Array.isArray(req.body?.contacts)?req.body.contacts:String(req.body?.contacts||'').split(/\r?\n/);
@@ -89,13 +103,16 @@ export function configureMessageDispatch(app:express.Express, requireAuth: expre
     if(req.body?.confirmedOptIn!==true){res.status(400).json({error:'Confirme que os destinatários autorizaram o recebimento.'});return;}
     if(!message||message.length>4096){res.status(400).json({error:'A mensagem deve ter entre 1 e 4.096 caracteres.'});return;}
     if(!contacts.length||contacts.length>MAX_CONTACTS){res.status(400).json({error:`Informe entre 1 e ${MAX_CONTACTS} contatos válidos.`});return;}
+    workerActive=true;
     res.json({success:true,total:contacts.length});
+    try{
     state.isSending=true;state.campaignStatus='running';state.runId=crypto.randomUUID();state.activeUnitId=unitId;state.successCount=0;state.errorCount=0;state.errorDetails=[];state.total=contacts.length;state.progress=0;state.logs=[];
     addLog(`Campanha iniciada por ${userEmail} com ${contacts.length} destinatário(s).`);
     const campaignName=typeof req.body?.campaignName==='string'?req.body.campaignName.trim().slice(0,120):'Disparo sem título';
     await auditLog('CAMPAIGN_STARTED',user,unitId,{runId:state.runId,totalContacts:contacts.length,campaignName,minDelay,maxDelay,simulateTyping,confirmedOptIn:true});
     await adminDb.collection('message_dispatch_history').doc(state.runId).set({name:campaignName,createdAt:new Date().toISOString(),unitId,total:contacts.length,processed:0,successCount:0,errorCount:0,status:'EM_ANDAMENTO',createdBy:user?.uid||'',createdByEmail:user?.email||''});
     for(let index=0;index<contacts.length&&state.isSending;index++){
+      if(!await waitUntilResumed())break;
       const contact=contacts[index];
       let jid=`${contact}@s.whatsapp.net`;
       try{
@@ -104,18 +121,22 @@ export function configureMessageDispatch(app:express.Express, requireAuth: expre
         if(!availability?.[0]?.exists)throw new Error('Número não encontrado no WhatsApp');
         jid=availability[0].jid;
         if(simulateTyping){state.currentAction=`Preparando mensagem ${index+1} de ${contacts.length}...`;await socket.sendPresenceUpdate('composing',jid);await pause(Math.min(6000,Math.max(1200,message.length*45)));await socket.sendPresenceUpdate('paused',jid);}
-        if(!state.isSending)break;
+        if(!await waitUntilResumed())break;
         state.currentAction=`Enviando ${index+1} de ${contacts.length}...`;
-        await socket.sendMessage(jid,{text:message});state.successCount++;addLog(`Mensagem entregue para ${contact}.`,'success');
+        await socket.sendMessage(jid,{text:message});state.successCount++;addLog(`Mensagem enviada para ${contact}.`,'success');
       }catch(error){const detail=error instanceof Error?error.message:'Falha no envio';state.errorCount++;state.errorDetails.push({contact,error:detail});addLog(`Falha para ${contact}: ${detail}`,'warning');}
       state.progress=index+1;
-      if(index<contacts.length-1&&state.isSending){const seconds=Math.floor(Math.random()*(maxDelay-minDelay+1))+minDelay;state.currentAction=`Intervalo operacional de ${seconds}s...`;for(let elapsed=0;elapsed<seconds&&state.isSending;elapsed++)await pause(1000);}
+      if(index<contacts.length-1&&state.isSending){const seconds=Math.floor(Math.random()*(maxDelay-minDelay+1))+minDelay;state.currentAction=`Intervalo operacional de ${seconds}s...`;for(let elapsed=0;elapsed<seconds&&state.isSending;elapsed++){if(!await waitUntilResumed())break;await pause(1000);}}
     }
     if(state.isSending){
       state.campaignStatus='completed';state.currentAction='Campanha concluída.';addLog('Processamento concluído.','success');
       await auditLog('CAMPAIGN_COMPLETED',user,unitId,{runId:state.runId,processed:state.progress,success:state.successCount,errors:state.errorCount,errorReasons:state.errorDetails.map(item=>item.error).slice(0,100)});
       await adminDb.collection('message_dispatch_history').doc(state.runId).set({status:'CONCLUIDO',finishedAt:new Date().toISOString(),processed:state.progress,successCount:state.successCount,errorCount:state.errorCount},{merge:true});
     }
-    state.isSending=false;
+    }catch(error){
+      state.campaignStatus='stopped';state.currentAction='Campanha interrompida por falha no processamento.';
+      addLog(state.currentAction,'warning');
+      await auditLog('CAMPAIGN_FAILED',user,unitId,{runId:state.runId,reason:error instanceof Error?error.message:'Falha desconhecida'});
+    }finally{state.isSending=false;workerActive=false;}
   });
 }

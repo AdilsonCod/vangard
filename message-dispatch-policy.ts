@@ -17,3 +17,12 @@ export const safeInterruptionReason = (value: unknown) => {
   return reason || 'Interrompida manualmente pelo operador.';
 };
 
+
+// Recheck immediately before each send so pause/cancel also applies during preparation.
+export async function waitForCampaignReady(
+  state: { isSending: boolean; campaignStatus: string },
+  wait: () => Promise<unknown> = () => new Promise(resolve => setTimeout(resolve, 200)),
+): Promise<boolean> {
+  while (state.isSending && state.campaignStatus === 'paused') await wait();
+  return state.isSending;
+}

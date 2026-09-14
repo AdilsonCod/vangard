@@ -2,11 +2,12 @@ FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json message-service-server.ts message-dispatch-service.ts message-auth-store.ts server-auth.ts server-firebase-admin.ts firebase-applet-config.json ./
+COPY tsconfig.json message-service-server.ts message-service-app.ts message-dispatch-service.ts message-dispatch-policy.ts message-auth-store.ts server-auth.ts server-firebase-admin.ts firebase-applet-config.json ./
 RUN npm run build:messages
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production
+ENV WHATSAPP_AUTH_VAULT=/data/whatsapp/session.enc
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
