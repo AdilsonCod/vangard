@@ -352,24 +352,6 @@ export function ReportsTab() {
     }
   };
 
-  // Filter subscriptions from our Catalog
-  const subscriptionCatalogItems = useMemo(() => {
-    return catalog.filter(c => {
-      const parentCat = categories.find(cat => cat.id === c.type);
-      return c.name.toLowerCase().includes('assinatura') || 
-             c.name.toLowerCase().includes("van's") || 
-             parentCat?.type === 'SUBSCRIPTION';
-    });
-  }, [catalog, categories]);
-
-  // Filter product items from our Catalog
-  const productCatalogItems = useMemo(() => {
-    return catalog.filter(c => {
-      const parentCat = categories.find(cat => cat.id === c.type);
-      return c.type === 'PRODUCT' || parentCat?.type === 'PRODUCT';
-    });
-  }, [catalog, categories]);
-
   // Comprehensive mathematical faturamento statistics (sums up system daily sheets + weekly overrides)
   const stats = useMemo(() => {
     const computeSingleUnitStats = (unitId: string) => {
@@ -514,7 +496,7 @@ export function ReportsTab() {
           const isCat = categories.some(c => c.id === key);
           if (isCat) {
             const cat = categories.find(c => c.id === key);
-            const cType = cat?.type || 'SERVICE';
+            const cType = cat?.type || (cat?.id === 'PRODUCT' ? 'PRODUCT' : 'SERVICE');
 
             if (cType === 'SUBSCRIPTION') {
               subscriptionTotal_u += grossRev;
@@ -1127,7 +1109,7 @@ export function ReportsTab() {
         </div>
       </div>
 
-      {/* DETAILED CATEGORY/ITEM LAUNCH EDITORS */}
+      {/* CATEGORY LAUNCH EDITORS */}
       {isEditing && (
         <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 p-6 rounded-2xl shadow-md space-y-6 animate-in slide-in-from-bottom duration-300">
           <div className="border-b border-gray-100 dark:border-zinc-800 pb-3">
@@ -1136,7 +1118,7 @@ export function ReportsTab() {
               Lançamentos Complementares: Semana {selectedWeek.split('W')[1]}
             </h3>
             <p className="text-3xs text-gray-400 mt-0.5">
-              Selecione e digite a quantidade correspondente e o faturamento bruto auferido de cada componente no período para furação exata de objetivos.
+              Informe a quantidade e o faturamento bruto de cada categoria no período.
             </p>
           </div>
 
@@ -1187,40 +1169,8 @@ export function ReportsTab() {
             <div className="space-y-4">
               <h4 className="text-xs font-bold uppercase text-orange-600 dark:text-orange-400 border-b pb-1">Produtos e Bebidas</h4>
               <div className="space-y-3.5 max-h-[350px] overflow-y-auto pr-1">
-                {productCatalogItems.map(pItem => {
-                  const val = formData[pItem.id] || { amount: 0, grossRev: 0 };
-                  return (
-                    <div key={pItem.id} className="p-2.5 bg-gray-50 dark:bg-zinc-800/60 rounded-xl space-y-2 border border-gray-100 dark:border-zinc-800">
-                      <span className="block font-bold text-xs text-gray-800 dark:text-zinc-200 truncate" title={pItem.name}>{pItem.name}</span>
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <label className="text-[9px] uppercase font-semibold text-gray-400 block mb-0.5">Qtd</label>
-                          <input 
-                            type="number"
-                            value={val.amount === 0 ? '' : val.amount}
-                            onChange={(e) => handleInputChange(pItem.id, 'amount', parseInt(e.target.value) || 0)}
-                            placeholder="0"
-                            className="w-full text-xs bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 p-1.5 rounded font-black text-center text-gray-900 dark:text-zinc-100"
-                          />
-                        </div>
-                        <div className="flex-[2_2_0%]">
-                          <label className="text-[9px] uppercase font-semibold text-gray-400 block mb-0.5">Valor Bruto R$</label>
-                          <input 
-                            type="number"
-                            step="0.01"
-                            value={val.grossRev === 0 ? '' : val.grossRev}
-                            onChange={(e) => handleInputChange(pItem.id, 'grossRev', parseFloat(e.target.value) || 0)}
-                            placeholder="0.00"
-                            className="w-full text-xs bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 p-1.5 rounded font-black text-gray-900 dark:text-zinc-100"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
                 {/* Custom Product categories if they exist */}
-                {categories.filter(c => c.type === 'PRODUCT' && c.id !== 'PRODUCT').map(pCat => {
+                {categories.filter(c => (c.type || (c.id === 'PRODUCT' ? 'PRODUCT' : 'SERVICE')) === 'PRODUCT').map(pCat => {
                   const val = formData[pCat.id] || { amount: 0, grossRev: 0 };
                   return (
                     <div key={pCat.id} className="p-2.5 bg-gray-50 dark:bg-zinc-800/60 rounded-xl space-y-2 border border-gray-100 dark:border-zinc-800">
@@ -1258,38 +1208,6 @@ export function ReportsTab() {
             <div className="space-y-4">
               <h4 className="text-xs font-bold uppercase text-orange-600 dark:text-orange-400 border-b pb-1">Assinaturas</h4>
               <div className="space-y-3.5 max-h-[350px] overflow-y-auto pr-1">
-                {subscriptionCatalogItems.map(sItem => {
-                  const val = formData[sItem.id] || { amount: 0, grossRev: 0 };
-                  return (
-                    <div key={sItem.id} className="p-2.5 bg-gray-50 dark:bg-zinc-800/60 rounded-xl space-y-2 border border-gray-100 dark:border-zinc-800">
-                      <span className="block font-bold text-xs text-gray-800 dark:text-zinc-200 truncate" title={sItem.name}>{sItem.name}</span>
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <label className="text-[9px] uppercase font-semibold text-gray-400 block mb-0.5">Qtd</label>
-                          <input 
-                            type="number"
-                            value={val.amount === 0 ? '' : val.amount}
-                            onChange={(e) => handleInputChange(sItem.id, 'amount', parseInt(e.target.value) || 0)}
-                            placeholder="0"
-                            className="w-full text-xs bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 p-1.5 rounded font-black text-center text-gray-900 dark:text-zinc-100"
-                          />
-                        </div>
-                        <div className="flex-[2_2_0%]">
-                          <label className="text-[9px] uppercase font-semibold text-gray-400 block mb-0.5">Valor Bruto R$</label>
-                          <input 
-                            type="number"
-                            step="0.01"
-                            value={val.grossRev === 0 ? '' : val.grossRev}
-                            onChange={(e) => handleInputChange(sItem.id, 'grossRev', parseFloat(e.target.value) || 0)}
-                            placeholder="0.00"
-                            className="w-full text-xs bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 p-1.5 rounded font-black text-gray-900 dark:text-zinc-100"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
                 {/* Custom subscription categories */}
                 {categories.filter(c => c.type === 'SUBSCRIPTION').map(sCat => {
                   const val = formData[sCat.id] || { amount: 0, grossRev: 0 };
