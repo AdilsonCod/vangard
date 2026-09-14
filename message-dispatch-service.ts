@@ -54,7 +54,11 @@ async function connect(actor?:VerifiedFirebaseUser,unitId='ALL'){
         if(code!==DisconnectReason.loggedOut)setTimeout(()=>void connect(connectionActor,connectionUnitId),3000);
       }
     });
-  }catch(error){const reason=error instanceof Error?error.message:'Falha de conexão.';connecting=false;state.connectionStatus='disconnected';state.currentAction='Falha ao iniciar a conexão.';addLog(reason,'warning');void auditLog('CONNECTION_FAILED',connectionActor,connectionUnitId,{reason});}
+  }catch(error){
+    const reason=error instanceof Error?error.message:'Falha de conexão.';
+    console.error('Falha ao iniciar cliente WhatsApp:',reason);
+    connecting=false;state.connectionStatus='disconnected';state.currentAction='Falha ao iniciar a conexão.';addLog(reason,'warning');void auditLog('CONNECTION_FAILED',connectionActor,connectionUnitId,{reason});
+  }
 }
 
 export const startMessageDispatchConnection = () => connect(undefined,'ALL');
