@@ -417,7 +417,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
     const unsubCatalog = onSnapshot(collection(db, 'catalog'), snap => {
       const items = snap.docs.map(d => withDocumentId<CatalogItem>(d));
-      setCatalog(isAdmin ? items : items.filter(item => isCatalogItemVisibleToRole(item, currentUser.role)));
+      setCatalog(isAdmin ? items : items.filter(item => isCatalogItemVisibleToRole(item, currentUser.role, currentUser.unit)));
     });
     const entriesSource = isProfessional
       ? query(collection(db, 'entries'), where('unitId', '==', userUnit), where('userId', '==', professionalId))

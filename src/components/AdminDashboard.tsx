@@ -1853,7 +1853,7 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
 
   const catalog = useMemo(() => {
     if (!barber) return rawCatalog;
-    return rawCatalog.filter(item => item.visibleToRoles?.includes(barber.role) === true);
+    return rawCatalog.filter(item => item.visibleToRoles?.includes(barber.role) === true && (!item.unit || item.unit === 'ALL' || item.unit === barber.unit));
   }, [rawCatalog, barber]);
 
   // Initialize generic target structure if not present

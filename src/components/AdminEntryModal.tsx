@@ -24,8 +24,8 @@ export function AdminEntryModal({
   const userRole = entryUser?.role || 'BARBER';
 
   const filteredCatalog = React.useMemo(() => {
-    return catalog.filter(item => isCatalogItemVisibleToRole(item, userRole));
-  }, [catalog, userRole]);
+    return catalog.filter(item => isCatalogItemVisibleToRole(item, userRole, entryUser?.unit));
+  }, [catalog, userRole, entryUser?.unit]);
 
   const [date, setDate] = useState(entry.date);
   const [isDayOff, setIsDayOff] = useState(entry.isDayOff);

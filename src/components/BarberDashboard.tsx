@@ -144,7 +144,7 @@ export default function BarberDashboard() {
 
   const catalog = useMemo(() => {
     if (!currentUser) return rawCatalog;
-    return rawCatalog.filter(item => isCatalogItemVisibleToRole(item, currentUser.role));
+    return rawCatalog.filter(item => isCatalogItemVisibleToRole(item, currentUser.role, currentUser.unit));
   }, [rawCatalog, currentUser]);
 
   const now = new Date();
