@@ -52,6 +52,7 @@ import {
   Gift,
   ShoppingBag,
   ClipboardList,
+  Scissors,
 } from "lucide-react";
 import { User, CatalogItem, Target, Category, Subcategory, Role } from "../types";
 import { AnnouncementWall } from "./AnnouncementWall";
@@ -1797,6 +1798,7 @@ function SubcategoriesTab() {
 
 function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
   const confirmAction = useConfirmation();
+  const [detailsModal, setDetailsModal] = useState<{ isOpen: boolean; title: string; items: CatalogItem[] }>({ isOpen: false, title: "", items: [] });
   const {
     updateUser,
     targets,
@@ -2272,90 +2274,27 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
           {categories.map((cat) => {
             const itemsOfCat = catalog.filter((c) => c.type === cat.id);
             if (itemsOfCat.length === 0) return null;
-            
-            if (cat.id === 'EXTRA_SERVICE') {
-              const totalExtras = itemsOfCat.reduce((sum, c) => sum + (stats.totals[c.id] || 0), 0);
-              return (
-                <div key={cat.id} className="space-y-4">
-                  <h4 className="font-bold text-gray-600 dark:text-zinc-300 text-sm border-b pb-1 uppercase">
-                    {cat.name}
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-2">
-                     <ProgressCard
-                        label="Objetivo Geral (Serviços Extras)"
-                        total={totalExtras}
-                        target={target.items['meta_extra_geral'] || 0}
-                     />
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 opacity-90">
-                    {itemsOfCat.map((c) => {
-                      const totalC = stats.totals[c.id] || 0;
-                      if (totalC === 0) return null;
-                      return (
-                        <div key={c.id} className="bg-gray-50 dark:bg-zinc-800/40 p-3 flex flex-col justify-between rounded-xl border border-gray-100 dark:border-zinc-800/80 text-sm">
-                           <p className="text-gray-500 dark:text-zinc-400 font-bold mb-1 text-xs truncate" title={c.name}>{c.name}</p>
-                           <p className="text-gray-900 dark:text-zinc-100 font-bold">R$ {totalC.toFixed(2)}</p>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              );
-            }
-            
-            if (cat.id === 'PRODUCT') {
-              const totalProducts = itemsOfCat.reduce((sum, c) => sum + (stats.totals[c.id] || 0), 0);
-              return (
-                <div key={cat.id} className="space-y-4">
-                  <h4 className="font-bold text-gray-600 dark:text-zinc-300 text-sm border-b pb-1 uppercase">
-                    {cat.name}
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-2">
-                     <ProgressCard
-                        label="Objetivo Geral (Produtos)"
-                        total={totalProducts}
-                        target={target.items['meta_produto_geral'] || 0}
-                     />
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 opacity-90">
-                    {itemsOfCat.map((c) => {
-                      const totalC = stats.totals[c.id] || 0;
-                      if (totalC === 0) return null;
-                      return (
-                        <div key={c.id} className="bg-gray-50 dark:bg-zinc-800/40 p-3 flex flex-col justify-between rounded-xl border border-gray-100 dark:border-zinc-800/80 text-sm">
-                           <p className="text-gray-500 dark:text-zinc-400 font-bold mb-1 text-xs truncate" title={c.name}>{c.name}</p>
-                           <p className="text-gray-900 dark:text-zinc-100 font-bold">R$ {totalC.toFixed(2)}</p>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              );
-            }
-
+            const total = itemsOfCat.reduce((sum, item) => sum + (stats.totals[item.id] || 0), 0);
+            const targetTotal = cat.id === 'EXTRA_SERVICE'
+              ? target.items['meta_extra_geral'] || 0
+              : cat.id === 'PRODUCT'
+                ? target.items['meta_produto_geral'] || 0
+                : itemsOfCat.reduce((sum, item) => sum + (target.items[item.id] || 0), 0);
             return (
-              <div key={cat.id} className="space-y-3">
+              <div key={cat.id} className="space-y-4">
                 <h4 className="font-bold text-gray-600 dark:text-zinc-300 text-sm border-b pb-1 uppercase">
                   {cat.name}
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {itemsOfCat.map((c) => {
-                    const subcat = subcategories.find(
-                      (s) => s.id === c.subcategoryId,
-                    );
-                    const label = subcat
-                      ? `${c.name} (${subcat.name})`
-                      : c.name;
-                    return (
-                      <ProgressCard
-                        key={c.id}
-                        label={label}
-                        total={stats.totals[c.id] || 0}
-                        target={target.items[c.id] || 0}
-                      />
-                    );
-                  })}
+                  <ProgressCard label={`Objetivo Geral (${cat.name})`} total={total} target={targetTotal} />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailsModal({ isOpen: true, title: cat.name, items: itemsOfCat })}
+                  className="text-sm font-bold text-[var(--theme-color)] hover:bg-[var(--theme-color)]/10 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
+                >
+                  Ver mais <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
             );
           })}
@@ -2561,6 +2500,35 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
             setEditingEntryId(null);
           }}
         />
+      )}
+
+      {detailsModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailsModal({ isOpen: false, title: "", items: [] }); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="admin-goal-details-title" className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 p-5 dark:border-zinc-800">
+              <h3 id="admin-goal-details-title" className="flex items-center gap-2 text-lg font-black text-gray-900 dark:text-zinc-100">
+                <Scissors className="h-5 w-5 text-[var(--theme-color)]" /> Detalhes: {detailsModal.title}
+              </h3>
+              <button type="button" aria-label="Fechar detalhes" onClick={() => setDetailsModal({ isOpen: false, title: "", items: [] })} className="rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-5 app-scrollbar">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {detailsModal.items.map((item) => {
+                  const subcategory = subcategories.find((candidate) => candidate.id === item.subcategoryId);
+                  const label = subcategory ? `${item.name} (${subcategory.name})` : item.name;
+                  return (
+                    <div key={item.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/50">
+                      <p className="mb-2 text-xs font-bold text-gray-500 dark:text-zinc-400">{label}</p>
+                      <p className="text-lg font-black text-gray-900 dark:text-zinc-100">R$ {(stats.totals[item.id] || 0).toFixed(2)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

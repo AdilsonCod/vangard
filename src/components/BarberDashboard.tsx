@@ -935,23 +935,20 @@ export default function BarberDashboard() {
                     <h3 className="font-semibold text-gray-600 dark:text-zinc-300 mt-6 mb-3 flex items-center gap-2">
                       <Scissors className="w-4 h-4" /> {cat.name}
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {itemsOfCat.map((c) => {
-                        const subcat = subcategories.find(
-                          (s) => s.id === c.subcategoryId,
-                        );
-                        const label = subcat
-                          ? `${c.name} (${subcat.name})`
-                          : c.name;
-                        return (
-                          <ProgressCard
-                            key={c.id}
-                            label={label}
-                            total={stats.totals[c.id] || 0}
-                            target={target.items[c.id] || 0}
-                          />
-                        );
-                      })}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                      <ProgressCard
+                        label={`Objetivo Geral (${cat.name})`}
+                        total={itemsOfCat.reduce((sum, item) => sum + (stats.totals[item.id] || 0), 0)}
+                        target={itemsOfCat.reduce((sum, item) => sum + (target.items[item.id] || 0), 0)}
+                      />
+                    </div>
+                    <div className="mt-1 mb-6">
+                      <button
+                        onClick={() => setDetailsModal({ isOpen: true, title: cat.name, items: itemsOfCat })}
+                        className="text-sm font-bold text-[var(--theme-color)] hover:bg-[var(--theme-color)]/10 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
+                      >
+                        Ver mais <ChevronRight className="w-4 h-4" />
+                      </button>
                     </div>
                   </React.Fragment>
                 );
