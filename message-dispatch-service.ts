@@ -45,7 +45,10 @@ async function connect(actor?:VerifiedFirebaseUser,unitId='ALL'){
     socket.ev.on('creds.update',saveCreds);
     socket.ev.on('connection.update',async update=>{
       const {connection,lastDisconnect,qr}=update;
-      if(qr){state.connectionStatus='qr';state.currentQr=await QRCode.toDataURL(qr);state.currentAction='Escaneie o QR Code para conectar.';}
+      if(qr){
+        state.connectionStatus='qr';state.currentQr=await QRCode.toDataURL(qr);state.currentAction='Escaneie o QR Code para conectar.';
+        console.info('QR Code do WhatsApp gerado e disponível para o painel.');
+      }
       if(connection==='open'){connecting=false;state.connectionStatus='connected';state.currentQr='';state.currentAction='WhatsApp conectado e pronto.';addLog('WhatsApp conectado com sucesso.','success');void auditLog('CONNECTION_OPENED',connectionActor,connectionUnitId);}
       if(connection==='close'){
         connecting=false;state.connectionStatus='disconnected';state.currentQr='';state.currentAction='WhatsApp desconectado.';
