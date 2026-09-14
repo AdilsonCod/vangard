@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../store';
-import { ChevronLeft, ChevronRight, Users, TrendingUp, ChevronDown, ChevronUp, Calendar, User as UserIcon, Sparkles, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Users, TrendingUp, ChevronDown, ChevronUp, Calendar, User as UserIcon, Sparkles, Trash2, Maximize2, X } from 'lucide-react';
 import { MonthlyBarberStats, User } from '../types';
 import { ResponsiveContainer, BarChart, Bar, Tooltip, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from 'recharts';
 import { AppPageHeader, appControlClass } from './ui/AppPrimitives';
@@ -74,6 +74,14 @@ export function BarbersAnalysisDashboard() {
   const [selectedMonthIdx, setSelectedMonthIdx] = useState(new Date().getMonth());
   const [isSimulating, setIsSimulating] = useState(false);
   const [isShowingSimulateMenu, setIsShowingSimulateMenu] = useState(false);
+  const [expandedChart, setExpandedChart] = useState<{ title: string; dataKey: string; color: string; currency: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!expandedChart) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setExpandedChart(null); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [expandedChart]);
 
   const extraServices = useMemo(() => {
     return catalog.filter(c => c.type === 'EXTRA_SERVICE' && c.id !== 'ex_manicure' && c.id !== 'ex_pedicure');
@@ -532,8 +540,8 @@ export function BarbersAnalysisDashboard() {
        </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-        <div className="bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border border-gray-100 dark:border-zinc-700">
-           <h3 className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400 mb-2 w-full">Faturamento por Barbeiro ({MONTH_NAMES[selectedMonthIdx]})</h3>
+        <div role="button" tabIndex={0} onClick={() => setExpandedChart({ title: `Faturamento por Barbeiro (${MONTH_NAMES[selectedMonthIdx]})`, dataKey: 'faturamento', color: 'var(--theme-color)', currency: true })} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setExpandedChart({ title: `Faturamento por Barbeiro (${MONTH_NAMES[selectedMonthIdx]})`, dataKey: 'faturamento', color: 'var(--theme-color)', currency: true }); }} className="group cursor-zoom-in bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border border-gray-100 dark:border-zinc-700 transition hover:border-[var(--theme-color)]/40 hover:shadow-lg">
+           <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Faturamento por Barbeiro ({MONTH_NAMES[selectedMonthIdx]})</h3><Maximize2 className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-[var(--theme-color)]" /></div>
            <div className="w-full h-48">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={currentMonthData}>
@@ -546,8 +554,8 @@ export function BarbersAnalysisDashboard() {
               </ResponsiveContainer>
            </div>
         </div>
-        <div className="bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border border-gray-100 dark:border-zinc-700">
-           <h3 className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400 mb-2 w-full">Atendimentos por Barbeiro ({MONTH_NAMES[selectedMonthIdx]})</h3>
+        <div role="button" tabIndex={0} onClick={() => setExpandedChart({ title: `Atendimentos por Barbeiro (${MONTH_NAMES[selectedMonthIdx]})`, dataKey: 'atendimentos', color: 'var(--theme-300)', currency: false })} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setExpandedChart({ title: `Atendimentos por Barbeiro (${MONTH_NAMES[selectedMonthIdx]})`, dataKey: 'atendimentos', color: 'var(--theme-300)', currency: false }); }} className="group cursor-zoom-in bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border border-gray-100 dark:border-zinc-700 transition hover:border-[var(--theme-color)]/40 hover:shadow-lg">
+           <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">Atendimentos por Barbeiro ({MONTH_NAMES[selectedMonthIdx]})</h3><Maximize2 className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-[var(--theme-color)]" /></div>
            <div className="w-full h-48">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={currentMonthData}>
@@ -568,10 +576,10 @@ export function BarbersAnalysisDashboard() {
           { title: 'Venda de Produtos', dataKey: 'vendaProdutos', color: '#22c55e' },
           { title: 'Venda de Serviços Extras', dataKey: 'vendaServicosExtras', color: '#f59e0b' },
         ].map((chart) => (
-          <div key={chart.dataKey} className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
-            <h3 className="mb-2 w-full text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">
+          <div key={chart.dataKey} role="button" tabIndex={0} onClick={() => setExpandedChart({ title: `${chart.title} por Barbeiro (${MONTH_NAMES[selectedMonthIdx]})`, dataKey: chart.dataKey, color: chart.color, currency: true })} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setExpandedChart({ title: `${chart.title} por Barbeiro (${MONTH_NAMES[selectedMonthIdx]})`, dataKey: chart.dataKey, color: chart.color, currency: true }); }} className="group cursor-zoom-in rounded-xl border border-gray-100 bg-gray-50 p-4 transition hover:border-[var(--theme-color)]/40 hover:shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+            <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">
               {chart.title} por Barbeiro ({MONTH_NAMES[selectedMonthIdx]})
-            </h3>
+            </h3><Maximize2 className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-[var(--theme-color)]" /></div>
             <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={currentMonthData}>
@@ -780,6 +788,29 @@ export function BarbersAnalysisDashboard() {
           );
         })}
       </div>
+
+      {expandedChart && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label={`Gráfico ampliado: ${expandedChart.title}`} onMouseDown={(event) => { if (event.target === event.currentTarget) setExpandedChart(null); }}>
+          <div className="app-themed-panel flex h-[min(82vh,760px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-white/10 sm:px-6">
+              <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--theme-color)]">Análise de barbeiros</p><h2 className="mt-1 text-lg font-black text-gray-950 dark:text-white sm:text-xl">{expandedChart.title}</h2><p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">Comparativo do período e unidade selecionados.</p></div>
+              <button type="button" onClick={() => setExpandedChart(null)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-500 transition hover:bg-gray-100 dark:border-white/10 dark:text-zinc-400 dark:hover:bg-white/5" aria-label="Fechar gráfico ampliado"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="min-h-0 flex-1 p-3 sm:p-6">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={currentMonthData} margin={{ top: 18, right: 24, bottom: 12, left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" opacity={0.1} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#789090' }} />
+                  <YAxis axisLine={false} tickLine={false} width={78} tick={{ fontSize: 11, fill: '#789090' }} tickFormatter={(value) => expandedChart.currency ? `R$ ${Number(value).toLocaleString('pt-BR', { notation: 'compact', maximumFractionDigits: 1 })}` : Number(value).toLocaleString('pt-BR')} />
+                  <Tooltip formatter={(value: number) => expandedChart.currency ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : value.toLocaleString('pt-BR')} />
+                  <Bar dataKey={expandedChart.dataKey} name={expandedChart.title} fill={expandedChart.color} radius={[7, 7, 0, 0]} maxBarSize={64} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex items-center justify-between border-t border-gray-200 px-5 py-3 text-[10px] text-gray-400 dark:border-white/10 dark:text-zinc-500 sm:px-6"><span>Passe o cursor sobre as colunas para ver os valores.</span><span>Esc para fechar</span></div>
+          </div>
+        </div>
+      )}
     </div>
     </div>
   );
