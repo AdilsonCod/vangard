@@ -966,7 +966,7 @@ function CatalogEditor({
     const typeMatch = cat?.type || (item.type === "PRODUCT" ? "PRODUCT" : "SERVICE");
     if (tabView === "PRODUCTS") return typeMatch === "PRODUCT";
     return typeMatch === "SERVICE" || typeMatch === "SUBSCRIPTION";
-  }), [items, categories, tabView]);
+  }).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')), [items, categories, tabView]);
 
   const allVisibleSelected = visibleItems.length > 0 && visibleItems.every(item => selectedIds.has(item.id));
 
@@ -1050,8 +1050,9 @@ function CatalogEditor({
       visibleToRoles: ["BARBER", "MANICURE"],
       price: 0,
       costPrice: 0,
+      createdAt: new Date().toISOString(),
     };
-    const nextItems = [...items, newItem];
+    const nextItems = [newItem, ...items];
     try {
       await updateCatalog(nextItems);
       setItems(nextItems);
@@ -1063,7 +1064,7 @@ function CatalogEditor({
   };
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-800 p-6 animate-in fade-in duration-300 relative">
+    <div className="relative animate-in fade-in rounded-2xl border border-gray-200 bg-white p-4 shadow-sm duration-300 dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
       {/* Absolute Toast */}
       {toast && (
         <div className="absolute top-4 right-6 z-50 flex items-center gap-2 bg-[var(--theme-color)] text-white px-4 py-2.5 rounded-xl shadow-lg text-xs font-bold animate-bounce transition-all">
@@ -1099,16 +1100,16 @@ function CatalogEditor({
           </p>
         </div>
         {activeSubTab === "ITEMS" && (
-          <div className="flex gap-4">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:gap-4">
             <button
               onClick={addNew}
-              className="flex items-center gap-2 bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 hover:bg-gray-200 px-4 py-2 rounded-lg font-semibold transition"
+              className="flex items-center justify-center gap-2 bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 hover:bg-gray-200 px-4 py-2 rounded-lg font-semibold transition"
             >
               <Plus className="w-4 h-4" /> Adicionar Item
             </button>
             <button
               onClick={handleSave}
-              className="flex items-center gap-2 bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white px-4 py-2 rounded-lg font-semibold shadow transition"
+              className="flex items-center justify-center gap-2 bg-[var(--theme-color)] hover:bg-[var(--theme-color-strong)] text-white px-4 py-2 rounded-lg font-semibold shadow transition"
             >
               Salvar Mudanças
             </button>
@@ -1151,7 +1152,7 @@ function CatalogEditor({
           {visibleItems.map((item) => (
             <div
               key={item.id}
-              className={`flex items-center justify-between p-4 text-gray-600 transition dark:text-zinc-300 ${selectedIds.has(item.id) ? "bg-[color-mix(in_srgb,var(--theme-color)_8%,transparent)]" : "hover:bg-gray-50 dark:hover:bg-zinc-800/40"}`}
+              className={`flex flex-col items-stretch gap-4 p-4 text-gray-600 transition dark:text-zinc-300 sm:flex-row sm:items-center sm:justify-between ${selectedIds.has(item.id) ? "bg-[color-mix(in_srgb,var(--theme-color)_8%,transparent)]" : "hover:bg-gray-50 dark:hover:bg-zinc-800/40"}`}
             >
               {editingId === item.id ? (
                 <div className="flex-1 flex flex-col gap-4">
@@ -1297,7 +1298,7 @@ function CatalogEditor({
                 </div>
               ) : (
                 <>
-                  <div className="flex min-w-0 items-center gap-4">
+                  <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
                     <input aria-label={`Selecionar ${item.name}`} type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelection(item.id)} className="h-4 w-4 shrink-0 rounded border-gray-300 accent-[var(--theme-color)]" />
                     <span className="text-gray-300">
                       <Grip className="w-4 h-4" />
@@ -1345,7 +1346,7 @@ function CatalogEditor({
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex justify-end gap-2 self-end sm:self-auto">
                     <button
                       onClick={() => startEdit(item)}
                       className="p-2 text-gray-400 dark:text-zinc-500 hover:text-[var(--theme-color-strong)] transition"
@@ -1403,9 +1404,10 @@ function CategoriesTab() {
       id: "cat_" + Date.now(),
       name: newName.trim(),
       type: newType,
+      createdAt: new Date().toISOString(),
     };
     try {
-      await updateCategories([...categories, newCat]);
+      await updateCategories([newCat, ...categories]);
       setNewName("");
     } catch (error) {
       showPersistenceError(error);
@@ -1506,10 +1508,10 @@ function CategoriesTab() {
       </form>
 
       <div className="border rounded-xl divide-y overflow-hidden max-h-96 overflow-y-auto">
-        {categories.map((cat) => (
+        {[...categories].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).map((cat) => (
           <div
             key={cat.id}
-            className="flex items-center justify-between p-4 hover:bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 transition"
+            className="flex flex-col items-stretch gap-3 p-4 hover:bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 transition sm:flex-row sm:items-center sm:justify-between"
           >
             {editingId === cat.id ? (
               <div className="flex-1 flex flex-col md:flex-row gap-2 items-center">
@@ -1559,7 +1561,7 @@ function CategoriesTab() {
                   </p>
                   <p className="text-xs text-gray-400 dark:text-zinc-500 mt-1">ID: {cat.id}</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex justify-end gap-2 self-end sm:self-auto">
                   <button
                     onClick={() => handleStartEdit(cat.id, cat.name, cat.type)}
                     className="p-1.5 text-gray-400 dark:text-zinc-500 hover:text-[var(--theme-color-strong)] rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 transition"
@@ -1617,9 +1619,10 @@ function SubcategoriesTab() {
       id: "sub_" + Date.now(),
       name: newName.trim(),
       categoryId: parentCatId,
+      createdAt: new Date().toISOString(),
     };
     try {
-      await updateSubcategories([...subcategories, newSub]);
+      await updateSubcategories([newSub, ...subcategories]);
       setNewName("");
     } catch (error) {
       showPersistenceError(error);
@@ -1713,14 +1716,14 @@ function SubcategoriesTab() {
       </form>
 
       <div className="border rounded-xl divide-y overflow-hidden max-h-96 overflow-y-auto">
-        {subcategories.map((sub) => {
+        {[...subcategories].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).map((sub) => {
           const categoryName =
             categories.find((c) => c.id === sub.categoryId)?.name ||
             "Sem Categoria";
           return (
             <div
               key={sub.id}
-              className="flex items-center justify-between p-4 hover:bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 transition"
+              className="flex flex-col items-stretch gap-3 p-4 hover:bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 transition sm:flex-row sm:items-center sm:justify-between"
             >
               {editingId === sub.id ? (
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -1761,7 +1764,7 @@ function SubcategoriesTab() {
                     <p className="font-bold text-gray-900 dark:text-zinc-100 text-sm">
                       {sub.name}
                     </p>
-                    <div className="flex gap-2 items-center mt-1">
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
                       <span className="text-xs font-semibold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-900/30">
                         Categoria: {categoryName}
                       </span>
@@ -1770,7 +1773,7 @@ function SubcategoriesTab() {
                       </span>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex justify-end gap-2 self-end sm:self-auto">
                     <button
                       onClick={() => handleStartEdit(sub)}
                       className="p-1.5 text-gray-400 dark:text-zinc-500 hover:text-[var(--theme-color-strong)] rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 transition"

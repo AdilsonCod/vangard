@@ -12,16 +12,19 @@ export interface Category {
   id: string;
   name: string;
   type?: 'SERVICE' | 'PRODUCT' | 'SUBSCRIPTION';
+  createdAt?: string;
 }
 
 export interface Subcategory {
   id: string;
   name: string;
   categoryId: string;
+  createdAt?: string;
 }
 
 export interface User {
   isActive?: boolean;
+  createdAt?: string;
   id: string;
   authUid?: string;
   legacyId?: string;
@@ -44,6 +47,7 @@ export interface CatalogItem {
   price?: number;
   /** Preço de custo aplicado nas vendas internas para colaboradores. */
   costPrice?: number;
+  createdAt?: string;
 }
 
 export interface Target {

@@ -161,6 +161,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
             unit: assignedUnit,
             unitIds: assignedUnit ? [assignedUnit] : [],
             isActive: true,
+            createdAt: new Date().toISOString(),
           })
         );
         showToast('Usuário e acesso cadastrados com sucesso!');
@@ -293,7 +294,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     if (subTab === 'RECEPTION') return u.role === 'RECEPTION';
     if (subTab === 'MANAGERS') return u.role === 'ADMIN' || u.role === 'FINANCIAL' || u.role === 'MARKETING';
     return false;
-  });
+  }).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   const pageTitle = subTab === 'UNITS' 
     ? 'Cadastro de unidades' 
     : subTab === 'RECEPTION'
