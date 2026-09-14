@@ -1,5 +1,5 @@
 import type express from 'express';
-import makeWASocket, { DisconnectReason } from '@whiskeysockets/baileys';
+import { DisconnectReason, makeWASocket } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import { authenticatedUser } from './server-auth';
