@@ -216,6 +216,13 @@ export default function BarberDashboard() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [detailsModal, setDetailsModal] = useState<{ isOpen: boolean; title: string; items: CatalogItem[] }>({ isOpen: false, title: "", items: [] });
   const [inputModal, setInputModal] = useState<{ isOpen: boolean; title: string; items: CatalogItem[] }>({ isOpen: false, title: "", items: [] });
+  const productionCategories = useMemo(() => {
+    const normalized = categories.map(category => category.id === 'EXTRA_SERVICE' ? { ...category, name: 'Serviços Extras' } : category);
+    const hasVisibleExtras = catalog.some(item => item.type === 'EXTRA_SERVICE');
+    return hasVisibleExtras && !normalized.some(category => category.id === 'EXTRA_SERVICE')
+      ? [{ id: 'EXTRA_SERVICE', name: 'Serviços Extras', type: 'SERVICE' as const }, ...normalized]
+      : normalized;
+  }, [categories, catalog]);
 
 
   const userNotifications = useMemo(() => {
@@ -1079,7 +1086,7 @@ export default function BarberDashboard() {
                 {!isDayOff && (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {categories.map((cat) => {
+                      {productionCategories.map((cat) => {
                         const itemsOfCat = catalog.filter(
                           (c) => c.type === cat.id,
                         );

@@ -15,6 +15,11 @@ export function AdminEntryModal({entry,catalog,categories,subcategories,onClose,
   const filteredCatalog=useMemo(()=>catalog.filter(item=>isCatalogItemVisibleToRole(item,userRole,entryUser?.unit)),[catalog,userRole,entryUser?.unit]);
   const [date,setDate]=useState(entry.date),[isDayOff,setIsDayOff]=useState(entry.isDayOff),[clientsServed,setClientsServed]=useState(entry.clientsServed||0),[uniqueClientsServed,setUniqueClientsServed]=useState(entry.uniqueClientsServed||0);
   const [form,setForm]=useState<Values>(entry.items||{}),[courtesies,setCourtesies]=useState<Values>(entry.cortesias||{}),[inputModal,setInputModal]=useState<InputModal>(null);
+  const productionCategories=useMemo(()=>{
+    const normalized=categories.map(category=>category.id==='EXTRA_SERVICE'?{...category,name:'Serviços Extras'}:category);
+    const hasExtras=filteredCatalog.some(item=>item.type==='EXTRA_SERVICE');
+    return hasExtras&&!normalized.some(category=>category.id==='EXTRA_SERVICE')?[{id:'EXTRA_SERVICE',name:'Serviços Extras',type:'SERVICE' as const},...normalized]:normalized;
+  },[categories,filteredCatalog]);
 
   useEffect(()=>{
     const nextForm={...entry.items},nextCourtesies={...entry.cortesias};
@@ -27,7 +32,7 @@ export function AdminEntryModal({entry,catalog,categories,subcategories,onClose,
     const items=filteredCatalog.filter(item=>item.type===category.id && (mode==='production'||(category.id!=='PRODUCT'&&category.type!=='PRODUCT')));
     if(items.length)setInputModal({title:category.name,items,mode});
   };
-  const categoryCards=(mode:ModalMode)=>categories.map(category=>{
+  const categoryCards=(mode:ModalMode)=>productionCategories.map(category=>{
     const items=filteredCatalog.filter(item=>item.type===category.id && (mode==='production'||(category.id!=='PRODUCT'&&category.type!=='PRODUCT')));
     if(!items.length)return null;
     const values=mode==='production'?form:courtesies;
