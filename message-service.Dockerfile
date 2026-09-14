@@ -12,6 +12,5 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist/message-service.cjs ./dist/message-service.cjs
-VOLUME ["/data"]
 EXPOSE 3001
 CMD ["node", "dist/message-service.cjs"]
