@@ -97,6 +97,7 @@ export default function AdminDashboard() {
   );
   const [selectedUnit, setSelectedUnit] = useState<string>(() => localStorage.getItem("vans_global_unit") || "ALL");
   const [selectedBarber, setSelectedBarber] = useState<User | null>(null);
+  const [collapsedBarberUnits, setCollapsedBarberUnits] = useState<Record<string,boolean>>({});
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
@@ -140,11 +141,13 @@ export default function AdminDashboard() {
   }, [availableUnits, currentUser?.role, selectedUnit]);
 
 
-  const barbers = users.filter(
-    (u) =>
-      (u.role === "BARBER" || u.role === "MANICURE") &&
-      (selectedUnit === "ALL" || u.unit === selectedUnit),
-  );
+  const groupedBarbers = useMemo(() => {
+    const professionals = users.filter(user => user.role === 'BARBER' || user.role === 'MANICURE');
+    const groups = availableUnits.map(unit => ({ unit, members: professionals.filter(user => user.unit === unit.id).sort((a,b) => a.name.localeCompare(b.name)) })).filter(group => group.members.length > 0);
+    const knownUnits = new Set(availableUnits.map(unit => unit.id));
+    const withoutUnit = professionals.filter(user => !user.unit || !knownUnits.has(user.unit)).sort((a,b) => a.name.localeCompare(b.name));
+    return withoutUnit.length ? [...groups,{unit:null,members:withoutUnit}] : groups;
+  },[users,availableUnits]);
 
   // Compute stat function dynamically based on catalog
   const getStatsForBarber = (userId: string) => {
@@ -685,54 +688,10 @@ export default function AdminDashboard() {
             {/* SIDEBAR: BARBER LIST */}
             <aside className="w-full md:w-80 flex-shrink-0 space-y-4">
               <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-gray-200 dark:border-zinc-800 p-4">
-                <div className="flex gap-2 mb-4 overflow-x-auto pb-2 custom-scrollbar">
-                  <button
-                    onClick={() => setSelectedUnit("ALL")}
-                    className={`whitespace-nowrap px-4 py-1.5 text-xs font-semibold rounded-md transition-colors ${selectedUnit === "ALL" ? "bg-white dark:bg-zinc-900 shadow text-gray-900 dark:text-zinc-100" : "text-gray-500 dark:text-zinc-400"}`}
-                  >
-                    Geral
-                  </button>
-                  {availableUnits.map((u) => (
-                    <button
-                      key={u.id}
-                      onClick={() => setSelectedUnit(u.id)}
-                      className={`whitespace-nowrap px-4 py-1.5 text-xs font-semibold rounded-md transition-colors ${selectedUnit === u.id ? "bg-white dark:bg-zinc-900 shadow text-gray-900 dark:text-zinc-100" : "text-gray-500 dark:text-zinc-400"}`}
-                    >
-                      {u.name}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="space-y-2">
-                  {barbers.map((b) => (
-                    <button
-                      key={b.id}
-                      onClick={() => setSelectedBarber(b)}
-                      className={`w-full flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
-                        selectedBarber?.id === b.id
-                          ? "border-blue-600 ring-1 ring-blue-600 bg-blue-50/50"
-                          : "border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900"
-                      }`}
-                    >
-                      <div>
-                        <p className="font-semibold text-sm text-gray-900 dark:text-zinc-100">
-                          {b.name} {b.isActive === false && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 py-0.5 rounded uppercase">Inativo</span>}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-zinc-400 flex items-center gap-1 mt-0.5">
-                          <MapPin className="w-3 h-3" />{" "}
-                          {systemUnits?.find(su => su.id === b.unit)?.name || b.unit}
-                        </p>
-                      </div>
-                      <ChevronRight
-                        className={`w-4 h-4 ${selectedBarber?.id === b.id ? "text-blue-600" : "text-gray-300"}`}
-                      />
-                    </button>
-                  ))}
-                  {barbers.length === 0 && (
-                    <p className="text-sm text-gray-500 dark:text-zinc-400 text-center py-4">
-                      Nenhum barbeiro nesta unidade.
-                    </p>
-                  )}
+                <h3 className="mb-4 flex items-center gap-2 border-b pb-2 font-bold text-gray-800 dark:text-zinc-200"><Users className="h-4 w-4 text-blue-600"/>Selecionar profissional</h3>
+                <div className="max-h-[600px] space-y-4 overflow-y-auto pr-1">
+                  {groupedBarbers.map(group=>{const unitKey=group.unit?.id||'no-unit';const collapsed=!!collapsedBarberUnits[unitKey];return <div key={unitKey} className="space-y-1.5 overflow-hidden rounded-lg border border-gray-100 pb-1 dark:border-zinc-800"><button onClick={()=>setCollapsedBarberUnits(current=>({...current,[unitKey]:!current[unitKey]}))} className="flex w-full items-center justify-between bg-blue-50 px-3 py-2 text-left text-xs font-extrabold uppercase tracking-widest text-blue-600 transition hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"><span>{group.unit?.name||'Outras unidades / Sem unidade'}</span>{collapsed?<ChevronRight className="h-3.5 w-3.5"/>:<ChevronDown className="h-3.5 w-3.5"/>}</button>{!collapsed&&<ul className="space-y-1 px-1.5 pb-1 pt-0.5">{group.members.map(barber=><li key={barber.id}><button onClick={()=>setSelectedBarber(barber)} className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm font-semibold transition ${selectedBarber?.id===barber.id?'border-blue-600 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-500 dark:bg-blue-900/30 dark:text-blue-300':'border-transparent text-gray-600 hover:border-gray-200 hover:bg-gray-50 dark:text-zinc-300 dark:hover:bg-zinc-800'}`}><span className="truncate">{barber.name}{barber.isActive===false&&<span className="ml-1 rounded bg-red-100 px-1 py-0.5 text-[10px] uppercase text-red-600">Inativo</span>}</span><span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-gray-400 dark:bg-zinc-800">{barber.role==='MANICURE'?'Manicure':'Barbeiro'}</span></button></li>)}</ul>}</div>})}
+                  {groupedBarbers.length===0&&<p className="py-4 text-center text-sm text-gray-400">Nenhum profissional cadastrado.</p>}
                 </div>
               </div>
             </aside>
