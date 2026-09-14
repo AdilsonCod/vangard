@@ -363,11 +363,16 @@ export function BarbersAnalysisDashboard() {
      const currentMonthStr = `${selectedYear}-${monthNum}`;
      const data = unitBarbers.map(b => {
         const stat = monthlyBarberStats?.find(s => s.id === `${currentMonthStr}_${b.id}`);
+        const faturamento = stat?.faturamentoTotal || 0;
+        const atendimentos = stat?.clientesAtendidos || 0;
         return {
            name: b.name.split(' ')[0],
-           faturamento: stat?.faturamentoTotal || 0,
-           atendimentos: stat?.clientesAtendidos || 0,
-           comissao: stat?.comissao || 0
+           faturamento,
+           atendimentos,
+           comissao: stat?.comissao || 0,
+           ticketMedio: atendimentos > 0 ? faturamento / atendimentos : 0,
+           vendaProdutos: stat?.vendaProdutosValor || 0,
+           vendaServicosExtras: Object.values(stat?.extraValues || {}).reduce((sum, value) => sum + (Number(value) || 0), 0),
         };
      });
      return data;
@@ -555,6 +560,31 @@ export function BarbersAnalysisDashboard() {
               </ResponsiveContainer>
            </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 mb-8 md:grid-cols-2 xl:grid-cols-3">
+        {[
+          { title: 'Ticket Médio', dataKey: 'ticketMedio', color: '#3b82f6' },
+          { title: 'Venda de Produtos', dataKey: 'vendaProdutos', color: '#22c55e' },
+          { title: 'Venda de Serviços Extras', dataKey: 'vendaServicosExtras', color: '#f59e0b' },
+        ].map((chart) => (
+          <div key={chart.dataKey} className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
+            <h3 className="mb-2 w-full text-xs font-bold uppercase text-gray-500 dark:text-zinc-400">
+              {chart.title} por Barbeiro ({MONTH_NAMES[selectedMonthIdx]})
+            </h3>
+            <div className="h-48 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={currentMonthData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#888' }} />
+                  <YAxis tickFormatter={(value) => `R$${value}`} tick={{ fontSize: 12, fill: '#888' }} width={60} />
+                  <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
+                  <Bar dataKey={chart.dataKey} name={chart.title} fill={chart.color} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="mb-8 bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border border-gray-100 dark:border-zinc-700">
