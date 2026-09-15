@@ -877,7 +877,7 @@ export default function BarberDashboard() {
                 </div>
               </div>
 
-              {categories.map((cat) => {
+              {productionCategories.map((cat) => {
                 const itemsOfCat = catalog.filter((c) => c.type === cat.id);
                 if (itemsOfCat.length === 0) return null;
                 

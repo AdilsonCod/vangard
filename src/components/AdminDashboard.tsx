@@ -1820,6 +1820,19 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
     return rawCatalog.filter(item => item.visibleToRoles?.includes(barber.role) === true && (!item.unit || item.unit === 'ALL' || item.unit === barber.unit));
   }, [rawCatalog, barber]);
 
+  const goalCategories = useMemo(() => {
+    const normalized = categories.map(category =>
+      category.id === 'EXTRA_SERVICE'
+        ? { ...category, name: 'Serviços Extras' }
+        : category,
+    );
+    const hasVisibleExtras = catalog.some(item => item.type === 'EXTRA_SERVICE');
+
+    return hasVisibleExtras && !normalized.some(category => category.id === 'EXTRA_SERVICE')
+      ? [{ id: 'EXTRA_SERVICE', name: 'Serviços Extras', type: 'SERVICE' as const }, ...normalized]
+      : normalized;
+  }, [categories, catalog]);
+
   // Initialize generic target structure if not present
   const defaultItemsTarget: Record<string, number> = {};
   catalog.forEach((c) => (defaultItemsTarget[c.id] = 0));
@@ -2183,7 +2196,7 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {categories.map((cat) => {
+            {goalCategories.map((cat) => {
               const itemsOfCat = catalog.filter((c) => c.type === cat.id);
               if (itemsOfCat.length === 0) return null;
               
@@ -2274,7 +2287,7 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
         </div>
       ) : (
         <div className="space-y-6">
-          {categories.map((cat) => {
+          {goalCategories.map((cat) => {
             const itemsOfCat = catalog.filter((c) => c.type === cat.id);
             if (itemsOfCat.length === 0) return null;
             const total = itemsOfCat.reduce((sum, item) => sum + (stats.totals[item.id] || 0), 0);
