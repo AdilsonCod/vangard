@@ -17,7 +17,7 @@ type DispatchHistory={id:string;name:string;createdAt:string;unitId:string;total
 type ServiceAvailability='checking'|'available'|'unavailable'|'not-configured';
 
 const initialBackend:BackendState={enabled:false,connectionStatus:'disconnected',currentQr:'',isSending:false,progress:0,total:0,currentAction:'Conecte o serviço para começar.',logs:[],campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],runId:'',lastError:'',requiresNewQr:false};
-const messageServiceUrl=String(import.meta.env.VITE_MESSAGE_SERVICE_URL||(import.meta.env.DEV?'http://localhost:3001':'')).replace(/\/$/,'');
+const messageServiceUrl=String(import.meta.env.VITE_MESSAGE_SERVICE_URL||(import.meta.env.DEV?'http://127.0.0.1:3101':'')).replace(/\/$/,'');
 const messageApi=(path:string)=>`${messageServiceUrl}/api/message-dispatch/${path}`;
 const normalizeContacts=(value:string)=>{
   const raw=value.split(/[\n,;]+/).map(item=>item.trim()).filter(Boolean);

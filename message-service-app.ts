@@ -5,7 +5,7 @@ import { verifyFirebaseIdToken } from './server-firebase-admin';
 
 export function createMessageServiceApp() {
   const app = express();
-  const allowedOrigins = new Set((process.env.MESSAGE_ALLOWED_ORIGINS || 'http://localhost:3000').split(',').map(value => value.trim()).filter(Boolean));
+  const allowedOrigins = new Set((process.env.MESSAGE_ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000').split(',').map(value => value.trim()).filter(Boolean));
 
   app.disable('x-powered-by');
   app.set('trust proxy', 1);

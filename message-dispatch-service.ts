@@ -39,9 +39,9 @@ async function connect(actor?:VerifiedFirebaseUser,unitId='ALL'){
   connectionActor=actor;connectionUnitId=unitId;
   connecting=true;
   const generation=++connectionGeneration;
-  state.connectionStatus='connecting';
+  state.connectionStatus=state.currentQr?'qr':'connecting';
   state.lastError='';
-  state.currentAction='Inicializando conexão com o WhatsApp...';
+  state.currentAction=state.currentQr?'QR Code disponível. Renovando conexão...':'Inicializando conexão com o WhatsApp...';
   try{
     const {state:authState,saveCreds,clear}=await useEncryptedAuthState(AUTH_VAULT);
     socket=makeWASocket({auth:authState,printQRInTerminal:false,logger:pino({level:'silent'}),browser:['Van’s Management','Chrome','1.0.0']});
@@ -55,13 +55,15 @@ async function connect(actor?:VerifiedFirebaseUser,unitId='ALL'){
       }
       if(connection==='open'){connecting=false;state.connectionStatus='connected';state.currentQr='';state.currentAction='WhatsApp conectado e pronto.';state.lastError='';state.requiresNewQr=false;addLog('WhatsApp conectado com sucesso.','success');void auditLog('CONNECTION_OPENED',connectionActor,connectionUnitId);}
       if(connection==='close'){
-        connecting=false;socket=null;state.connectionStatus='disconnected';state.currentQr='';
+        connecting=false;socket=null;
         const code=(lastDisconnect?.error as {output?:{statusCode?:number}}|undefined)?.output?.statusCode;
         const loggedOut=code===DisconnectReason.loggedOut;
         if(loggedOut){
-          state.requiresNewQr=true;state.lastError='A sessão do WhatsApp expirou e precisa ser vinculada novamente.';state.currentAction='Sessão expirada. Gere um novo QR Code.';addLog(state.lastError,'warning');
+          state.connectionStatus='disconnected';state.currentQr='';state.requiresNewQr=true;state.lastError='A sessão do WhatsApp expirou e precisa ser vinculada novamente.';state.currentAction='Sessão expirada. Gere um novo QR Code.';addLog(state.lastError,'warning');
           await clear().catch(error=>console.error('Falha ao limpar sessão expirada:',error));
-        }else state.currentAction='WhatsApp desconectado. Tentando reconectar...';
+        }else if(state.currentQr){state.connectionStatus='qr';state.currentAction='QR Code disponível. Aguardando leitura...';}
+        else{state.connectionStatus='disconnected';state.currentAction='WhatsApp desconectado. Tentando reconectar...';}
+        console.warn('Conexão do WhatsApp encerrada.',{reasonCode:code||null,qrMantido:Boolean(state.currentQr),willReconnect:!loggedOut});
         void auditLog('CONNECTION_CLOSED',connectionActor,connectionUnitId,{reasonCode:code||null,willReconnect:code!==DisconnectReason.loggedOut});
         if(!loggedOut)setTimeout(()=>void connect(connectionActor,connectionUnitId),3000);
       }

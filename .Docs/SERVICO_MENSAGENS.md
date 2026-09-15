@@ -23,13 +23,13 @@ Monte `/data` como volume persistente. O segredo deve permanecer no cofre de seg
 ## Implantação
 
 1. Construa o arquivo `message-service.Dockerfile`.
-2. Publique a porta `3001` (ou defina `MESSAGE_SERVICE_PORT`).
+2. Publique a porta indicada por `PORT` (em desenvolvimento, o padrão é `3101`).
 3. Configure `FIREBASE_PROJECT_ID` e `FIREBASE_SERVICE_ACCOUNT_JSON` no host persistente.
 4. Configure `MESSAGE_ALLOWED_ORIGINS` com o domínio exato da aplicação Vercel.
 5. Configure no build da Vercel `VITE_MESSAGE_SERVICE_URL=https://mensagens.seu-dominio`.
 6. Confirme `GET /health` e então conecte o WhatsApp no painel.
 
-Em desenvolvimento, use `npm run dev:all` para iniciar a aplicação web e o serviço de mensagens juntos. Também é possível executar `npm run dev` e `npm run dev:messages` em terminais separados. O frontend usa `http://localhost:3001` como padrão local.
+Em desenvolvimento, use `npm run dev:all` para iniciar a aplicação web e o serviço de mensagens juntos. Também é possível executar `npm run dev` e `npm run dev:messages` em terminais separados. O frontend usa `http://127.0.0.1:3101` como padrão local para evitar colisões com outros serviços em `localhost`.
 
 ## Falhas
 
