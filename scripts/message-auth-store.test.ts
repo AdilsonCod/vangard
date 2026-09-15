@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { useEncryptedAuthState } from '../message-auth-store';
+import { clearEncryptedAuthState, useEncryptedAuthState } from '../message-auth-store';
 
 test('sessão Baileys persiste cifrada e pode ser restaurada após reinício', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'vans-message-vault-'));
@@ -24,3 +24,17 @@ test('sessão Baileys persiste cifrada e pode ser restaurada após reinício', a
   }
 });
 
+test('sessão criptografada pode ser removida para gerar um novo QR Code', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'vans-message-vault-reset-'));
+  const vault = path.join(directory, 'session.enc');
+  process.env.MESSAGE_AUTH_ENCRYPTION_KEY = 'teste-local-com-mais-de-trinta-e-dois-caracteres';
+  try {
+    const session = await useEncryptedAuthState(vault);
+    await session.saveCreds();
+    await clearEncryptedAuthState(vault);
+    await assert.rejects(readFile(vault, 'utf8'), { code: 'ENOENT' });
+    await clearEncryptedAuthState(vault);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

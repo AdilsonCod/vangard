@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { BufferJSON, initAuthCreds, proto, type AuthenticationState, type SignalDataTypeMap } from '@whiskeysockets/baileys';
 
@@ -48,6 +48,11 @@ export async function useEncryptedAuthState(vaultPath: string) {
     return pendingWrite;
   };
 
+  const clear = async () => {
+    await pendingWrite.catch(() => undefined);
+    await rm(vaultPath, { force: true });
+  };
+
   const state: AuthenticationState = {
     creds: payload.creds,
     keys: {
@@ -75,6 +80,9 @@ export async function useEncryptedAuthState(vaultPath: string) {
     },
   };
 
-  return { state, saveCreds: persist, persist };
+  return { state, saveCreds: persist, persist, clear };
 }
 
+export async function clearEncryptedAuthState(vaultPath: string) {
+  await rm(vaultPath, { force: true });
+}

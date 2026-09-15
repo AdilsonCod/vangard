@@ -4,7 +4,7 @@ import pino from 'pino';
 import QRCode from 'qrcode';
 import { authenticatedUser } from './server-auth';
 import { adminDb } from './server-firebase-admin';
-import { useEncryptedAuthState } from './message-auth-store';
+import { clearEncryptedAuthState, useEncryptedAuthState } from './message-auth-store';
 import { authorizeDispatchUnit, safeInterruptionReason, waitForCampaignReady } from './message-dispatch-policy';
 import type { VerifiedFirebaseUser } from './server-auth';
 
@@ -13,14 +13,15 @@ type DispatchError = { contact:string; error:string };
 type DispatchState = {
   enabled:boolean; connectionStatus:'disconnected'|'connecting'|'qr'|'connected'; currentQr:string; isSending:boolean;
   progress:number; total:number; currentAction:string; logs:DispatchLog[]; campaignStatus:'idle'|'running'|'paused'|'completed'|'stopped';
-  successCount:number; errorCount:number; errorDetails:DispatchError[]; runId:string; activeUnitId:string;
+  successCount:number; errorCount:number; errorDetails:DispatchError[]; runId:string; activeUnitId:string; lastError:string; requiresNewQr:boolean;
 };
 
 const AUTH_VAULT=process.env.WHATSAPP_AUTH_VAULT||'data/whatsapp/session.enc';
 const MAX_CONTACTS=200;
-const state:DispatchState={enabled:true,connectionStatus:'disconnected',currentQr:'',isSending:false,progress:0,total:0,currentAction:'Aguardando conexão.',logs:[],campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],runId:'',activeUnitId:''};
+const state:DispatchState={enabled:true,connectionStatus:'disconnected',currentQr:'',isSending:false,progress:0,total:0,currentAction:'Aguardando conexão.',logs:[],campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],runId:'',activeUnitId:'',lastError:'',requiresNewQr:false};
 let socket:ReturnType<typeof makeWASocket>|null=null;
 let connecting=false;
+let connectionGeneration=0;
 let workerActive=false;
 const waitUntilResumed=()=>waitForCampaignReady(state);
 let connectionActor:VerifiedFirebaseUser|undefined;
@@ -34,33 +35,43 @@ const pause=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milli
 const publicState=()=>({...state,currentQr:state.currentQr,errorDetails:state.errorDetails.slice(0,100)});
 
 async function connect(actor?:VerifiedFirebaseUser,unitId='ALL'){
-  if(connecting||state.connectionStatus==='connected')return;
+  if(connecting||state.connectionStatus==='connected')return {success:true};
   connectionActor=actor;connectionUnitId=unitId;
   connecting=true;
+  const generation=++connectionGeneration;
   state.connectionStatus='connecting';
+  state.lastError='';
   state.currentAction='Inicializando conexão com o WhatsApp...';
   try{
-    const {state:authState,saveCreds}=await useEncryptedAuthState(AUTH_VAULT);
+    const {state:authState,saveCreds,clear}=await useEncryptedAuthState(AUTH_VAULT);
     socket=makeWASocket({auth:authState,printQRInTerminal:false,logger:pino({level:'silent'}),browser:['Van’s Management','Chrome','1.0.0']});
     socket.ev.on('creds.update',saveCreds);
     socket.ev.on('connection.update',async update=>{
+      if(generation!==connectionGeneration)return;
       const {connection,lastDisconnect,qr}=update;
       if(qr){
-        state.connectionStatus='qr';state.currentQr=await QRCode.toDataURL(qr);state.currentAction='Escaneie o QR Code para conectar.';
+        state.connectionStatus='qr';state.currentQr=await QRCode.toDataURL(qr);state.currentAction='Escaneie o QR Code para conectar.';state.lastError='';state.requiresNewQr=false;
         console.info('QR Code do WhatsApp gerado e disponível para o painel.');
       }
-      if(connection==='open'){connecting=false;state.connectionStatus='connected';state.currentQr='';state.currentAction='WhatsApp conectado e pronto.';addLog('WhatsApp conectado com sucesso.','success');void auditLog('CONNECTION_OPENED',connectionActor,connectionUnitId);}
+      if(connection==='open'){connecting=false;state.connectionStatus='connected';state.currentQr='';state.currentAction='WhatsApp conectado e pronto.';state.lastError='';state.requiresNewQr=false;addLog('WhatsApp conectado com sucesso.','success');void auditLog('CONNECTION_OPENED',connectionActor,connectionUnitId);}
       if(connection==='close'){
-        connecting=false;state.connectionStatus='disconnected';state.currentQr='';state.currentAction='WhatsApp desconectado.';
+        connecting=false;socket=null;state.connectionStatus='disconnected';state.currentQr='';
         const code=(lastDisconnect?.error as {output?:{statusCode?:number}}|undefined)?.output?.statusCode;
+        const loggedOut=code===DisconnectReason.loggedOut;
+        if(loggedOut){
+          state.requiresNewQr=true;state.lastError='A sessão do WhatsApp expirou e precisa ser vinculada novamente.';state.currentAction='Sessão expirada. Gere um novo QR Code.';addLog(state.lastError,'warning');
+          await clear().catch(error=>console.error('Falha ao limpar sessão expirada:',error));
+        }else state.currentAction='WhatsApp desconectado. Tentando reconectar...';
         void auditLog('CONNECTION_CLOSED',connectionActor,connectionUnitId,{reasonCode:code||null,willReconnect:code!==DisconnectReason.loggedOut});
-        if(code!==DisconnectReason.loggedOut)setTimeout(()=>void connect(connectionActor,connectionUnitId),3000);
+        if(!loggedOut)setTimeout(()=>void connect(connectionActor,connectionUnitId),3000);
       }
     });
+    return {success:true};
   }catch(error){
     const reason=error instanceof Error?error.message:'Falha de conexão.';
     console.error('Falha ao iniciar cliente WhatsApp:',reason);
-    connecting=false;state.connectionStatus='disconnected';state.currentAction='Falha ao iniciar a conexão.';addLog(reason,'warning');void auditLog('CONNECTION_FAILED',connectionActor,connectionUnitId,{reason});
+    connecting=false;socket=null;state.connectionStatus='disconnected';state.lastError=reason;state.currentAction=`Falha ao iniciar a conexão: ${reason}`;addLog(reason,'warning');void auditLog('CONNECTION_FAILED',connectionActor,connectionUnitId,{reason});
+    return {success:false,error:reason};
   }
 }
 
@@ -76,7 +87,18 @@ const requireUnit=(req:express.Request,res:express.Response)=>{const decision=au
 
 export function configureMessageDispatch(app:express.Express, requireAuth: express.RequestHandler, requireRole: express.RequestHandler){
   app.get('/api/message-dispatch/status', requireAuth, requireRole, (req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const view=publicState();if(state.activeUnitId&&unitId!=='ALL'&&state.activeUnitId!==unitId)res.json({...view,isSending:false,progress:0,total:0,campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],runId:'',activeUnitId:''});else res.json(view);});
-  app.post('/api/message-dispatch/connect', requireAuth, requireRole, async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req);await auditLog('CONNECTION_REQUESTED',user,unitId);void connect(user,unitId);res.json({success:true});});
+  app.post('/api/message-dispatch/connect', requireAuth, requireRole, async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req);await auditLog('CONNECTION_REQUESTED',user,unitId);const result=await connect(user,unitId);if(!result.success){res.status(500).json({error:result.error||'Falha ao iniciar a conexão.'});return;}res.status(202).json({success:true});});
+  app.post('/api/message-dispatch/reset-session', requireAuth, requireRole, async(req,res)=>{
+    const unitId=requireUnit(req,res);if(!unitId)return;
+    if(state.isSending){res.status(409).json({error:'Não é possível redefinir a sessão durante uma campanha.'});return;}
+    const user=authenticatedUser(req);
+    connectionGeneration++;connecting=false;
+    try{socket?.end(new Error('Sessão redefinida pelo operador.'));}catch{ /* conexão já encerrada */ }
+    socket=null;state.connectionStatus='disconnected';state.currentQr='';state.lastError='';state.requiresNewQr=false;state.currentAction='Preparando um novo QR Code...';
+    try{await clearEncryptedAuthState(AUTH_VAULT);}catch(error){const reason=error instanceof Error?error.message:'Falha ao limpar a sessão.';state.lastError=reason;state.currentAction=reason;res.status(500).json({error:reason});return;}
+    await auditLog('CONNECTION_SESSION_RESET',user,unitId);
+    const result=await connect(user,unitId);if(!result.success){res.status(500).json({error:result.error||'Falha ao gerar um novo QR Code.'});return;}res.status(202).json({success:true});
+  });
   for(const action of ['pause','resume'] as const){
     app.post(`/api/message-dispatch/${action}`,requireAuth,requireRole,async(req,res)=>{
       const unitId=requireUnit(req,res);if(!unitId)return;
