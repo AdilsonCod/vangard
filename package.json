@@ -49,6 +49,7 @@
     "test:catalog-visibility": "tsx --test scripts/catalog-visibility.test.ts",
     "test:financial-workflows": "tsx --test scripts/financial-workflows.integration.test.ts",
     "test:profiles-responsive": "tsx --test scripts/profiles-responsive.test.ts",
+    "test:unit-analysis-summary": "tsx --test scripts/unit-analysis-summary.test.ts",
     "test:e2e": "playwright test",
     "test:security-audit": "tsx --test scripts/security-audit.test.ts",
     "test:demo-controls": "tsx --test scripts/demo-access.test.ts",

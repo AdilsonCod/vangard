@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { MonthlyUnitStats } from "../types";
+import { calculateUnitRevenueSummary } from "../utils/unitRevenueSummary";
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import { AppPageHeader, appControlClass } from "./ui/AppPrimitives";
 import { useConfirmation } from "./ui/ConfirmationDialog";
@@ -725,13 +726,15 @@ export function UnitsAnalysisDashboard() {
       const valorCortesias = typeof savedStats.valorCortesias === 'number' ? savedStats.valorCortesias : autoCortesias;
       const valorVendasInternas = typeof savedStats.valorVendasInternas === 'number' ? savedStats.valorVendasInternas : autoVendasInternas;
       
-      // Base interna de faturamento para viabilizar os cálculos de cortesias e vendas internas
-      const baseFaturamento = typeof savedStats.baseFaturamento === 'number'
-        ? savedStats.baseFaturamento
-        : ((savedStats.faturamentoTotal || 0) + (typeof savedStats.valorCortesias === 'number' ? savedStats.valorCortesias : 0) - (typeof savedStats.valorVendasInternas === 'number' ? savedStats.valorVendasInternas : 0));
-
-      // O Faturamento Total oficial reflete o resultado final de todo o cálculo (Base - Cortesias + Vendas Internas)
-      const faturamentoTotal = Math.max(0, baseFaturamento - valorCortesias + valorVendasInternas);
+      // Registros antigos não possuem a base. Neles, o total consolidado salvo continua
+      // sendo a fonte oficial e os lançamentos automáticos aparecem separadamente.
+      const revenueSummary = calculateUnitRevenueSummary({
+        baseFaturamento: savedStats.baseFaturamento,
+        faturamentoTotal: savedStats.faturamentoTotal,
+        valorCortesias,
+        valorVendasInternas,
+      });
+      const { baseFaturamento, faturamentoTotal } = revenueSummary;
 
       const clientesAtendidos = savedStats.clientesAtendidos || 0;
       const servicosRealizados = savedStats.servicosRealizados || 0;
@@ -1195,18 +1198,6 @@ export function UnitsAnalysisDashboard() {
                           })}
                         </strong>
                       </div>
-
-                      {row.valorCortesias > 0 && (
-                        <div className="bg-rose-50 dark:bg-rose-950/30 px-2.5 py-1.5 rounded-xl border border-rose-200/50 dark:border-rose-900/40 text-rose-700 dark:text-rose-400 font-mono text-2xs font-bold" title="Cortesias descontadas">
-                          - Cortesias: {row.valorCortesias.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                        </div>
-                      )}
-
-                      {row.valorVendasInternas > 0 && (
-                        <div className="bg-blue-50 dark:bg-blue-950/30 px-2.5 py-1.5 rounded-xl border border-blue-200/50 dark:border-blue-900/40 text-blue-700 dark:text-blue-400 font-mono text-2xs font-bold" title="Vendas internas adicionadas">
-                          + Vendas Int: {row.valorVendasInternas.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                        </div>
-                      )}
 
                       <div className="bg-white dark:bg-zinc-800 px-3 py-2 rounded-xl border border-gray-100 dark:border-zinc-800/80">
                         <span className="text-gray-400 dark:text-zinc-500 mr-1.5 font-medium">

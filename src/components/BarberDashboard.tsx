@@ -218,11 +218,10 @@ export default function BarberDashboard() {
   const [inputModal, setInputModal] = useState<{ isOpen: boolean; title: string; items: CatalogItem[] }>({ isOpen: false, title: "", items: [] });
   const productionCategories = useMemo(() => {
     const normalized = categories.map(category => category.id === 'EXTRA_SERVICE' ? { ...category, name: 'Serviços Extras' } : category);
-    const hasVisibleExtras = catalog.some(item => item.type === 'EXTRA_SERVICE');
-    return hasVisibleExtras && !normalized.some(category => category.id === 'EXTRA_SERVICE')
-      ? [{ id: 'EXTRA_SERVICE', name: 'Serviços Extras', type: 'SERVICE' as const }, ...normalized]
-      : normalized;
-  }, [categories, catalog]);
+    return normalized.some(category => category.id === 'EXTRA_SERVICE')
+      ? normalized
+      : [{ id: 'EXTRA_SERVICE', name: 'Serviços Extras', type: 'SERVICE' as const }, ...normalized];
+  }, [categories]);
 
 
   const userNotifications = useMemo(() => {
@@ -879,7 +878,7 @@ export default function BarberDashboard() {
 
               {productionCategories.map((cat) => {
                 const itemsOfCat = catalog.filter((c) => c.type === cat.id);
-                if (itemsOfCat.length === 0) return null;
+                if (itemsOfCat.length === 0 && cat.id !== 'EXTRA_SERVICE') return null;
                 
                 if (cat.id === 'EXTRA_SERVICE') {
                   const totalExtras = itemsOfCat.reduce((sum, c) => sum + (stats.totals[c.id] || 0), 0);
@@ -897,14 +896,16 @@ export default function BarberDashboard() {
                         />
                       </div>
                       
-                      <div className="mt-1 mb-6">
-                        <button 
-                          onClick={() => setDetailsModal({ isOpen: true, title: cat.name, items: itemsOfCat })}
-                          className="text-sm font-bold text-[var(--theme-color)] hover:bg-[var(--theme-color)]/10 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
-                        >
-                          Ver mais <ChevronRight className="w-4 h-4" />
-                        </button>
-                      </div>
+                      {itemsOfCat.length > 0 && (
+                        <div className="mt-1 mb-6">
+                          <button
+                            onClick={() => setDetailsModal({ isOpen: true, title: cat.name, items: itemsOfCat })}
+                            className="text-sm font-bold text-[var(--theme-color)] hover:bg-[var(--theme-color)]/10 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
+                          >
+                            Ver mais <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
                     </React.Fragment>
                   );
                 }

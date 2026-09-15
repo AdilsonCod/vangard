@@ -1826,12 +1826,10 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
         ? { ...category, name: 'Serviços Extras' }
         : category,
     );
-    const hasVisibleExtras = catalog.some(item => item.type === 'EXTRA_SERVICE');
-
-    return hasVisibleExtras && !normalized.some(category => category.id === 'EXTRA_SERVICE')
-      ? [{ id: 'EXTRA_SERVICE', name: 'Serviços Extras', type: 'SERVICE' as const }, ...normalized]
-      : normalized;
-  }, [categories, catalog]);
+    return normalized.some(category => category.id === 'EXTRA_SERVICE')
+      ? normalized
+      : [{ id: 'EXTRA_SERVICE', name: 'Serviços Extras', type: 'SERVICE' as const }, ...normalized];
+  }, [categories]);
 
   // Initialize generic target structure if not present
   const defaultItemsTarget: Record<string, number> = {};
@@ -2198,7 +2196,7 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {goalCategories.map((cat) => {
               const itemsOfCat = catalog.filter((c) => c.type === cat.id);
-              if (itemsOfCat.length === 0) return null;
+              if (itemsOfCat.length === 0 && cat.id !== 'EXTRA_SERVICE') return null;
               
                           if (cat.id === 'EXTRA_SERVICE') {
               return (
@@ -2289,7 +2287,7 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
         <div className="space-y-6">
           {goalCategories.map((cat) => {
             const itemsOfCat = catalog.filter((c) => c.type === cat.id);
-            if (itemsOfCat.length === 0) return null;
+            if (itemsOfCat.length === 0 && cat.id !== 'EXTRA_SERVICE') return null;
             const total = itemsOfCat.reduce((sum, item) => sum + (stats.totals[item.id] || 0), 0);
             const targetTotal = cat.id === 'EXTRA_SERVICE'
               ? target.items['meta_extra_geral'] || 0
@@ -2304,13 +2302,15 @@ function BarberDetailView({ barber, stats }: { barber: User; stats: any }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   <ProgressCard label={`Objetivo Geral (${cat.name})`} total={total} target={targetTotal} />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setDetailsModal({ isOpen: true, title: cat.name, items: itemsOfCat })}
-                  className="text-sm font-bold text-[var(--theme-color)] hover:bg-[var(--theme-color)]/10 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
-                >
-                  Ver mais <ChevronRight className="w-4 h-4" />
-                </button>
+                {itemsOfCat.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDetailsModal({ isOpen: true, title: cat.name, items: itemsOfCat })}
+                    className="text-sm font-bold text-[var(--theme-color)] hover:bg-[var(--theme-color)]/10 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
+                  >
+                    Ver mais <ChevronRight className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             );
           })}
