@@ -1208,6 +1208,7 @@ export function runReconciliationEngine(
   const allDates = new Set<string>();
   pdvData.forEach(p => p.dataDia && allDates.add(p.dataDia));
   redePagamentos.forEach(r => r.dataVenda && allDates.add(r.dataVenda));
+  items.forEach(item => item.dataVenda && allDates.add(item.dataVenda));
   const sortedDates = Array.from(allDates).sort((a, b) => b.localeCompare(a));
 
   const dailyClosings: DailyClosing[] = sortedDates.map(date => {
@@ -1231,10 +1232,25 @@ export function runReconciliationEngine(
 
     const dayBatches = batches.filter(b => b.dataVenda === date && (b.modalidade === 'Crédito' || b.modalidade === 'Débito'));
     const divergencias = dayBatches.filter(b => b.status === 'DIVERGENTE');
+    const subscriptionItems = items.filter(item => item.dataVenda === date && (
+      item.regra === 'REGRA_1_CLUBE_PREVISAO'
+      || item.regra === 'REGRA_3_ASSINATURA_BALCAO_REDE'
+      || item.regra === 'REGRA_3_ASSINATURA_BALCAO_PIX'
+      || item.regra === 'REGRA_4_GATEWAY_EXTERNO'
+    ));
+    const subscriptionDivergences = subscriptionItems.filter(item => ![
+      'CONCILIADO',
+      'CONCILIADO_REDE',
+      'CONCILIADO_PIX_BANCO',
+      'PENDENTE_LIQUIDACAO',
+    ].includes(item.status));
+    const hasPendingSubscriptions = subscriptionItems.some(item => item.status === 'PENDENTE_LIQUIDACAO');
 
     let status: DailyClosing['status'] = 'CONCILIADO';
-    if (divergencias.length > 0) {
+    if (divergencias.length > 0 || subscriptionDivergences.length > 0) {
       status = 'DIVERGENTE';
+    } else if (hasPendingSubscriptions) {
+      status = 'PENDENTE_LIQUIDACAO';
     }
 
     return {
@@ -1249,7 +1265,7 @@ export function runReconciliationEngine(
       redeTotalLiquido,
       redeTaxasMdr,
       redeDepositosConfirmados,
-      divergenciasCount: divergencias.length,
+      divergenciasCount: divergencias.length + subscriptionDivergences.length,
       status
     };
   });

@@ -292,6 +292,16 @@ export interface FinancialTransaction {
   barberId?: string;
   itemName?: string;
   catalogItemId?: string;
+  subscriptionPlanId?: string;
+}
+
+export interface SubscriptionPlan {
+  id: string;
+  unitId: string;
+  name: string;
+  isActive: boolean;
+  createdAt: string;
+  createdBy?: string;
 }
 
 export interface CashClosing {

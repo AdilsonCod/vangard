@@ -31,7 +31,7 @@ import { CashClosing, FinancialTransaction } from '../types';
 import { getLatestFinancialPeriod } from '../utils/financialPeriods';
 import { isValidFinancialAmountInput, parseFinancialAmount } from '../utils/financialAmount';
 import { AppBadge, AppEmptyState, AppPageHeader, appControlClass } from './ui/AppPrimitives';
-import { calculateTotalRevenue, summarizeCashMovements } from '../services/financialEngine';
+import { calculateTotalRevenue, resolveMovementNature, summarizeCashMovements } from '../services/financialEngine';
 import { useConfirmation } from './ui/ConfirmationDialog';
 import { formatFinancialTransactionDate as formatTransactionDate, inferFinancialSourceChannel as inferSourceChannel } from '../services/financialPresentation';
 
@@ -667,7 +667,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
           divergent: 0,
           reconciled: 0,
         };
-        const nature = transaction.movementNature || (transaction.type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
+        const nature = resolveMovementNature(transaction);
         const hasFinancialEffect = nature !== 'NON_FINANCIAL' && nature !== 'COMMERCIAL_DISCOUNT';
 
         if (transaction.type === 'INCOME' && hasFinancialEffect) {
@@ -846,7 +846,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     // Calculate Expenses by Classification (Selected Month)
     const expClassMap = new Map<string, number>();
     mTrans.forEach(t => {
-      const nature = t.movementNature || (t.type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
+      const nature = resolveMovementNature(t);
       if (t.type === 'EXPENSE' && t.status === 'PAGO' && nature === 'EXPENSE') {
         const clsName = finClassifications.find(c => c.id === t.classification)?.name || 'Sem Classificação';
         expClassMap.set(clsName, (expClassMap.get(clsName) || 0) + t.amount);
@@ -879,7 +879,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
 
     (transactions || []).forEach(t => {
       if (t.id.startsWith('commission_payment_')) return;
-      const nature = t.movementNature || (t.type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
+      const nature = resolveMovementNature(t);
       if (nature === 'NON_FINANCIAL' || nature === 'COMMERCIAL_DISCOUNT') return;
       const dateToUse = (t.status === 'PAGO' || t.status === 'RECEBIDO') ? t.date : (t.dueDate || t.date);
       if (dateToUse && dateToUse.startsWith(monthStr)) {

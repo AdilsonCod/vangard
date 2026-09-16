@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useStore } from '../store';
 import { FinancialTransaction } from '../types';
 import { CheckSquare, Square, DollarSign, CreditCard, Calendar, Filter, Download, Upload, FileSpreadsheet, ChevronDown, Layers, List } from 'lucide-react';
@@ -6,11 +6,17 @@ import { usePagination } from '../hooks/usePagination';
 import { Pagination } from './ui/Pagination';
 import Papa from 'papaparse';
 import { loadXlsx } from '../services/lazyLibraries';
+import type { SubscriptionPlan } from '../types';
+import { defaultUnitFor, canUseGlobalScope } from '../services/firestoreScope';
+import { receivableMatchesPlans } from '../services/subscriptionPlans';
+import { SubscriptionPlanFilter } from './subscription/SubscriptionPlanFilter';
 
 export function ReceivablesReconciliation() {
-  const { transactions, updateTransaction, systemUnits } = useStore();
-  const [filterUnit, setFilterUnit] = useState('ALL');
+  const { transactions, updateTransaction, systemUnits, currentUser } = useStore();
+  const [filterUnit, setFilterUnit] = useState(() => defaultUnitFor(currentUser));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
+  const [selectedPlanIds, setSelectedPlanIds] = useState<Set<string>>(new Set());
   const [filterMethod, setFilterMethod] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'BY_DATE' | 'DETAILED'>('BY_DATE');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
@@ -29,6 +35,10 @@ export function ReceivablesReconciliation() {
   const salesFileInputRef = useRef<HTMLInputElement>(null);
   const settlementFileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!canUseGlobalScope(currentUser)) setFilterUnit(defaultUnitFor(currentUser));
+  }, [currentUser]);
+
   const receivables = useMemo(() => {
     return transactions
       .filter(t => t.type === 'INCOME' && (t.status === 'PENDENTE' || t.status === 'AGENDADO') && (filterUnit === 'ALL' || t.unitId === filterUnit))
@@ -42,11 +52,12 @@ export function ReceivablesReconciliation() {
       if (filterMethod === 'CARTAO') return transaction.paymentMethod === 'CREDIT' || transaction.paymentMethod === 'DEBIT';
       if (filterMethod === 'DINHEIRO') return transaction.paymentMethod === 'CASH';
       if (filterMethod === 'ASSINATURA') {
-        return transaction.paymentMethod === 'SUBSCRIPTION' || transaction.sourceChannel === 'SUBSCRIPTION_GATEWAY';
+        const isSubscription = transaction.paymentMethod === 'SUBSCRIPTION' || transaction.sourceChannel === 'SUBSCRIPTION_GATEWAY';
+        return isSubscription && receivableMatchesPlans(transaction, subscriptionPlans, selectedPlanIds);
       }
       return transaction.classification === filterMethod || transaction.category === filterMethod;
     });
-  }, [receivables, filterMethod]);
+  }, [receivables, filterMethod, selectedPlanIds, subscriptionPlans]);
 
   const receivablesByDate = useMemo(() => {
     const groups = new Map<string, FinancialTransaction[]>();
@@ -362,9 +373,13 @@ export function ReceivablesReconciliation() {
               }}
               className="w-full min-w-0 rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-sm font-bold text-gray-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
             >
-              <option value="ALL">Todas as unidades</option>
+              {canUseGlobalScope(currentUser) && <option value="ALL">Todas as unidades</option>}
               {(systemUnits || []).map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
             </select>
+          </label>
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-gray-500 dark:text-zinc-400">
+            Planos de assinatura
+            <SubscriptionPlanFilter unitId={filterUnit} selectedIds={selectedPlanIds} onChange={ids => { setSelectedPlanIds(ids); setFilterMethod('ASSINATURA'); setSelectedIds(new Set()); }} onPlansChange={plans => { setSubscriptionPlans(plans); setSelectedPlanIds(current => { const valid = new Set([...current].filter(id => plans.some(plan => plan.id === id))); return valid.size ? valid : new Set(plans.map(plan => plan.id)); }); }} />
           </label>
           <div className="flex w-full items-center rounded-xl border border-gray-200 bg-gray-50 p-1 dark:border-zinc-700 dark:bg-zinc-800 sm:col-span-2 lg:w-auto">
             <button

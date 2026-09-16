@@ -18,10 +18,24 @@ export function calculateCommissionByRevenue(revenue: number, brackets: Commissi
 export function calculatePaymentTotals(payment: Pick<PaymentRecord, 'commissionAvulso' | 'commissionProductGeneral' | 'commissionProductAvant' | 'commissionSubscriptions' | 'discount' | 'discounts'>) { const grossCommission = roundMoney(clampMoney(payment.commissionAvulso) + clampMoney(payment.commissionProductGeneral) + clampMoney(payment.commissionProductAvant) + clampMoney(payment.commissionSubscriptions)); const discounts = payment.discounts?.length ? payment.discounts.reduce((sum, item) => sum + clampMoney(item.value), 0) : clampMoney(payment.discount); return { grossCommission, discounts: roundMoney(discounts), netPayment: applyCommercialDiscount(grossCommission, discounts) }; }
 export function calculateReversalEffect(originalEffect: number, alreadyReversed = 0) { return roundMoney(-(finiteOrZero(originalEffect) - finiteOrZero(alreadyReversed))); }
 
-const natureOf = (transaction: FinancialTransaction) => transaction.movementNature || (transaction.type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
+export function resolveMovementNature(transaction: FinancialTransaction): NonNullable<FinancialTransaction['movementNature']> {
+  if (transaction.movementNature) return transaction.movementNature;
+
+  // Compatibilidade com cortesias criadas antes da introducao de movementNature.
+  // Elas representam desconto comercial, nao uma saida financeira do caixa.
+  const category = String(transaction.category || '').trim().toLocaleUpperCase('pt-BR');
+  const classification = String(transaction.classification || '').trim().toLocaleUpperCase('pt-BR');
+  const isCourtesy = transaction.sourceChannel === 'COURTESY'
+    || transaction.paymentMethod === 'COURTESY'
+    || category === 'CONTROLE_CORTESIA'
+    || classification.includes('CORTESIA');
+
+  if (isCourtesy) return 'COMMERCIAL_DISCOUNT';
+  return transaction.type === 'INCOME' ? 'REVENUE' : 'EXPENSE';
+}
 const isSettled = (transaction: FinancialTransaction) => transaction.type === 'INCOME' ? transaction.status === 'RECEBIDO' : transaction.status === 'PAGO';
 export function summarizeCashMovements(transactions: FinancialTransaction[]): CashMovementSummary {
-  const totals = transactions.reduce((acc, transaction) => { const amount = clampMoney(transaction.amount); const nature = natureOf(transaction); if (nature === 'COMMERCIAL_DISCOUNT') acc.commercialDiscounts += amount; if (!isSettled(transaction) || nature === 'NON_FINANCIAL' || nature === 'COMMERCIAL_DISCOUNT') return acc; if (transaction.type === 'INCOME') acc.cashIn += amount; else acc.cashOut += amount; if (nature === 'REVENUE' || nature === 'ADVANCE') acc.recognizedRevenue += transaction.type === 'INCOME' ? amount : -amount; if (nature === 'EXPENSE') acc.recognizedExpenses += transaction.type === 'EXPENSE' ? amount : -amount; if (nature === 'PASS_THROUGH') transaction.type === 'INCOME' ? acc.passThroughReceived += amount : acc.passThroughPaid += amount; if (nature === 'INTERNAL_TRANSFER') acc.internalTransferNet += transaction.type === 'INCOME' ? amount : -amount; return acc; }, { cashIn: 0, cashOut: 0, recognizedRevenue: 0, recognizedExpenses: 0, commercialDiscounts: 0, passThroughReceived: 0, passThroughPaid: 0, internalTransferNet: 0 });
+  const totals = transactions.reduce((acc, transaction) => { const amount = clampMoney(transaction.amount); const nature = resolveMovementNature(transaction); if (nature === 'COMMERCIAL_DISCOUNT') acc.commercialDiscounts += amount; if (!isSettled(transaction) || nature === 'NON_FINANCIAL' || nature === 'COMMERCIAL_DISCOUNT') return acc; if (transaction.type === 'INCOME') acc.cashIn += amount; else acc.cashOut += amount; if (nature === 'REVENUE' || nature === 'ADVANCE') acc.recognizedRevenue += transaction.type === 'INCOME' ? amount : -amount; if (nature === 'EXPENSE') acc.recognizedExpenses += transaction.type === 'EXPENSE' ? amount : -amount; if (nature === 'PASS_THROUGH') transaction.type === 'INCOME' ? acc.passThroughReceived += amount : acc.passThroughPaid += amount; if (nature === 'INTERNAL_TRANSFER') acc.internalTransferNet += transaction.type === 'INCOME' ? amount : -amount; return acc; }, { cashIn: 0, cashOut: 0, recognizedRevenue: 0, recognizedExpenses: 0, commercialDiscounts: 0, passThroughReceived: 0, passThroughPaid: 0, internalTransferNet: 0 });
   return { cashIn: roundMoney(totals.cashIn), cashOut: roundMoney(totals.cashOut), cashBalance: roundMoney(totals.cashIn - totals.cashOut), recognizedRevenue: roundMoney(totals.recognizedRevenue), recognizedExpenses: roundMoney(totals.recognizedExpenses), commercialDiscounts: roundMoney(totals.commercialDiscounts), passThroughReceived: roundMoney(totals.passThroughReceived), passThroughPaid: roundMoney(totals.passThroughPaid), passThroughBalance: roundMoney(totals.passThroughReceived - totals.passThroughPaid), internalTransferNet: roundMoney(totals.internalTransferNet) };
 }
 export function isPeriodClosed(dateStr: string, unitId: string, cashClosings: CashClosing[]): boolean { return Boolean(dateStr && unitId && cashClosings.some(closing => closing.unitId === unitId && closing.date === dateStr && closing.status !== 'REOPENED')); }

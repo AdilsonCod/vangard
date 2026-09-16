@@ -19,6 +19,16 @@ test('venda interna vinculada como desconto deduz o valor líquido a pagar do pr
   assert.equal(paymentTotals.netPayment, 505);
 });
 test('caixa separa receita, despesa, repasse, transferência e itens não financeiros', () => { const summary = summarizeCashMovements([transaction({ amount: 100, movementNature: 'REVENUE' }), transaction({ type: 'EXPENSE', status: 'PAGO', amount: 30, movementNature: 'EXPENSE' }), transaction({ amount: 20, movementNature: 'PASS_THROUGH' }), transaction({ type: 'EXPENSE', status: 'PAGO', amount: 12, movementNature: 'PASS_THROUGH' }), transaction({ amount: 50, movementNature: 'INTERNAL_TRANSFER' }), transaction({ type: 'EXPENSE', status: 'PAGO', amount: 50, movementNature: 'INTERNAL_TRANSFER' }), transaction({ type: 'EXPENSE', status: 'PAGO', amount: 10, movementNature: 'COMMERCIAL_DISCOUNT' }), transaction({ amount: 999, status: 'PENDENTE', movementNature: 'REVENUE' })]); assert.deepEqual(summary, { cashIn: 170, cashOut: 92, cashBalance: 78, recognizedRevenue: 100, recognizedExpenses: 30, commercialDiscounts: 10, passThroughReceived: 20, passThroughPaid: 12, passThroughBalance: 8, internalTransferNet: 0 }); });
+test('cortesia nova ou legada não é contabilizada como despesa nem saída de caixa', () => {
+  const summary = summarizeCashMovements([
+    transaction({ type: 'EXPENSE', status: 'PAGO', amount: 80, category: 'CONTROLE_CORTESIA', sourceChannel: 'COURTESY', paymentMethod: 'COURTESY', movementNature: 'COMMERCIAL_DISCOUNT' }),
+    transaction({ type: 'EXPENSE', status: 'PAGO', amount: 35, category: 'CONTROLE_CORTESIA', classification: 'Cortesia', movementNature: undefined }),
+  ]);
+  assert.equal(summary.cashOut, 0);
+  assert.equal(summary.recognizedExpenses, 0);
+  assert.equal(summary.cashBalance, 0);
+  assert.equal(summary.commercialDiscounts, 115);
+});
 test('estorno gera apenas o efeito inverso ainda não revertido', () => { assert.equal(calculateReversalEffect(100), -100); assert.equal(calculateReversalEffect(100, 40), -60); assert.equal(calculateReversalEffect(0), 0); });
 
 test('cenário completo mantém os mesmos totais para visão geral, financeiro, relatório, análise, conciliação e pagamentos', () => {

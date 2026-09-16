@@ -262,6 +262,13 @@ service cloud.firestore {
       allow read, write: if canManageFinance() && isUserInUnit(unitId);
     }
 
+    match /subscriptionPlans/{planId} {
+      allow read: if canReadFinancialOperation() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create: if canManageFinance() && (isAdmin() || isUserInUnit(request.resource.data.unitId));
+      allow update: if canManageFinance() && (isAdmin() || (isUserInUnit(resource.data.unitId) && isUserInUnit(request.resource.data.unitId)));
+      allow delete: if canManageFinance() && (isAdmin() || isUserInUnit(resource.data.unitId));
+    }
+
     match /dataImportJobs/{jobId} {
       allow read: if canManageFinance() && (isAdmin() || isUserInUnit(resource.data.unitId));
       allow create: if canManageFinance() && (isAdmin() || isUserInUnit(request.resource.data.unitId));

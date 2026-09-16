@@ -77,6 +77,9 @@ import { sanitizeFirestoreData } from '../utils/firestoreData';
 import { ReconciliationWorkspaceTabs, ReconciliationWorkspaceTab } from './reconciliation/ReconciliationWorkspaceTabs';
 import { countObjectiveBatches, filterAuditItems, filterObjectiveBatches, filterReconciliationBatches, ReconciliationBatchStatusFilter } from '../services/reconciliationFilters';
 import { demoControlsEnabledFor } from '../services/demoAccess';
+import type { SubscriptionPlan } from '../types';
+import { filterSubscriptionSources } from '../services/subscriptionPlans';
+import { SubscriptionPlanFilter } from './subscription/SubscriptionPlanFilter';
 
 type FintechReconciliationProps = {
   onSettlementComplete?: (dates: string[]) => void;
@@ -97,7 +100,6 @@ function resolveConciliationNsu(
     payment.tid?.trim().toUpperCase() === identifier
   )?.nsuCv || '';
 }
-
 export function FintechReconciliation({ onSettlementComplete }: FintechReconciliationProps) {
   const {
     addTransaction,
@@ -153,6 +155,8 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const [selectedAuditRows, setSelectedAuditRows] = useState<Set<string>>(new Set());
   const [bulkAuditStatus, setBulkAuditStatus] = useState<StatusDivergencia | ''>('');
   const [selectedUnidade, setSelectedUnidade] = useState<string>('');
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
+  const [selectedSubscriptionPlanIds, setSelectedSubscriptionPlanIds] = useState<Set<string>>(new Set());
 
   const [kpis, setKpis] = useState<ReconciliationKPIs>({
     saldoRealEmConta: 0,
@@ -171,6 +175,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   const [activeTab, setActiveTab] = useState<ReconciliationWorkspaceTab>('RESUMO');
   const [divergenceFilter, setDivergenceFilter] = useState<AuditStatusFilter>('TODAS');
   const [expandedDailyDates, setExpandedDailyDates] = useState<Set<string>>(new Set());
+  const [expandedSubscriptionDates, setExpandedSubscriptionDates] = useState<Set<string>>(new Set());
   const [copiedCodeTab, setCopiedCodeTab] = useState<string | null>(null);
   const [selectedItemsToSettle, setSelectedItemsToSettle] = useState<Set<string>>(new Set());
   const [settledItems, setSettledItems] = useState<Set<string>>(new Set());
@@ -218,6 +223,32 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     redePagamentos.length > 0 || redeRecebidos.length > 0 || Boolean(redeResumoInfo),
     previsaoData.length > 0,
   ].filter(Boolean).length;
+
+  const runScopedReconciliation = (
+    pdv: PDVMovimentacao[],
+    clube: GatewayClubeTransacao[],
+    rede: AdquirenteRedePagamento[],
+    recebidos: AdquirenteRedeRecebido[],
+    previsao: PrevisaoRecebivel[],
+    entradas: EntradaManual[] = [],
+  ) => {
+    const filtered = filterSubscriptionSources(clube, previsao, subscriptionPlans, selectedSubscriptionPlanIds);
+    return runReconciliationEngine(pdv, filtered.clube, rede, recebidos, filtered.previsao, entradas);
+  };
+
+  useEffect(() => {
+    if (clubeData.length === 0 && previsaoData.length === 0) return;
+    const result = runScopedReconciliation(pdvData, clubeData, redePagamentos, redeRecebidos, previsaoData, entradasManuaisData);
+    setItems(result.items);
+    setDailyClosings(result.dailyClosings);
+    setKpis(result.kpis);
+    setCashFlowTimeline(result.cashFlowTimeline);
+    setBatches(result.batches || []);
+    setComparativoFormasPgto(result.comparativoFormasPgto || null);
+    setResumoLotesCartao(result.resumoLotesCartao || null);
+  // Reprocess only when plan scope changes; file uploads already run the engine in their handlers.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedUnidade, subscriptionPlans, selectedSubscriptionPlanIds]);
 
   const reconciliationSteps = [
     { label: 'Unidade', detail: selectedUnitName || 'Selecione', complete: Boolean(selectedUnidade) },
@@ -326,7 +357,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     });
 
     // Roda conciliação imediatamente
-    const result = runReconciliationEngine(
+    const result = runScopedReconciliation(
       demo.pdv,
       demo.clube,
       demo.redePagamentos,
@@ -389,7 +420,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     }
 
     setIsProcessing(true);
-    const result = runReconciliationEngine(
+    const result = runScopedReconciliation(
       pdvData,
       clubeData,
       redePagamentos,
@@ -420,7 +451,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       showToast(`PDV carregado com sucesso: ${data.length} movimentações.`);
 
       // Auto-executa a conciliação imediatamente
-      const result = runReconciliationEngine(
+      const result = runScopedReconciliation(
         data,
         clubeData,
         redePagamentos,
@@ -451,7 +482,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       showToast(`Gateway Clube carregado: ${data.length} transações.`);
       
       if (pdvData.length > 0 || redePagamentos.length > 0) {
-        const result = runReconciliationEngine(
+        const result = runScopedReconciliation(
           pdvData,
           data,
           redePagamentos,
@@ -502,7 +533,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
 
       // Auto-executa a conciliação imediatamente
       if (pdvData.length > 0 || pagamentos.length > 0) {
-        const result = runReconciliationEngine(
+        const result = runScopedReconciliation(
           pdvData,
           clubeData,
           pagamentos,
@@ -780,6 +811,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
         fileNames,
         redeResumoInfo,
         settledItems: Array.from(settledItems),
+        subscriptionPlanIds: Array.from(selectedSubscriptionPlanIds),
         ...(!currentSessionId && { createdAt: new Date().toISOString() }),
       };
       
@@ -841,6 +873,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
     setFileNames(session.fileNames || {});
     setRedeResumoInfo(session.redeResumoInfo || null);
     setSettledItems(new Set(session.settledItems || []));
+    setSelectedSubscriptionPlanIds(new Set(session.subscriptionPlanIds || []));
     setCurrentSessionId(session.id);
     setShowSessionsModal(false);
     if (notify) showToast('Relatório carregado com sucesso!');
@@ -1151,6 +1184,78 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   // Itens filtrados para a aba de divergências
   const filteredDivergences = useMemo(() => filterAuditItems(items, divergenceFilter), [items, divergenceFilter]);
 
+  const subscriptionDailyBatches = useMemo(() => {
+    const reconciledStatuses = new Set(['CONCILIADO', 'CONCILIADO_REDE', 'CONCILIADO_PIX_BANCO']);
+    const grouped = new Map<string, {
+      date: string;
+      count: number;
+      gross: number;
+      fees: number;
+      net: number;
+      reconciled: number;
+      pending: number;
+      divergences: number;
+      transactions: ConciliationItem[];
+    }>();
+
+    items
+      .filter(item => item.regra === 'REGRA_1_CLUBE_PREVISAO'
+        || item.regra === 'REGRA_3_ASSINATURA_BALCAO_REDE'
+        || item.regra === 'REGRA_3_ASSINATURA_BALCAO_PIX'
+        || item.regra === 'REGRA_4_GATEWAY_EXTERNO')
+      .forEach(item => {
+        const date = item.dataVenda || 'Sem data';
+        const batch = grouped.get(date) || {
+          date,
+          count: 0,
+          gross: 0,
+          fees: 0,
+          net: 0,
+          reconciled: 0,
+          pending: 0,
+          divergences: 0,
+          transactions: [],
+        };
+        batch.count += 1;
+        batch.gross += item.valorBruto || 0;
+        batch.fees += item.valorMdrRetido || 0;
+        batch.net += item.valorLiquido || 0;
+        if (reconciledStatuses.has(item.status)) batch.reconciled += 1;
+        else if (item.status === 'PENDENTE_LIQUIDACAO') batch.pending += 1;
+        else batch.divergences += 1;
+        batch.transactions.push(item);
+        grouped.set(date, batch);
+      });
+
+    return Array.from(grouped.values())
+      .map(batch => ({
+        ...batch,
+        gross: Number(batch.gross.toFixed(2)),
+        fees: Number(batch.fees.toFixed(2)),
+        net: Number(batch.net.toFixed(2)),
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [items]);
+
+  const subscriptionBatchTotals = useMemo(() => subscriptionDailyBatches.reduce((totals, batch) => ({
+    count: totals.count + batch.count,
+    gross: totals.gross + batch.gross,
+    fees: totals.fees + batch.fees,
+    net: totals.net + batch.net,
+    reconciled: totals.reconciled + batch.reconciled,
+    pending: totals.pending + batch.pending,
+    divergences: totals.divergences + batch.divergences,
+  }), { count: 0, gross: 0, fees: 0, net: 0, reconciled: 0, pending: 0, divergences: 0 }), [subscriptionDailyBatches]);
+
+  const toggleSubscriptionDate = (date: string) => {
+    setExpandedSubscriptionDates(current => {
+      const next = new Set(current);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  };
+
   // Lotes filtrados para a aba de comparativo PDV vs Adquirente (Modalidades CREDITO e DEBITO)
   const filteredBatches = useMemo(
     () => filterReconciliationBatches(batches, selectedBatchModalidade, selectedBatchStatus),
@@ -1363,7 +1468,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       {/* Header com Branding e Ações Rápidas */}
       <div className="flex flex-col justify-between gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-6 lg:flex-row lg:items-center">
         <div className="min-w-0">
-          <div className="mb-3 flex items-center gap-3">
+          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start">
             <div className="group relative flex min-w-[210px] items-center gap-3 rounded-xl border border-[var(--theme-color)]/60 bg-[var(--theme-color)]/[0.08] px-3 py-2.5 shadow-sm transition hover:border-[var(--theme-color)] hover:bg-[var(--theme-color)]/[0.12] sm:min-w-[240px]">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--theme-color)] text-white shadow-sm">
                 <MapPin className="h-4 w-4" />
@@ -1393,6 +1498,21 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                   })}
                 </div>
               )}
+            </div>
+            <div className="min-w-[210px] sm:min-w-[260px]">
+              <span className="mb-1 block text-[9px] font-black uppercase tracking-[0.14em] text-indigo-500">Planos incluídos na conciliação</span>
+              <SubscriptionPlanFilter
+                unitId={selectedUnidade}
+                selectedIds={selectedSubscriptionPlanIds}
+                onChange={ids => setSelectedSubscriptionPlanIds(ids)}
+                onPlansChange={plans => {
+                  setSubscriptionPlans(plans);
+                  setSelectedSubscriptionPlanIds(current => {
+                    const valid = new Set([...current].filter(id => plans.some(plan => plan.id === id)));
+                    return valid.size ? valid : new Set(plans.map(plan => plan.id));
+                  });
+                }}
+              />
             </div>
           </div>
           <h2 className="text-xl font-black tracking-tight text-gray-900 dark:text-white sm:text-2xl">
@@ -2021,6 +2141,124 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
                 </button>
               )}
             </div>
+
+            <section className="mb-6 overflow-hidden rounded-2xl border border-indigo-200 bg-indigo-50/40 dark:border-indigo-900/60 dark:bg-indigo-950/10">
+              <div className="flex flex-col gap-2 border-b border-indigo-200 px-4 py-3 dark:border-indigo-900/60 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h4 className="flex items-center gap-2 text-sm font-extrabold text-gray-900 dark:text-white">
+                    <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                    Conciliação diária das assinaturas
+                  </h4>
+                  <p className="mt-0.5 text-[11px] text-gray-500 dark:text-zinc-400">
+                    Lotes agrupados pela data da venda para localizar pendências e divergências com rapidez.
+                  </p>
+                </div>
+                <span className="w-fit rounded-full bg-indigo-100 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                  {subscriptionDailyBatches.length} {subscriptionDailyBatches.length === 1 ? 'lote diário' : 'lotes diários'}
+                </span>
+              </div>
+
+              {subscriptionDailyBatches.length === 0 ? (
+                <div className="px-4 py-8 text-center text-xs text-gray-500 dark:text-zinc-400">
+                  Carregue o relatório do Clube e a previsão de recebíveis para formar os lotes de assinaturas.
+                </div>
+              ) : (
+                <div>
+                  <div className="grid grid-cols-2 gap-2 border-b border-indigo-200 p-3 dark:border-indigo-900/60 sm:grid-cols-4 lg:grid-cols-7">
+                    {[
+                      ['Transações', subscriptionBatchTotals.count.toLocaleString('pt-BR'), 'text-indigo-700 dark:text-indigo-300'],
+                      ['Bruto', subscriptionBatchTotals.gross.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'text-gray-900 dark:text-white'],
+                      ['Taxas', subscriptionBatchTotals.fees.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'text-amber-600 dark:text-amber-400'],
+                      ['Líquido', subscriptionBatchTotals.net.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'text-emerald-600 dark:text-emerald-400'],
+                      ['Conciliadas', subscriptionBatchTotals.reconciled.toLocaleString('pt-BR'), 'text-emerald-600 dark:text-emerald-400'],
+                      ['Pendentes', subscriptionBatchTotals.pending.toLocaleString('pt-BR'), 'text-amber-600 dark:text-amber-400'],
+                      ['Divergências', subscriptionBatchTotals.divergences.toLocaleString('pt-BR'), 'text-red-600 dark:text-red-400'],
+                    ].map(([label, value, color]) => (
+                      <div key={label} className="rounded-xl border border-indigo-100 bg-white/70 p-3 dark:border-indigo-950 dark:bg-zinc-900/60">
+                        <span className="block text-[9px] font-black uppercase tracking-wider text-gray-400">{label}</span>
+                        <strong className={`mt-1 block text-sm ${color}`}>{value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="overflow-x-auto">
+                  <table className="w-full min-w-[820px] border-collapse text-left text-xs">
+                    <thead>
+                      <tr className="bg-white/60 text-[10px] font-black uppercase tracking-wider text-gray-500 dark:bg-zinc-900/50 dark:text-zinc-400">
+                        <th className="px-4 py-3">Data do lote</th>
+                        <th className="px-4 py-3 text-center">Assinaturas</th>
+                        <th className="px-4 py-3">Bruto</th>
+                        <th className="px-4 py-3">Taxas</th>
+                        <th className="px-4 py-3">Líquido</th>
+                        <th className="px-4 py-3 text-center">Conciliadas</th>
+                        <th className="px-4 py-3 text-center">Pendentes</th>
+                        <th className="px-4 py-3 text-center">Divergências</th>
+                        <th className="px-4 py-3 text-center">Situação</th>
+                        <th className="px-4 py-3 text-right">Detalhes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-indigo-100 dark:divide-indigo-950">
+                      {subscriptionDailyBatches.map(batch => {
+                        const status = batch.divergences > 0
+                          ? 'DIVERGENTE'
+                          : batch.pending > 0
+                            ? 'PENDENTE_LIQUIDACAO'
+                            : 'CONCILIADO';
+                        const isExpanded = expandedSubscriptionDates.has(batch.date);
+                        return (
+                          <React.Fragment key={batch.date}>
+                          <tr className="bg-white/40 transition hover:bg-white dark:bg-zinc-950/20 dark:hover:bg-zinc-900/60">
+                            <td className="px-4 py-3 font-black text-gray-900 dark:text-white">{batch.date}</td>
+                            <td className="px-4 py-3 text-center font-bold text-indigo-700 dark:text-indigo-300">{batch.count}</td>
+                            <td className="px-4 py-3 font-bold text-gray-900 dark:text-white">{batch.gross.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td className="px-4 py-3 font-semibold text-amber-600 dark:text-amber-400">-{batch.fees.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td className="px-4 py-3 font-black text-emerald-600 dark:text-emerald-400">{batch.net.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td className="px-4 py-3 text-center font-black text-emerald-600 dark:text-emerald-400">{batch.reconciled}</td>
+                            <td className="px-4 py-3 text-center font-black text-amber-600 dark:text-amber-400">{batch.pending}</td>
+                            <td className="px-4 py-3 text-center font-black text-red-600 dark:text-red-400">{batch.divergences}</td>
+                            <td className="px-4 py-3 text-center">{renderStatusBadge(status)}</td>
+                            <td className="px-4 py-3 text-right">
+                              <button type="button" onClick={() => toggleSubscriptionDate(batch.date)} className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 px-2.5 py-1.5 font-bold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/60">
+                                {isExpanded ? 'Recolher' : 'Ver transações'}
+                                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                              </button>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-white dark:bg-zinc-950/40">
+                              <td colSpan={10} className="p-3">
+                                <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-zinc-800">
+                                  <table className="w-full min-w-[900px] text-left text-[11px]">
+                                    <thead className="bg-gray-50 text-[9px] font-black uppercase tracking-wider text-gray-500 dark:bg-zinc-900 dark:text-zinc-400">
+                                      <tr><th className="px-3 py-2">Cliente</th><th className="px-3 py-2">Plano / origem</th><th className="px-3 py-2">Código / NSU</th><th className="px-3 py-2">Bruto</th><th className="px-3 py-2">Taxa</th><th className="px-3 py-2">Líquido</th><th className="px-3 py-2 text-center">Status</th><th className="px-3 py-2 text-right">Ação</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+                                      {batch.transactions.map(item => (
+                                        <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-zinc-900/70">
+                                          <td className="px-3 py-2 font-bold text-gray-900 dark:text-white"><span className="block">{item.clienteOuDesc}</span><span className="font-normal text-gray-400">{item.statusDescricao}</span></td>
+                                          <td className="px-3 py-2 text-gray-600 dark:text-zinc-300">{item.modalidadeOuPlano}</td>
+                                          <td className="px-3 py-2 font-mono text-gray-700 dark:text-zinc-200">{resolveConciliationNsu(item, redePagamentos) || item.identificador || '—'}</td>
+                                          <td className="px-3 py-2 font-bold">{item.valorBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                          <td className="px-3 py-2 text-amber-600 dark:text-amber-400">-{item.valorMdrRetido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                          <td className="px-3 py-2 font-black text-emerald-600 dark:text-emerald-400">{item.valorLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                          <td className="px-3 py-2 text-center">{renderStatusBadge(item.status)}</td>
+                                          <td className="px-3 py-2 text-right"><button type="button" onClick={() => handleManualReconciliation(item.id)} className="rounded-lg bg-blue-100 px-2.5 py-1.5 font-bold text-blue-700 transition hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50">Corrigir</button></td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
+              )}
+            </section>
 
             {dailyClosings.length === 0 ? (
               <div className="text-center py-12 border border-dashed border-gray-200 dark:border-zinc-800 rounded-2xl">
