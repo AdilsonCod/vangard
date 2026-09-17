@@ -602,6 +602,13 @@ html.dark body.theme-dark-pure {
   .app-global-header :where(button, [role="button"], input, select) {
     min-height: 44px;
   }
+
+  /* Safari/iPad e alguns navegadores Android podem rasterizar toda a área sob
+     um header sticky com backdrop-filter, deixando tabelas densas borradas. */
+  .app-global-header {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
 }
 
 @media (max-width: 1279px) {
@@ -611,6 +618,27 @@ html.dark body.theme-dark-pure {
 
   .app-main-content {
     width: 100%;
+  }
+
+  .reconciliation-workspace {
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
+    text-rendering: geometricPrecision;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .reconciliation-workspace :where(.overflow-x-auto) {
+    position: relative;
+    isolation: isolate;
+    overflow-y: hidden;
+    scroll-behavior: auto;
+  }
+
+  .reconciliation-workspace :where(table, th, td) {
+    transform: none;
+    filter: none;
+    opacity: 1;
   }
 }
 

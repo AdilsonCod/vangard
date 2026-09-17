@@ -1457,7 +1457,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
   };
 
   return (
-    <div className="space-y-6">
+    <div className="reconciliation-workspace space-y-6">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-3 left-3 right-3 z-50 flex items-center gap-3 rounded-xl border border-gray-700 bg-gray-900 px-4 py-3.5 text-sm font-medium text-white shadow-2xl animate-in fade-in slide-in-from-bottom-4 dark:border-zinc-300 dark:bg-zinc-100 dark:text-zinc-900 sm:bottom-6 sm:left-auto sm:right-6 sm:max-w-md sm:px-5">
@@ -2086,7 +2086,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
               </div>
             )}
 
-            <div className="hidden overflow-hidden rounded-xl border border-gray-200 dark:border-zinc-800 md:block">
+            <div className="hidden overflow-hidden rounded-xl border border-gray-200 dark:border-zinc-800 lg:block">
               <table className="w-full table-fixed text-left text-xs">
                 <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500 dark:bg-zinc-950/60 dark:text-zinc-400">
                   <tr><th className="w-[15%] px-3 py-3">Data</th><th className="w-[16%] px-3 py-3">Pagamento</th><th className="w-[13%] px-3 py-3 text-right">PDV</th><th className="w-[13%] px-3 py-3 text-right">Adquirente</th><th className="w-[11%] px-3 py-3 text-right">Taxa</th><th className="w-[11%] px-3 py-3 text-right">Diferença</th><th className="w-[15%] px-3 py-3 text-center">Status</th><th className="w-[6%] px-3 py-3"></th></tr>
@@ -2112,7 +2112,7 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
               </table>
             </div>
 
-            <div className="space-y-2 md:hidden">
+            <div className="space-y-2 lg:hidden">
               {objectiveBatches.map(batch => <button key={batch.id} type="button" onClick={() => setExpandedObjectiveBatch(current => current === batch.id ? null : batch.id)} className="w-full rounded-xl border border-gray-200 bg-white p-4 text-left dark:border-zinc-800 dark:bg-zinc-900"><div className="flex items-start justify-between gap-3"><div><p className="text-xs text-gray-500 dark:text-zinc-400">{batch.dataVenda}</p><p className="font-black text-gray-900 dark:text-white">{batch.modalidade}</p></div>{renderFormaStatusBadge(batch.status)}</div><div className="mt-3 grid grid-cols-3 gap-2 text-xs"><div><span className="block text-[10px] text-gray-400">PDV</span><strong>{batch.totalPdv.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div><div><span className="block text-[10px] text-gray-400">Adquirente</span><strong>{batch.totalRedeBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div><div><span className="block text-[10px] text-gray-400">Diferença</span><strong className={Math.abs(batch.diferencaBruta) <= 0.05 ? 'text-emerald-600' : 'text-red-600'}>{batch.diferencaBruta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div></div>{expandedObjectiveBatch === batch.id && <p className="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-600 dark:border-zinc-800 dark:text-zinc-300">{batch.diagnostico || 'Sem observações para este lote.'}</p>}</button>)}
               {objectiveBatches.length === 0 && <div className="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-500 dark:border-zinc-700 dark:text-zinc-400">Nenhum lançamento neste filtro.</div>}
             </div>
