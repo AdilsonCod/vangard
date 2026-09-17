@@ -379,6 +379,41 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    // Bloqueios e consentimentos são mantidos exclusivamente pelo backend.
+    match /message_global_blocklist/{documentId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /message_consent_events/{documentId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /message_contact_consents/{documentId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Políticas, contadores e reservas de frequência são atualizados somente
+    // pelo backend para que limites concorrentes não possam ser contornados.
+    match /message_dispatch_policies/{documentId} {
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create, update, delete: if false;
+    }
+
+    match /message_dispatch_quota_counters/{documentId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /message_contact_frequency/{documentId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /message_account_safety/{documentId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
     match /dispatch_audit/{documentId} {
       allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
       allow create, update, delete: if false;

@@ -31,6 +31,12 @@ export interface MessageCampaignDocument {
   payloadHash?: string;
   finishedAt?: string;
   legacyHistoryId?: string;
+  autoPaused?: boolean;
+  autoPauseReason?: string;
+  autoPausedAt?: string;
+  resumeAllowedAt?: string;
+  resumedAt?: string;
+  resumedBy?: string;
 }
 
 export interface MessageCampaignRecipientDocument {
@@ -53,6 +59,8 @@ export interface MessageCampaignRecipientDocument {
   updatedAt: string;
   processedAt?: string;
   lastError?: string;
+  policyReservedAt?: string;
+  contactNextAllowedAt?: string;
 }
 
 export interface MessageDeliveryAttemptDocument {

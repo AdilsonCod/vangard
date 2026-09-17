@@ -7,6 +7,10 @@ import {
   type MessageCampaignDocument,
   type MessageCampaignRecipientDocument,
 } from './src/services/messageCampaignSchema';
+import { MESSAGE_BLOCKLIST_COLLECTION, messageBlocklistId, normalizeMessageContact, type MessageBlocklistDocument } from './message-blocklist';
+import { MESSAGE_CONSENT_COLLECTION, messageConsentId, type MessageConsentDocument } from './message-consent';
+
+export { normalizeMessageContact } from './message-blocklist';
 
 export type CreateMessageCampaignInput = {
   requestIdempotencyKey: string;
@@ -39,12 +43,6 @@ type FirestoreLike = {
 };
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
-
-export function normalizeMessageContact(value: unknown) {
-  const digits = String(value || '').replace(/\D/g, '');
-  const withCountry = digits.length === 10 || digits.length === 11 ? `55${digits}` : digits;
-  return withCountry.length >= 12 && withCountry.length <= 13 ? withCountry : '';
-}
 
 export function planMessageCampaignCreation(input: CreateMessageCampaignInput): MessageCampaignCreationPlan {
   const requestKey = input.requestIdempotencyKey.trim();
@@ -134,12 +132,26 @@ export async function createMessageCampaignAtomically(db: FirestoreLike, input: 
       }
       return { campaign: data, recipientsCreated: 0, reused: true };
     }
-    transaction.create(campaignReference, plan.campaign);
+    const eligibleRecipients: MessageCampaignRecipientDocument[] = [];
     for (const recipient of plan.recipients) {
+      const blockReference = db.collection(MESSAGE_BLOCKLIST_COLLECTION).doc(messageBlocklistId(recipient.normalizedPhone));
+      const blocked = await transaction.get(blockReference);
+      if (blocked.exists && (blocked.data() as MessageBlocklistDocument).status === 'BLOCKED') continue;
+      const consentReference = db.collection(MESSAGE_CONSENT_COLLECTION).doc(messageConsentId(input.unitId, recipient.normalizedPhone));
+      const consentSnapshot = await transaction.get(consentReference);
+      if (!consentSnapshot.exists) throw new Error(`Consentimento válido ausente para ${recipient.maskedPhone}.`);
+      const consent = consentSnapshot.data() as MessageConsentDocument;
+      if (consent.status !== 'GRANTED' || !consent.origin || !consent.evidence || !Number.isFinite(Date.parse(consent.consentAt)) || Date.parse(consent.consentAt) > Date.parse(plan.campaign.createdAt)) throw new Error(`Consentimento válido ausente para ${recipient.maskedPhone}.`);
+      eligibleRecipients.push(recipient);
+    }
+    if (!eligibleRecipients.length) throw new Error('Todos os contatos informados estão na lista global não enviar.');
+    const campaign = { ...plan.campaign, totalRecipients: eligibleRecipients.length, pendingCount: eligibleRecipients.length };
+    transaction.create(campaignReference, campaign);
+    for (const recipient of eligibleRecipients) {
       const reference = db.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).doc(recipient.id);
       transaction.create(reference, recipient);
     }
-    return { campaign: plan.campaign, recipientsCreated: plan.recipients.length, reused: false };
+    return { campaign, recipientsCreated: eligibleRecipients.length, reused: false };
   });
 }
 

@@ -7,6 +7,7 @@ import { planMessageCampaignCreation } from '../message-campaign-creation';
 
 let app: App;
 let db: Firestore;
+let seededPhone = 0;
 
 before(() => {
   app = initializeApp({ projectId: 'vans-message-worker-test', credential: applicationDefault() }, 'message-worker-test');
@@ -16,7 +17,8 @@ before(() => {
 after(async () => deleteApp(app));
 
 async function seed(key: string, createdAt = '2026-09-16T12:00:00.000Z') {
-  const plan = planMessageCampaignCreation({ requestIdempotencyKey: key, unitId: 'unit-a', name: key, message: 'Olá', contacts: ['11999999999'], createdBy: 'admin', createdAt });
+  const phone = `11999${String(++seededPhone).padStart(6, '0')}`;
+  const plan = planMessageCampaignCreation({ requestIdempotencyKey: key, unitId: 'unit-a', name: key, message: 'Olá', contacts: [phone], createdBy: 'admin', createdAt });
   const batch = db.batch();
   batch.set(db.collection('message_campaigns').doc(plan.campaign.id), plan.campaign);
   plan.recipients.forEach(recipient => batch.set(db.collection('message_campaign_recipients').doc(recipient.id), recipient));

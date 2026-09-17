@@ -574,7 +574,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 48 — Substituir polling por eventos em tempo real
 
-- [ ] Publicar QR, conexão, progresso e alertas por SSE ou WebSocket com reconexão autenticada.
+- [x] Publicar QR, conexão, progresso e alertas por SSE ou WebSocket com reconexão autenticada.
 
 **Critérios de aprovação**
 
@@ -585,7 +585,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 49 — Criar lista global de bloqueio e opt-out
 
-- [ ] Implementar lista “não enviar”, palavras de saída e bloqueio imediato em todas as filas.
+- [x] Implementar lista “não enviar”, palavras de saída e bloqueio imediato em todas as filas.
 
 **Critérios de aprovação**
 
@@ -596,7 +596,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 50 — Aplicar consentimento e histórico de opt-in
 
-- [ ] Persistir origem, data, evidência e mudanças de consentimento por contato.
+- [x] Persistir origem, data, evidência e mudanças de consentimento por contato.
 
 **Critérios de aprovação**
 
@@ -607,7 +607,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 51 — Implementar limites, silêncio e deduplicação recente
 
-- [ ] Aplicar limites diário global, por unidade e conta, frequência por contato, campanhas sobrepostas e horário silencioso.
+- [x] Aplicar limites diário global, por unidade e conta, frequência por contato, campanhas sobrepostas e horário silencioso.
 
 **Critérios de aprovação**
 
@@ -618,7 +618,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 52 — Implementar aquecimento e pausa automática
 
-- [ ] Controlar taxa progressiva para contas novas e pausar campanhas com taxa elevada de falhas.
+- [x] Controlar taxa progressiva para contas novas e pausar campanhas com taxa elevada de falhas.
 
 **Critérios de aprovação**
 

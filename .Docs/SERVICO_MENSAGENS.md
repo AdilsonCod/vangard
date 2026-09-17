@@ -125,3 +125,47 @@ Antes de abrir um socket, cada instância precisa adquirir em `message_whatsapp_
 O envio também confirma a posse antes de retirar o próximo destinatário da fila. Se a renovação falhar ou o lock for perdido, o serviço encerra o socket local, interrompe o processamento e registra `SESSION_LOCK_LOST` na auditoria. Após falha completa de uma instância, outra pode assumir a unidade quando o lease expirar.
 
 O identificador combina o identificador da réplica com um UUID criado em tempo de execução, evitando que duas réplicas recebam acidentalmente a mesma identidade por configuração. Use `npm run test:message-session-lock` para validar exclusividade concorrente, renovação, fencing e recuperação.
+
+### Atualizações em tempo real
+
+O painel acompanha a sessão pelo endpoint SSE autenticado `GET /api/message-dispatch/events?unitId=<unidade>`. O serviço publica eventos de QR, conexão, progresso e alerta somente aos assinantes autorizados da mesma unidade. O polling periódico de estado foi removido.
+
+Cada evento possui um cursor crescente por unidade. O navegador envia `Last-Event-ID` ao reconectar e recebe imediatamente um snapshot completo do estado atual, evitando lacunas mesmo quando eventos ocorrerem durante a queda. Heartbeats mantêm o canal ativo através de proxies, e a interface tenta reconectar automaticamente após dois segundos.
+
+Use `npm run test:message-realtime` para validar autenticação, isolamento entre unidades, cursor/snapshot e remoção de assinantes desconectados.
+
+### Lista global não enviar e opt-out
+
+A coleção `message_global_blocklist` mantém o bloqueio global por hash determinístico do telefone. Contatos bloqueados são removidos da criação de novas campanhas, cancelados nas filas existentes e verificados novamente imediatamente antes do envio. Dessa forma, o bloqueio vale para todas as unidades e campanhas.
+
+Respostas diretas no WhatsApp contendo somente **SAIR**, **PARAR** ou **CANCELAR** — desconsiderando caixa, acentos, espaços e pontuação — acionam o bloqueio imediato. Cada bloqueio ou desbloqueio gera um registro imutável em `message_consent_events`; os eventos operacionais também são gravados em `dispatch_audit` sem expor o telefone integral.
+
+O backend oferece consulta e inclusão manual na lista. O desbloqueio é restrito ao perfil administrador e exige justificativa com pelo menos dez caracteres. Use `npm run test:message-blocklist` para validar variações das palavras, exclusão na criação, cancelamento imediato, concorrência com o worker e desbloqueio auditável.
+
+### Consentimento e histórico de opt-in
+
+O estado atual do consentimento é persistido em `message_contact_consents`, isolado pela combinação de unidade e telefone normalizado. Cada registro inclui base legal, origem, data, evidência, autor e situação atual. A criação da campanha recusa contatos sem consentimento concedido ou outra base legal válida; a lista global “não enviar” continua tendo precedência sobre qualquer autorização.
+
+Toda mudança produz um evento imutável em `message_consent_events`. O endpoint autenticado `GET /api/message-dispatch/consent-audit` recebe unidade, telefone e uma data opcional e reconstrói a situação vigente naquele instante a partir do histórico, sem depender apenas do estado atual.
+
+Na importação de contatos, o usuário pode mapear as colunas de telefone, origem, data e evidência do opt-in. Contatos que não possuem esses dados na planilha precisam usar a origem, data e evidência informadas no formulário antes que a campanha seja liberada.
+
+A rotina de retenção é executada na inicialização e diariamente. Após o período configurado em `MESSAGE_PHONE_RETENTION_DAYS` (730 dias por padrão), telefones antigos são anonimizados no histórico operacional, preservando estados, contadores e métricas agregadas. Use `npm run test:message-consent` para validar mapeamento, persistência, reconstrução histórica e retenção.
+
+### Limites, frequência e horário silencioso
+
+Antes de reivindicar um destinatário, o worker reserva atomicamente as cotas diária global, da unidade e da conta conectada. Os contadores ficam em `message_dispatch_quota_counters`; a reserva é registrada no próprio destinatário, portanto uma retentativa não consome a cota novamente. Transações concorrentes não conseguem ultrapassar os limites.
+
+`message_contact_frequency` mantém a última reserva e a próxima data permitida por contato e unidade. Uma campanha diferente para o mesmo contato aguarda o término dessa janela, evitando campanhas simultâneas ou repetição recente. O destinatário permanece `PENDENTE`, na posição original da fila.
+
+Por padrão, a política utiliza os limites global de 10.000, por unidade de 2.000 e por conta de 2.000 mensagens ao dia, intervalo de 24 horas por contato e horário silencioso das 22h às 8h no fuso `America/Sao_Paulo`. Administradores podem consultar e atualizar a configuração por unidade em `GET/PUT /api/message-dispatch/policy`.
+
+Quando uma restrição impede o envio, o SSE informa o motivo em português e o horário estimado de liberação. O painel mantém a campanha ativa, mostra o bloqueio e volta a tentar sem retirar ou reordenar destinatários. Use `npm run test:message-dispatch-limits` para validar concorrência, silêncio, frequência e idempotência das reservas.
+
+### Aquecimento e pausa automática de segurança
+
+Contas novas seguem uma curva persistente de aquecimento armazenada em `message_account_safety`. A configuração padrão libera 20, 50, 100, 250 e 500 envios diários, avançando de estágio a cada dois dias. A cota efetiva nunca ultrapassa o limite diário geral da conta. Os campos `warmupEnabled`, `warmupDailyLimits` e `warmupStageDays` podem ser configurados na política da unidade.
+
+Cada entrega definitiva alimenta uma janela móvel de resultados por conta. Por padrão, o sistema avalia os últimos 20 envios após uma amostra mínima de 10 e pausa a campanha quando as falhas alcançam 30%. A causa, tamanho da amostra, taxa, limiar e horário mínimo de retomada são persistidos na campanha e registrados em `dispatch_audit`.
+
+Ao pausar automaticamente, o serviço publica um alerta em tempo real e cria notificações para os administradores ativos. A retomada fica restrita a administradores e somente é aceita depois do cooldown configurado em `autoPauseCooldownMinutes`; responsável e horário ficam registrados de forma auditável. Use `npm run test:message-campaign-safety` para validar curva, janela móvel, pausa e retomada protegida.

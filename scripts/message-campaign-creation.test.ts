@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createMessageCampaignAtomically, planMessageCampaignCreation } from '../message-campaign-creation';
+import { messageConsentId } from '../message-consent';
 
 class FakeFirestore {
   documents = new Map<string, unknown>();
@@ -26,6 +27,7 @@ class FakeFirestore {
 }
 
 const input = { requestIdempotencyKey: 'request-1', unitId: 'unit-a', name: 'Retorno', message: 'Olá', contacts: ['11999999999', '(11) 99999-9999', 'inválido'], createdBy: 'admin', createdAt: '2026-09-16T12:00:00.000Z' };
+const seedConsent = (db: FakeFirestore) => db.documents.set(`message_contact_consents/${messageConsentId('unit-a', '5511999999999')}`, { status: 'GRANTED', origin: 'Cadastro', evidence: 'Formulário 1', consentAt: '2026-09-15T12:00:00.000Z' });
 
 test('planejamento deduplica contatos e gera IDs determinísticos', () => {
   const first = planMessageCampaignCreation(input);
@@ -44,22 +46,30 @@ test('lote parcialmente inválido mantém somente contatos válidos e lote total
 
 test('criação persiste campanha e destinatários uma única vez', async () => {
   const db = new FakeFirestore();
+  seedConsent(db);
   const first = await createMessageCampaignAtomically(db, input);
   const second = await createMessageCampaignAtomically(db, input);
   assert.equal(first.reused, false);
   assert.equal(second.reused, true);
-  assert.equal(db.documents.size, 2);
+  assert.equal(db.documents.size, 3);
 });
 
 test('a mesma chave rejeita conteúdo diferente', async () => {
   const db = new FakeFirestore();
+  seedConsent(db);
   await createMessageCampaignAtomically(db, input);
   await assert.rejects(() => createMessageCampaignAtomically(db, { ...input, message: 'Outra mensagem' }), /dados diferentes/);
 });
 
 test('falha parcial não deixa campanha nem destinatários persistidos', async () => {
   const db = new FakeFirestore();
+  seedConsent(db);
   db.failAfterCreates = 1;
   await assert.rejects(() => createMessageCampaignAtomically(db, input), /Falha simulada/);
-  assert.equal(db.documents.size, 0);
+  assert.equal(db.documents.size, 1);
+});
+
+test('campanha é rejeitada quando não há consentimento válido persistido', async () => {
+  const db = new FakeFirestore();
+  await assert.rejects(() => createMessageCampaignAtomically(db, input), /Consentimento válido ausente/);
 });

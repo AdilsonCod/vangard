@@ -14,6 +14,9 @@ const PRIVATE_COLLECTIONS = new Set([
   'message_campaigns', 'message_campaign_recipients', 'message_delivery_attempts',
   'message_campaign_media', 'message_dead_letters',
   'message_whatsapp_sessions', 'message_whatsapp_session_locks',
+  'message_contact_consents', 'message_consent_events',
+  'message_dispatch_policies', 'message_contact_frequency',
+  'message_account_safety',
 ]);
 const SUPPORT_COLLECTIONS = new Set(['users', 'systemUnits']);
 const applyChanges = process.argv.includes('--apply');

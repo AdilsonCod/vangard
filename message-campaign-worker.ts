@@ -1,5 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { MESSAGE_CAMPAIGN_COLLECTIONS, type MessageCampaignDocument, type MessageCampaignRecipientDocument, type MessageRecipientStatus } from './src/services/messageCampaignSchema';
+import { MESSAGE_BLOCKLIST_COLLECTION, messageBlocklistId, type MessageBlocklistDocument } from './message-blocklist';
+import { reserveMessageDispatchSlot } from './message-dispatch-limits';
 
 const ACTIVE_CAMPAIGN_STATUSES = new Set<MessageCampaignDocument['status']>(['NA_FILA', 'EM_PROCESSAMENTO']);
 const FINAL_RECIPIENT_STATUSES = new Set<MessageRecipientStatus>(['ENVIADO', 'ENTREGUE', 'LIDO', 'FALHOU', 'CANCELADO']);
@@ -10,6 +12,7 @@ export type ClaimRecipientOptions = {
   unitId: string;
   now?: Date;
   leaseMs?: number;
+  accountId?: string;
 };
 
 export type ClaimedMessageRecipient = MessageCampaignRecipientDocument & {
@@ -52,6 +55,13 @@ export async function claimNextMessageRecipient(db: Firestore, options: ClaimRec
       if (!campaignSnapshot.exists) return null;
       const campaign = campaignSnapshot.data() as MessageCampaignDocument;
       if (!recipientCanBeClaimed(recipient, campaign, now)) return null;
+      const blockReference = db.collection(MESSAGE_BLOCKLIST_COLLECTION).doc(messageBlocklistId(recipient.normalizedPhone));
+      const blockSnapshot = await transaction.get(blockReference);
+      if (blockSnapshot.exists && (blockSnapshot.data() as MessageBlocklistDocument).status === 'BLOCKED') {
+        transaction.update(reference, { status: 'CANCELADO', leaseOwner: null, leaseExpiresAt: null, nextAttemptAt: null, processedAt: now.toISOString(), updatedAt: now.toISOString(), lastError: 'Contato incluído na lista global não enviar.' });
+        return null;
+      }
+      const reservation = await reserveMessageDispatchSlot({ db, transaction, unitId: recipient.unitId, accountId: options.accountId || recipient.unitId, campaignId: recipient.campaignId, phone: recipient.normalizedPhone, now, alreadyReserved: Boolean(recipient.policyReservedAt) });
       const leaseExpiresAt = new Date(now.getTime() + leaseMs).toISOString();
       const updated: ClaimedMessageRecipient = {
         ...recipient,
@@ -60,6 +70,7 @@ export async function claimNextMessageRecipient(db: Firestore, options: ClaimRec
         leaseExpiresAt,
         attemptCount: recipient.attemptCount + 1,
         updatedAt: now.toISOString(),
+        ...(reservation ? { policyReservedAt: reservation.reservedAt, contactNextAllowedAt: reservation.nextAllowedAt } : {}),
       };
       transaction.update(reference, {
         status: updated.status,
@@ -67,6 +78,7 @@ export async function claimNextMessageRecipient(db: Firestore, options: ClaimRec
         leaseExpiresAt: updated.leaseExpiresAt,
         attemptCount: updated.attemptCount,
         updatedAt: updated.updatedAt,
+        ...(reservation ? { policyReservedAt: reservation.reservedAt, contactNextAllowedAt: reservation.nextAllowedAt } : {}),
       });
       if (campaign.status === 'NA_FILA') transaction.update(campaignReference, { status: 'EM_PROCESSAMENTO', updatedAt: now.toISOString() });
       return updated;

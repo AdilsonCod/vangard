@@ -52,7 +52,7 @@ before(async () => {
     await setDoc(doc(db, 'transactions', 'unit-a-transaction'), { unitId: 'unit-a', date: '2026-09-09', type: 'INCOME', status: 'RECEBIDO', amount: 100 });
     await setDoc(doc(db, 'marketing_campaigns', 'unit-a-campaign-seed'), { unitId: 'unit-a', name: 'Campanha A' });
     await setDoc(doc(db, 'message_contact_lists', 'unit-a-list-seed'), { unitId: 'unit-a', name: 'Lista A' });
-    for (const collectionName of ['message_campaigns', 'message_campaign_recipients', 'message_delivery_attempts', 'message_campaign_media', 'message_dead_letters', 'message_whatsapp_sessions', 'message_whatsapp_session_locks']) {
+    for (const collectionName of ['message_campaigns', 'message_campaign_recipients', 'message_delivery_attempts', 'message_campaign_media', 'message_dead_letters', 'message_whatsapp_sessions', 'message_whatsapp_session_locks', 'message_global_blocklist', 'message_consent_events', 'message_contact_consents', 'message_dispatch_policies', 'message_dispatch_quota_counters', 'message_contact_frequency', 'message_account_safety']) {
       await setDoc(doc(db, collectionName, 'unit-a-message-seed'), { unitId: 'unit-a', marker: collectionName });
     }
     await setDoc(doc(db, 'entries', 'barber-entry'), { unitId: 'unit-a', userId: 'barber', date: '2026-09-09' });
@@ -190,6 +190,10 @@ test('coleções de mensagens permitem Recepção e negam Barbeiro', async () =>
   }
   await assertFails(getDoc(doc(reception, 'message_whatsapp_session_locks', 'unit-a-message-seed')));
   await assertFails(setDoc(doc(reception, 'message_whatsapp_session_locks', 'client-write-denied'), { unitId: 'unit-a' }));
+  await assertFails(getDoc(doc(reception, 'message_global_blocklist', 'unit-a-message-seed')));
+  await assertFails(setDoc(doc(reception, 'message_global_blocklist', 'client-write-denied'), { unitId: 'unit-a' }));
+  await assertFails(getDoc(doc(reception, 'message_consent_events', 'unit-a-message-seed')));
+  await assertFails(getDoc(doc(reception, 'message_contact_consents', 'unit-a-message-seed')));
 });
 
 test('links inteligentes preservam resolução pública e restringem a gestão', async () => {
