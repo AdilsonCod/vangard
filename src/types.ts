@@ -286,6 +286,7 @@ export interface FinancialTransaction {
   sourceChannel?: 'CARD_MACHINE' | 'PIX_MACHINE' | 'DIRECT_PIX' | 'CASH' | 'SUBSCRIPTION_GATEWAY' | 'BANK' | 'VOUCHER' | 'COURTESY' | 'TIP' | 'OTHER';
   paymentMethod?: 'CREDIT' | 'DEBIT' | 'PIX' | 'CASH' | 'SUBSCRIPTION' | 'VOUCHER' | 'COURTESY' | 'TIP' | 'OTHER';
   movementNature?: 'REVENUE' | 'EXPENSE' | 'PASS_THROUGH' | 'INTERNAL_TRANSFER' | 'ADVANCE' | 'COMMERCIAL_DISCOUNT' | 'NON_FINANCIAL';
+  movementNatureId?: string;
   reconciliationStatus?: 'PENDING' | 'AWAITING_SETTLEMENT' | 'DIVERGENT' | 'RECONCILED' | 'NOT_APPLICABLE';
   sourceReference?: string;
   clientName?: string;
@@ -369,10 +370,18 @@ export interface FinClassification {
   id: string;
   name: string;
   type: 'INCOME' | 'EXPENSE';
+  movementNature?: FinancialTransaction['movementNature'];
+  movementNatureId?: string;
   bankName?: string;
   agency?: string;
   accountNumber?: string;
   pixKey?: string;
+}
+export interface FinMovementNature {
+  id: string;
+  name: string;
+  baseNature: NonNullable<FinancialTransaction['movementNature']>;
+  deleted?: boolean;
 }
 export interface FinSubclassification {
   id: string;

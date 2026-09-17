@@ -52,6 +52,9 @@ before(async () => {
     await setDoc(doc(db, 'transactions', 'unit-a-transaction'), { unitId: 'unit-a', date: '2026-09-09', type: 'INCOME', status: 'RECEBIDO', amount: 100 });
     await setDoc(doc(db, 'marketing_campaigns', 'unit-a-campaign-seed'), { unitId: 'unit-a', name: 'Campanha A' });
     await setDoc(doc(db, 'message_contact_lists', 'unit-a-list-seed'), { unitId: 'unit-a', name: 'Lista A' });
+    for (const collectionName of ['message_campaigns', 'message_campaign_recipients', 'message_delivery_attempts', 'message_campaign_media', 'message_dead_letters', 'message_whatsapp_sessions', 'message_whatsapp_session_locks']) {
+      await setDoc(doc(db, collectionName, 'unit-a-message-seed'), { unitId: 'unit-a', marker: collectionName });
+    }
     await setDoc(doc(db, 'entries', 'barber-entry'), { unitId: 'unit-a', userId: 'barber', date: '2026-09-09' });
     await setDoc(doc(db, 'entries', 'manicure-entry'), { unitId: 'unit-a', userId: 'manicure', date: '2026-09-09' });
     await setDoc(doc(db, 'notifications', 'admin-notification'), { userId: 'admin', title: 'Aviso da gerência', read: false });
@@ -181,6 +184,12 @@ test('coleções de mensagens permitem Recepção e negam Barbeiro', async () =>
   }
   await assertFails(setDoc(doc(reception, 'message_dispatch_history', 'server-only'), { unitId: 'unit-a' }));
   await assertFails(setDoc(doc(reception, 'dispatch_audit', 'server-only'), { unitId: 'unit-a' }));
+  for (const collectionName of ['message_campaigns', 'message_campaign_recipients', 'message_delivery_attempts', 'message_campaign_media', 'message_dead_letters', 'message_whatsapp_sessions']) {
+    await assertSucceeds(getDoc(doc(reception, collectionName, 'unit-a-message-seed')));
+    await assertFails(setDoc(doc(reception, collectionName, 'client-write-denied'), { unitId: 'unit-a' }));
+  }
+  await assertFails(getDoc(doc(reception, 'message_whatsapp_session_locks', 'unit-a-message-seed')));
+  await assertFails(setDoc(doc(reception, 'message_whatsapp_session_locks', 'client-write-denied'), { unitId: 'unit-a' }));
 });
 
 test('links inteligentes preservam resolução pública e restringem a gestão', async () => {
@@ -237,6 +246,9 @@ test('perfis da Unidade B não acessam documentos privados da Unidade A', async 
 
   await assertSucceeds(setDoc(doc(receptionA, 'message_contact_lists', 'unit-a-list'), { unitId: 'unit-a' }));
   await assertFails(getDoc(doc(receptionB, 'message_contact_lists', 'unit-a-list')));
+  for (const collectionName of ['message_campaigns', 'message_campaign_recipients', 'message_delivery_attempts', 'message_campaign_media', 'message_dead_letters', 'message_whatsapp_sessions', 'message_whatsapp_session_locks']) {
+    await assertFails(getDoc(doc(receptionB, collectionName, 'unit-a-message-seed')));
+  }
 });
 
 test('administrador mantém visão consolidada das unidades autorizadas globalmente', async () => {

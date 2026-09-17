@@ -19,6 +19,7 @@ import {
   FinancialCategory,
   Supplier,
   FinClassification,
+  FinMovementNature,
   FinSubclassification,
   FinancialPeriodEvent,
   FinancialAuditEvent,
@@ -92,6 +93,7 @@ interface AppState {
   financialCategories: FinancialCategory[];
   suppliers: Supplier[];
   finClassifications: FinClassification[];
+  finMovementNatures: FinMovementNature[];
   finSubclassifications: FinSubclassification[];
   financialAuditEvents: FinancialAuditEvent[];
   addTransaction: (t: FinancialTransaction) => Promise<void>;
@@ -106,6 +108,8 @@ interface AppState {
   deleteSupplier: (id: string) => Promise<void>;
   addFinClassification: (c: FinClassification) => Promise<void>;
   deleteFinClassification: (id: string) => Promise<void>;
+  saveFinMovementNature: (nature: FinMovementNature) => Promise<void>;
+  deleteFinMovementNature: (id: string) => Promise<void>;
   addFinSubclassification: (s: FinSubclassification) => Promise<void>;
   deleteFinSubclassification: (id: string) => Promise<void>;
   monthlyUnitStats: MonthlyUnitStats[];
@@ -252,6 +256,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   const [financialCategories, setFinancialCategories] = useState<FinancialCategory[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [finClassifications, setFinClassifications] = useState<FinClassification[]>([]);
+  const [finMovementNatures, setFinMovementNatures] = useState<FinMovementNature[]>([]);
   const [finSubclassifications, setFinSubclassifications] = useState<FinSubclassification[]>([]);
   const [financialAuditEvents, setFinancialAuditEvents] = useState<FinancialAuditEvent[]>([]);
   const [monthlyUnitStats, setMonthlyUnitStats] = useState<MonthlyUnitStats[]>([]);
@@ -268,6 +273,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     setTransactions([]);
     setCashClosings([]);
     setFinancialAuditEvents([]);
+    setFinMovementNatures([]);
     setMonthlyUnitStats([]);
     setMonthlyBarberStats([]);
     setTargets({});
@@ -486,6 +492,9 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     const unsubFinClassifications = canReadUnitOperation ? onSnapshot(collection(db, 'finClassifications'), snap => {
       setFinClassifications(snap.docs.map(d => withDocumentId<FinClassification>(d)));
     }) : noSubscription;
+    const unsubFinMovementNatures = canReadUnitOperation ? onSnapshot(collection(db, 'finMovementNatures'), snap => {
+      setFinMovementNatures(snap.docs.map(d => withDocumentId<FinMovementNature>(d)));
+    }) : noSubscription;
     const unsubFinSubclassifications = canReadUnitOperation ? onSnapshot(collection(db, 'finSubclassifications'), snap => {
       setFinSubclassifications(snap.docs.map(d => withDocumentId<FinSubclassification>(d)));
     }) : noSubscription;
@@ -515,6 +524,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       unsubFinancialCategories();
       unsubSuppliers();
       unsubFinClassifications();
+      unsubFinMovementNatures();
       unsubFinSubclassifications();
       unsubFinancialAudit();
     };
@@ -681,6 +691,12 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     };
     const deleteFinClassification = async (id: string) => {
       try { await deleteDoc(doc(db, 'finClassifications', id)); } catch (err) { console.error(err); }
+    };
+    const saveFinMovementNature = async (nature: FinMovementNature) => {
+      try { await setDoc(doc(db, 'finMovementNatures', nature.id), nature); } catch (err) { console.error(err); throw err; }
+    };
+    const deleteFinMovementNature = async (id: string) => {
+      try { await deleteDoc(doc(db, 'finMovementNatures', id)); } catch (err) { console.error(err); throw err; }
     };
     const addFinSubclassification = async (s: FinSubclassification) => {
       try { await setDoc(doc(db, 'finSubclassifications', s.id), s); } catch (err) { console.error(err); }
@@ -1007,8 +1023,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   return (
     <StoreContext.Provider value={{ 
       quarterlyRankingVisible, setQuarterlyRankingVisible,
-      financialCategories, suppliers, finClassifications, finSubclassifications, financialAuditEvents, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
-      login, logout, addUser, updateUser, attachUserAuthentication, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing, recordFinancialAudit, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
+      financialCategories, suppliers, finClassifications, finMovementNatures, finSubclassifications, financialAuditEvents, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
+      login, logout, addUser, updateUser, attachUserAuthentication, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing, recordFinancialAudit, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, saveFinMovementNature, deleteFinMovementNature, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
       updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, addNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, addAnnouncement, updateAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
       lightLogo, setLightLogo, darkLogo, setDarkLogo, isDarkMode, setIsDarkMode
     }}>

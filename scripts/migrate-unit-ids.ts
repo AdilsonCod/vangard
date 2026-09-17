@@ -11,6 +11,9 @@ const PRIVATE_COLLECTIONS = new Set([
   'dataImportJobs', 'reconciliation_reports', 'reports_manual_weeks', 'marketing_campaigns',
   'marketing_traffic', 'marketing_organic', 'social_posts', 'social_library', 'message_contact_lists',
   'message_dispatch_history', 'dispatch_audit', 'smart_links', 'smart_link_clicks',
+  'message_campaigns', 'message_campaign_recipients', 'message_delivery_attempts',
+  'message_campaign_media', 'message_dead_letters',
+  'message_whatsapp_sessions', 'message_whatsapp_session_locks',
 ]);
 const SUPPORT_COLLECTIONS = new Set(['users', 'systemUnits']);
 const applyChanges = process.argv.includes('--apply');

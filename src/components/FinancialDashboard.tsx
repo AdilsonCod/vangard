@@ -10,7 +10,7 @@ import {
   CheckCircle,
   Clock,
   Plus,
-  Trash2,
+  Trash2, Gift,
   Edit2, Filter, Activity, RotateCcw, ShieldCheck, AlertTriangle, Search
 } from 'lucide-react';
 import { 
@@ -27,7 +27,7 @@ import {
   Cell,
   ComposedChart, Line
 } from 'recharts';
-import { CashClosing, FinancialTransaction } from '../types';
+import { CashClosing, FinancialTransaction, FinMovementNature } from '../types';
 import { getLatestFinancialPeriod } from '../utils/financialPeriods';
 import { isValidFinancialAmountInput, parseFinancialAmount } from '../utils/financialAmount';
 import { AppBadge, AppEmptyState, AppPageHeader, appControlClass } from './ui/AppPrimitives';
@@ -99,6 +99,38 @@ const QUICK_OPERATION_PRESETS: { label: string; preset: Partial<FinancialTransac
   { label: 'Cortesia / aniversário', preset: { type: 'EXPENSE', sourceChannel: 'COURTESY', paymentMethod: 'COURTESY', movementNature: 'NON_FINANCIAL', reconciliationStatus: 'PENDING', status: 'PAGO', description: 'Cortesia ou vale de aniversário' } },
 ];
 
+function cashTransactionDisplay(transaction: FinancialTransaction) {
+  const nature = resolveMovementNature(transaction);
+  if (nature === 'COMMERCIAL_DISCOUNT' || nature === 'NON_FINANCIAL') {
+    return {
+      label: 'Cortesia / desconto',
+      sign: '',
+      icon: Gift,
+      iconClass: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
+      amountClass: 'text-amber-600 dark:text-amber-400',
+      summaryClass: 'bg-amber-50 dark:bg-amber-950/30',
+    };
+  }
+  if (transaction.type === 'INCOME') {
+    return {
+      label: 'Receita',
+      sign: '+',
+      icon: TrendingUp,
+      iconClass: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
+      amountClass: 'text-emerald-600 dark:text-emerald-500',
+      summaryClass: 'bg-emerald-50 dark:bg-emerald-950/30',
+    };
+  }
+  return {
+    label: 'Despesa',
+    sign: '-',
+    icon: TrendingDown,
+    iconClass: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+    amountClass: 'text-red-500 dark:text-red-400',
+    summaryClass: 'bg-red-50 dark:bg-red-950/30',
+  };
+}
+
 export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'DESPESAS' | 'CONCILIACAO_FINTECH' }) {
   const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, cashClosings, currentUser, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing } = useStore();
   const confirmAction = useConfirmation();
@@ -151,6 +183,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     message: string;
   } | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<FinancialTransaction | null>(null);
+  const selectedTransactionDisplay = selectedTransaction ? cashTransactionDisplay(selectedTransaction) : null;
   const [operationsPeriod, setOperationsPeriod] = useState<'DAY' | 'WEEK' | 'MONTH'>('WEEK');
   const [operationsDate, setOperationsDate] = useState(new Date().toISOString().slice(0, 10));
   const [operationsUnit, setOperationsUnit] = useState('ALL');
@@ -275,14 +308,29 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
   const [newCategoryAccount, setNewCategoryAccount] = useState('');
   const [newCategoryPix, setNewCategoryPix] = useState('');
 
-  const { financialCategories, addFinancialCategory, deleteFinancialCategory, suppliers, addSupplier, deleteSupplier, finClassifications, addFinClassification, deleteFinClassification, finSubclassifications, addFinSubclassification, deleteFinSubclassification } = useStore();
+  const { financialCategories, addFinancialCategory, deleteFinancialCategory, suppliers, addSupplier, deleteSupplier, finClassifications, addFinClassification, deleteFinClassification, finMovementNatures, saveFinMovementNature, deleteFinMovementNature, finSubclassifications, addFinSubclassification, deleteFinSubclassification } = useStore();
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   const [newClassName, setNewClassName] = useState('');
   const [newClassType, setNewClassType] = useState<'INCOME'|'EXPENSE'>('EXPENSE');
+  const [newClassNatureId, setNewClassNatureId] = useState('EXPENSE');
+  const [newNatureName, setNewNatureName] = useState('');
+  const [newNatureBase, setNewNatureBase] = useState<NonNullable<FinancialTransaction['movementNature']>>('EXPENSE');
   const [newSubclassName, setNewSubclassName] = useState('');
   const [selectedClassForSub, setSelectedClassForSub] = useState('');
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
+
+  const movementNatureChoices = useMemo(() => {
+    const choices: FinMovementNature[] = MOVEMENT_NATURE_OPTIONS.map(option => ({ id: option.value, name: option.label, baseNature: option.value }));
+    finMovementNatures.forEach(nature => {
+      const index = choices.findIndex(item => item.id === nature.id);
+      if (nature.deleted) {
+        if (index >= 0) choices.splice(index, 1);
+      } else if (index >= 0) choices[index] = nature;
+      else choices.push(nature);
+    });
+    return choices;
+  }, [finMovementNatures]);
 
   const handleAddRow = () => {
     setTransForms([...transForms, {
@@ -394,6 +442,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
           sourceChannel: transForm.sourceChannel || 'OTHER',
           paymentMethod: transForm.paymentMethod || 'OTHER',
           movementNature: transForm.movementNature || (transForm.type === 'INCOME' ? 'REVENUE' : 'EXPENSE'),
+          movementNatureId: transForm.movementNatureId || transForm.movementNature || (transForm.type === 'INCOME' ? 'REVENUE' : 'EXPENSE'),
           reconciliationStatus: transForm.reconciliationStatus || 'NOT_APPLICABLE',
           sourceReference: transForm.sourceReference || ''
         };
@@ -537,8 +586,82 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
 
   const handleAddClass = async () => {
     if (!newClassName.trim()) return;
-    await addFinClassification({ id: `class_${Date.now()}`, name: newClassName.trim(), type: newClassType });
+    const nature = movementNatureChoices.find(item => item.id === newClassNatureId);
+    await addFinClassification({
+      id: `class_${Date.now()}`,
+      name: newClassName.trim(),
+      type: newClassType,
+      movementNature: nature?.baseNature || (newClassType === 'INCOME' ? 'REVENUE' : 'EXPENSE'),
+      movementNatureId: nature?.id,
+    });
     setNewClassName('');
+  };
+  const handleAddMovementNature = async () => {
+    const name = newNatureName.trim();
+    if (!name) return;
+    await saveFinMovementNature({
+      id: `nature_${Date.now()}`,
+      name,
+      baseNature: newNatureBase,
+    });
+    setNewNatureName('');
+  };
+  const handleSaveMovementNature = async (nature: FinMovementNature) => {
+    const name = nature.name.trim();
+    if (!name) return;
+    const updatedNature = { ...nature, name };
+    await saveFinMovementNature(updatedNature);
+    await Promise.all(
+      finClassifications
+        .filter(classification => classification.movementNatureId === nature.id)
+        .map(classification => addFinClassification({
+          ...classification,
+          movementNature: updatedNature.baseNature,
+        }))
+    );
+  };
+  const handleDeleteMovementNature = async (nature: FinMovementNature) => {
+    const linkedClassifications = finClassifications.filter(classification => classification.movementNatureId === nature.id);
+    const remainingNatures = movementNatureChoices.filter(item => item.id !== nature.id);
+    if (remainingNatures.length === 0) {
+      setTransactionFeedback({
+        type: 'error',
+        message: 'Cadastre outra natureza antes de excluir a última opção disponível.',
+      });
+      return;
+    }
+    const isDefaultNature = MOVEMENT_NATURE_OPTIONS.some(option => option.value === nature.id);
+    if (await confirmAction({
+      title: 'Excluir natureza',
+      description: linkedClassifications.length > 0
+        ? `A natureza “${nature.name}” está vinculada a ${linkedClassifications.length} classificação(ões). Elas serão transferidas automaticamente. Deseja continuar?`
+        : `Deseja excluir a natureza “${nature.name}”?`,
+      confirmText: 'Excluir natureza',
+    })) {
+      try {
+        await Promise.all(linkedClassifications.map(classification => {
+          const fallback = remainingNatures.find(item => item.baseNature === nature.baseNature)
+            || remainingNatures.find(item => item.baseNature === (classification.type === 'INCOME' ? 'REVENUE' : 'EXPENSE'))
+            || remainingNatures[0];
+          return addFinClassification({
+            ...classification,
+            movementNatureId: fallback.id,
+            movementNature: fallback.baseNature,
+          });
+        }));
+        if (isDefaultNature) {
+          await saveFinMovementNature({ ...nature, deleted: true });
+        } else {
+          await deleteFinMovementNature(nature.id);
+        }
+        setTransactionFeedback({ type: 'success', message: `Natureza “${nature.name}” excluída com sucesso.` });
+      } catch (error) {
+        setTransactionFeedback({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'Não foi possível excluir a natureza.',
+        });
+      }
+    }
   };
   const handleAddSubclass = async () => {
     if (!newSubclassName.trim() || !selectedClassForSub) return;
@@ -586,7 +709,14 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
       filtered = filtered.filter(t => t.date && t.date.startsWith(monthStr));
     }
 
-    if (filterType !== 'ALL') filtered = filtered.filter(t => t.type === filterType);
+    if (filterType !== 'ALL') {
+      filtered = filtered.filter(transaction => {
+        if (transaction.type !== filterType) return false;
+        if (filterType !== 'EXPENSE') return true;
+        const nature = resolveMovementNature(transaction);
+        return nature !== 'COMMERCIAL_DISCOUNT' && nature !== 'NON_FINANCIAL';
+      });
+    }
     if (filterStatus !== 'ALL') filtered = filtered.filter(t => t.status === filterStatus);
     if (filterAccount !== 'ALL') filtered = filtered.filter(t => t.category === filterAccount);
     if (filterUnit !== 'ALL') filtered = filtered.filter(t => t.unitId === filterUnit);
@@ -1659,7 +1789,10 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
             </div>
           )}
            <div className="flex-1 space-y-2 overflow-y-auto p-3 sm:p-4 app-scrollbar">
-             {(caixaTransactions || []).map(t => (
+             {(caixaTransactions || []).map(t => {
+               const display = cashTransactionDisplay(t);
+               const TransactionIcon = display.icon;
+               return (
                <div
                  key={t.id}
                  role="button"
@@ -1675,8 +1808,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                   className="flex cursor-pointer flex-col items-start justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-3 transition-all hover:-translate-y-px hover:border-[var(--theme-color)]/35 hover:bg-[var(--theme-color)]/[0.035] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--theme-color)] dark:border-zinc-800/80 dark:bg-white/[0.025] dark:hover:border-[var(--theme-color)]/40 dark:hover:bg-[var(--theme-color)]/[0.055] sm:flex-row sm:items-center"
                >
                   <div className="flex gap-3 items-center w-full sm:w-auto min-w-0">
-                    <div className={`p-2.5 rounded-lg ${t.type === 'INCOME' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'}`}>
-                      {t.type === 'INCOME' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                    <div className={`p-2.5 rounded-lg ${display.iconClass}`}>
+                      <TransactionIcon className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
                       <h4 className="font-bold text-sm text-gray-900 dark:text-white flex flex-wrap items-center gap-1.5">
@@ -1709,8 +1842,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                   </div>
                   <div className="flex items-center justify-between w-full sm:w-auto gap-4">
                      <div className="text-left sm:text-right">
-                       <p className={`font-black text-base ${t.type === 'INCOME' ? 'text-emerald-600 dark:text-emerald-500' : 'text-red-500'}`}>
-                         {t.type === 'INCOME' ? '+' : '-'}{t.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                       <p className={`font-black text-base ${display.amountClass}`}>
+                         {display.sign}{t.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                        </p>
                        <p className={`text-xs font-bold uppercase tracking-wider ${t.status === 'PENDENTE' ? 'text-amber-500' : t.status === 'AGENDADO' ? 'text-blue-500' : 'text-emerald-500'}`}>
                          {t.status}
@@ -1740,7 +1873,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                      </div>
                   </div>
                </div>
-             ))}
+               );
+             })}
              
   
               {caixaTransactions.length === 0 && (
@@ -1790,20 +1924,12 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
             </div>
 
             <div className="space-y-5 p-5">
-              <div className={`rounded-xl p-4 ${
-                selectedTransaction.type === 'INCOME'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/30'
-                  : 'bg-red-50 dark:bg-red-950/30'
-              }`}>
+              <div className={`rounded-xl p-4 ${selectedTransactionDisplay?.summaryClass}`}>
                 <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">
-                  {selectedTransaction.type === 'INCOME' ? 'Receita' : 'Despesa'}
+                  {selectedTransactionDisplay?.label}
                 </p>
-                <p className={`mt-1 text-3xl font-black ${
-                  selectedTransaction.type === 'INCOME'
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-red-600 dark:text-red-400'
-                }`}>
-                  {selectedTransaction.type === 'INCOME' ? '+' : '-'}
+                <p className={`mt-1 text-3xl font-black ${selectedTransactionDisplay?.amountClass}`}>
+                  {selectedTransactionDisplay?.sign}
                   {selectedTransaction.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </p>
                 <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-black uppercase ${
@@ -2074,6 +2200,9 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                               const newForms = [...transForms];
                               newForms[index].type = e.target.value as 'INCOME' | 'EXPENSE';
                               newForms[index].movementNature = e.target.value === 'INCOME' ? 'REVENUE' : 'EXPENSE';
+                              newForms[index].movementNatureId = e.target.value === 'INCOME' ? 'REVENUE' : 'EXPENSE';
+                              newForms[index].classification = '';
+                              newForms[index].subclassification = '';
                               setTransForms(newForms);
                            }}
                            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2.5 font-bold text-sm"
@@ -2163,16 +2292,24 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                         <div className="md:col-span-2">
                           <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Natureza do movimento</label>
                           <select
-                            value={form.movementNature || (form.type === 'INCOME' ? 'REVENUE' : 'EXPENSE')}
+                            value={form.movementNatureId || form.movementNature || (form.type === 'INCOME' ? 'REVENUE' : 'EXPENSE')}
                             onChange={event => {
                               const newForms = [...transForms];
-                              newForms[index].movementNature = event.target.value as FinancialTransaction['movementNature'];
+                              const nature = movementNatureChoices.find(item => item.id === event.target.value);
+                              newForms[index].movementNatureId = nature?.id;
+                              newForms[index].movementNature = nature?.baseNature;
                               setTransForms(newForms);
                             }}
                             className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2.5 text-sm"
+                            disabled={Boolean(form.classification)}
                           >
-                            {MOVEMENT_NATURE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            {movementNatureChoices.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
                           </select>
+                          {form.classification && (
+                            <p className="mt-1 text-[10px] font-semibold text-gray-400 dark:text-zinc-500">
+                              Gerenciada pela classificação selecionada.
+                            </p>
+                          )}
                         </div>
 
                         <div className="md:col-span-2">
@@ -2346,6 +2483,12 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                               const newForms = [...transForms];
                               newForms[index].classification = e.target.value;
                               newForms[index].subclassification = ''; // reset subclass
+                              const classification = finClassifications.find(item => item.id === e.target.value);
+                              newForms[index].movementNature = classification?.movementNature
+                                || (newForms[index].type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
+                              newForms[index].movementNatureId = classification?.movementNatureId
+                                || classification?.movementNature
+                                || (newForms[index].type === 'INCOME' ? 'REVENUE' : 'EXPENSE');
                               setTransForms(newForms);
                             }}
                             className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2.5 text-sm"
@@ -2427,29 +2570,72 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
       {/* CLASSIFICATIONS MODAL */}
       {isClassModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
+           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
               <div className="p-5 border-b border-gray-200 dark:border-zinc-800 flex justify-between items-center bg-gray-50/50 dark:bg-zinc-800/30">
                  <h2 className="text-lg font-black text-gray-900 dark:text-white">Gerenciar Classificações</h2>
                  <button onClick={() => setIsClassModalOpen(false)} className="p-2 hover:bg-gray-200 dark:hover:bg-zinc-700 rounded-full text-gray-500">
                     ✕
                  </button>
               </div>
-              <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6 h-[50vh] overflow-y-auto">
+              <div className="border-b border-gray-200 p-5 dark:border-zinc-800">
+                <h3 className="mb-3 font-bold text-sm text-gray-500">Naturezas financeiras</h3>
+                <div className="grid gap-2 sm:grid-cols-[1fr_220px_auto]">
+                  <input type="text" placeholder="Nome da nova natureza" value={newNatureName} onChange={event => setNewNatureName(event.target.value)} className="rounded-lg border border-gray-200 bg-white p-2 text-sm dark:border-zinc-700 dark:bg-zinc-950" />
+                  <select value={newNatureBase} onChange={event => setNewNatureBase(event.target.value as NonNullable<FinancialTransaction['movementNature']>)} className="rounded-lg border border-gray-200 bg-white p-2 text-sm font-bold dark:border-zinc-700 dark:bg-zinc-950">
+                    {MOVEMENT_NATURE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                  <button onClick={handleAddMovementNature} className="rounded-lg bg-[var(--theme-color)] px-4 py-2 text-sm font-bold text-white">Cadastrar</button>
+                </div>
+                <p className="mt-3 text-xs text-gray-500 dark:text-zinc-400">Edite o nome e o comportamento de qualquer natureza. As alterações são salvas ao sair do campo.</p>
+                {movementNatureChoices.length > 0 && (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {movementNatureChoices.map(nature => (
+                      <div key={nature.id} className="flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 p-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+                        <input
+                          key={`${nature.id}:${nature.name}`}
+                          aria-label={`Nome da natureza ${nature.name}`}
+                          defaultValue={nature.name}
+                          onBlur={event => {
+                            const name = event.target.value.trim();
+                            if (name && name !== nature.name) void handleSaveMovementNature({ ...nature, name });
+                            else event.target.value = nature.name;
+                          }}
+                          className="min-w-0 flex-1 rounded border border-gray-200 bg-white p-1.5 text-sm font-bold dark:border-zinc-700 dark:bg-zinc-900"
+                        />
+                        <select value={nature.baseNature} onChange={event => void handleSaveMovementNature({ ...nature, baseNature: event.target.value as NonNullable<FinancialTransaction['movementNature']> })} className="max-w-44 rounded border border-gray-200 bg-white p-1 text-xs dark:border-zinc-700 dark:bg-zinc-900">
+                          {MOVEMENT_NATURE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                        <button
+                          aria-label={`Excluir natureza ${nature.name}`}
+                          title="Excluir natureza"
+                          onClick={() => void handleDeleteMovementNature(nature)}
+                          className="rounded p-1 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30"
+                        ><Trash2 className="h-4 w-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto">
                 
                 {/* CLASSIFICATIONS */}
                 <div className="space-y-4 border-r border-gray-100 dark:border-zinc-800 pr-6">
                   <h3 className="font-bold text-sm text-gray-500">Classificação Principal</h3>
-                  <div className="flex gap-2">
-                     <select value={newClassType} onChange={e => setNewClassType(e.target.value as 'INCOME'|'EXPENSE')} className="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm font-bold">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[90px_1fr_auto]">
+                     <select value={newClassType} onChange={e => { const type = e.target.value as 'INCOME'|'EXPENSE'; setNewClassType(type); setNewClassNatureId(type === 'INCOME' ? 'REVENUE' : 'EXPENSE'); }} className="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm font-bold">
                        <option value="EXPENSE">Desp</option>
                        <option value="INCOME">Rec</option>
                      </select>
                      <input type="text" placeholder="Nome..." value={newClassName} onChange={e => setNewClassName(e.target.value)} className="flex-1 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm" />
                      <button onClick={handleAddClass} className="bg-blue-500 text-white px-3 py-2 rounded-lg font-bold">+</button>
                   </div>
+                  <select value={newClassNatureId} onChange={event => setNewClassNatureId(event.target.value)} className="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm font-bold">
+                    {movementNatureChoices.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+                  </select>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
                     {(finClassifications || []).map(c => (
-                      <div key={c.id} className="flex items-center justify-between p-2 border border-gray-100 dark:border-zinc-800 rounded-lg bg-gray-50 dark:bg-zinc-900/50 cursor-pointer hover:border-blue-300" onClick={() => setSelectedClassForSub(c.id)}>
+                      <div key={c.id} className="flex flex-col gap-2 p-2 border border-gray-100 dark:border-zinc-800 rounded-lg bg-gray-50 dark:bg-zinc-900/50 cursor-pointer hover:border-blue-300" onClick={() => setSelectedClassForSub(c.id)}>
+                        <div className="flex items-center justify-between gap-2">
                         <div>
                           <span className={`font-bold text-sm ${selectedClassForSub === c.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-zinc-100'}`}>{c.name}</span>
                           <span className={`ml-2 text-[9px] px-1.5 py-0.5 rounded uppercase ${c.type === 'INCOME' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{c.type === 'INCOME' ? 'Rec' : 'Desp'}</span>
@@ -2457,6 +2643,20 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
                         <button onClick={async (e) => { e.stopPropagation(); if (await confirmAction({ title: 'Excluir classificação', description: `Deseja excluir a classificação “${c.name}”?`, confirmText: 'Excluir classificação' })) await deleteFinClassification(c.id); }} className="text-red-500 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">
                           <Trash2 className="w-4 h-4" />
                         </button>
+                        </div>
+                        <select
+                          aria-label={`Natureza de ${c.name}`}
+                          value={c.movementNatureId || c.movementNature || (c.type === 'INCOME' ? 'REVENUE' : 'EXPENSE')}
+                          onClick={event => event.stopPropagation()}
+                          onChange={event => {
+                            event.stopPropagation();
+                            const nature = movementNatureChoices.find(item => item.id === event.target.value);
+                            void addFinClassification({ ...c, movementNatureId: nature?.id, movementNature: nature?.baseNature });
+                          }}
+                          className="w-full rounded-lg border border-gray-200 bg-white p-1.5 text-xs font-semibold dark:border-zinc-700 dark:bg-zinc-950"
+                        >
+                          {movementNatureChoices.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+                        </select>
                       </div>
                     ))}
                   </div>

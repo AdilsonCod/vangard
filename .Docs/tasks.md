@@ -479,3 +479,249 @@ As tarefas abaixo tratam as lacunas encontradas na auditoria técnica posterior 
 - A versão local, o commit remoto e o deploy são rastreáveis.
 
 **Consolidação local em 12/09/2026:** revalidações das tarefas 36–38 versionadas, inicialização Windows revisada e suítes críticas aprovadas. A produção e o remoto continuam na versão anterior. Evidências e estado de publicação na [revalidação da tarefa 39](./TAREFA_39_REVALIDACAO.md).
+
+## Fase 8 — Campanhas persistentes e WhatsApp escalável
+
+As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e mensagens](./PRD_DISPARO_MENSAGENS.md). A ordem abaixo segue as dependências técnicas e a priorização definida no anexo.
+
+### Tarefa 40 — Versionar o modelo persistente de campanhas
+
+- [x] Definir e migrar os documentos de campanha, destinatário, tentativa, mídia e fila de erros, todos vinculados à unidade e com timestamps de auditoria.
+
+**Critérios de aprovação**
+
+- O schema contempla todos os estados definidos no anexo e possui versão explícita.
+- Cada destinatário possui campanha, unidade, contato normalizado, estado e chave de idempotência.
+- A migração é repetível, possui simulação e não altera campanhas históricas indevidamente.
+- Regras do Firestore e testes do Emulator negam acesso entre unidades.
+
+### Tarefa 41 — Criar campanhas e destinatários de forma atômica
+
+- [x] Substituir a fila em memória pela criação persistente da campanha e dos destinatários deduplicados.
+
+**Critérios de aprovação**
+
+- Falha parcial não deixa campanha liberada com destinatários incompletos.
+- Duplicatas dentro da mesma campanha produzem um único destinatário.
+- A mesma requisição repetida não cria outra campanha nem outro envio.
+- Testes cobrem sucesso, repetição, lote parcialmente inválido e falha de persistência.
+
+### Tarefa 42 — Implementar worker com lease e bloqueio distribuído
+
+- [x] Criar worker assíncrono que reivindica atomicamente o próximo destinatário elegível e renova um lease durante o processamento.
+
+**Critérios de aprovação**
+
+- Duas instâncias concorrentes não processam o mesmo destinatário.
+- Lease expirado pode ser recuperado por outra instância.
+- Itens enviados, cancelados ou bloqueados nunca voltam à fila.
+- Teste concorrente comprova exatamente um processamento por chave de idempotência.
+
+### Tarefa 43 — Retomar campanhas após reinício
+
+- [x] Recuperar itens `PROCESSANDO` com lease vencido e continuar itens `PENDENTE` ao iniciar o serviço.
+
+**Critérios de aprovação**
+
+- Reinício forçado no meio de uma campanha não perde a fila.
+- Destinatários já concluídos não são reenviados.
+- Progresso e totais são reconstruídos a partir do banco, não da memória.
+- Teste de integração encerra e reinicia o worker durante uma campanha e aprova a contagem exata.
+
+### Tarefa 44 — Implementar retentativas e fila de erros
+
+- [x] Classificar falhas transitórias e definitivas, aplicar backoff exponencial e encaminhar falhas esgotadas à fila de erros.
+
+**Critérios de aprovação**
+
+- Falhas transitórias realizam no máximo três tentativas com intervalos progressivos.
+- Falhas definitivas não são repetidas sem ação manual.
+- A fila de erros registra tentativa, causa, destinatário mascarado e ação de reprocessamento auditada.
+- Testes usam relógio controlado e cobrem sucesso após retentativa e esgotamento.
+
+### Tarefa 45 — Separar sessões WhatsApp por unidade
+
+- [x] Substituir o socket global por um gerenciador de sessões independentes por unidade ou número.
+
+**Critérios de aprovação**
+
+- Duas unidades conectam contas distintas sem compartilhar credenciais ou estado.
+- Credenciais permanecem criptografadas e separadas por identificador de sessão.
+- Uma sessão indisponível não interrompe campanhas de outra unidade.
+- Testes simulam duas sessões simultâneas e tentativa de acesso cruzado.
+
+### Tarefa 46 — Completar o ciclo de vida das conexões
+
+- [x] Persistir metadados da conta e implementar conectar, reconectar, desconectar e gerar novo QR.
+
+**Critérios de aprovação**
+
+- Painel mostra número, nome, última conexão, expiração do QR e motivo real da desconexão.
+- QR possui contagem regressiva e não pode ser usado depois de expirar.
+- Ações exigem autorização da unidade e produzem auditoria.
+- Desconexão intencional e queda anormal apresentam estados distintos.
+
+### Tarefa 47 — Proteger sessões com lock distribuído
+
+- [x] Impedir que duas instâncias do Railway mantenham a mesma sessão WhatsApp simultaneamente.
+
+**Critérios de aprovação**
+
+- Somente o proprietário do lock abre ou usa o socket.
+- Lock possui lease, renovação e recuperação após falha da instância.
+- Perda do lock encerra o socket local antes de outro envio.
+- Teste com duas instâncias simuladas comprova exclusividade e recuperação.
+
+### Tarefa 48 — Substituir polling por eventos em tempo real
+
+- [ ] Publicar QR, conexão, progresso e alertas por SSE ou WebSocket com reconexão autenticada.
+
+**Critérios de aprovação**
+
+- O polling de 1,5 segundo é removido do frontend.
+- Eventos são filtrados pela unidade autorizada do assinante.
+- Reconexão usa cursor ou snapshot para não perder o estado atual.
+- Testes cobrem autenticação, isolamento, queda e reconexão do canal.
+
+### Tarefa 49 — Criar lista global de bloqueio e opt-out
+
+- [ ] Implementar lista “não enviar”, palavras de saída e bloqueio imediato em todas as filas.
+
+**Critérios de aprovação**
+
+- Contato bloqueado não entra nem permanece como elegível em campanha alguma.
+- SAIR, PARAR e CANCELAR geram bloqueio e evento de consentimento auditável.
+- Desbloqueio exige permissão e justificativa.
+- Testes cobrem variações de caixa, acentos, espaços e corrida entre bloqueio e worker.
+
+### Tarefa 50 — Aplicar consentimento e histórico de opt-in
+
+- [ ] Persistir origem, data, evidência e mudanças de consentimento por contato.
+
+**Critérios de aprovação**
+
+- Campanha não é liberada sem consentimento válido ou base legal configurada.
+- Toda alteração gera evento imutável com autor e unidade.
+- Importação permite mapear origem e data do opt-in.
+- Relatório de auditoria reconstrói a situação do consentimento em qualquer data.
+
+### Tarefa 51 — Implementar limites, silêncio e deduplicação recente
+
+- [ ] Aplicar limites diário global, por unidade e conta, frequência por contato, campanhas sobrepostas e horário silencioso.
+
+**Critérios de aprovação**
+
+- Reservas concorrentes não ultrapassam os limites configurados.
+- Mesmo contato não participa de campanhas simultâneas ou recentes fora da política.
+- Horário silencioso pausa a elegibilidade sem alterar a ordem da fila.
+- Painel explica em português cada bloqueio e o horário estimado de liberação.
+
+### Tarefa 52 — Implementar aquecimento e pausa automática
+
+- [ ] Controlar taxa progressiva para contas novas e pausar campanhas com taxa elevada de falhas.
+
+**Critérios de aprovação**
+
+- Curva de aquecimento é configurável, persistente e limitada por conta.
+- Janela móvel de falhas pausa a campanha ao atingir o limiar.
+- Administradores recebem alerta com causa e métricas.
+- Retomada exige condição segura e fica registrada na auditoria.
+
+### Tarefa 53 — Adicionar confirmação de alto volume e envio de teste
+
+- [ ] Exigir texto de confirmação para alto volume e permitir teste individual antes da liberação.
+
+**Critérios de aprovação**
+
+- A campanha não inicia se o texto não corresponder ao desafio exibido.
+- Envio de teste usa conteúdo e mídia finais sem liberar os demais destinatários.
+- Resultado do teste fica vinculado à campanha.
+- Testes cobrem confirmação incorreta, expirada, correta e teste com falha.
+
+### Tarefa 54 — Importar contatos com mapeamento de colunas
+
+- [ ] Aceitar CSV, XLSX, XLS e ODS, oferecendo mapeamento de nome, telefone, consentimento e variáveis.
+
+**Critérios de aprovação**
+
+- Formato e tamanho são validados antes do processamento.
+- Usuário pode corrigir o mapeamento detectado automaticamente.
+- Números inválidos e duplicados são apresentados antes da confirmação.
+- Testes cobrem os quatro formatos, cabeçalhos variados, arquivo vazio, malformado e duplicatas.
+
+### Tarefa 55 — Criar busca de clientes e segmentos reutilizáveis
+
+- [ ] Permitir adicionar clientes da base e salvar segmentos por filtros autorizados.
+
+**Critérios de aprovação**
+
+- Busca respeita unidade, paginação e mascaramento de telefone.
+- Segmento pode ser reutilizado sem duplicar contatos na campanha.
+- Mudança na base possui política explícita de segmento dinâmico ou snapshot.
+- Usuário de uma unidade não descobre clientes de outra.
+
+### Tarefa 56 — Implementar rascunhos, modelos e personalização
+
+- [ ] Persistir mensagens, criar biblioteca de modelos e materializar tags por destinatário.
+
+**Critérios de aprovação**
+
+- Rascunho pode ser salvo, recarregado e editado após nova sessão.
+- Tags de primeiro nome, segundo nome e variáveis personalizadas têm fallback seguro.
+- Pré-visualização usa um contato real selecionado sem alterar a campanha.
+- Mensagem materializada fica registrada por destinatário para auditoria e retomada.
+
+### Tarefa 57 — Adicionar imagens, vídeos e legendas
+
+- [ ] Permitir múltiplas mídias privadas com pré-visualização, ordem e legenda individual.
+
+**Critérios de aprovação**
+
+- Frontend e backend validam extensão, MIME, assinatura e limite de tamanho.
+- Upload inválido não cria referência órfã; remoção limpa o arquivo conforme a política.
+- Worker retoma mídia após reinício sem depender de arquivo local temporário.
+- Testes cobrem imagem, vídeo, múltiplos anexos, arquivo disfarçado e excesso de tamanho.
+
+### Tarefa 58 — Implementar agendamento, recorrência e aprovação
+
+- [ ] Adicionar início futuro, recorrência, duplicação de campanha e aprovação por outro administrador.
+
+**Critérios de aprovação**
+
+- Datas usam timezone da unidade e mantêm execução correta em mudança de horário.
+- Aprovador não pode ser o mesmo criador quando a política exigir dupla aprovação.
+- Duplicação não reutiliza IDs, estados ou chaves de idempotência.
+- Cancelamento é livre até o primeiro envio e auditado depois do processamento iniciado.
+
+### Tarefa 59 — Aplicar retenção, mascaramento e permissões granulares
+
+- [ ] Implementar retenção de telefones e permissões separadas para criar, aprovar e executar.
+
+**Critérios de aprovação**
+
+- Logs comuns nunca exibem telefone completo.
+- Job de retenção anonimiza ou exclui dados vencidos sem quebrar métricas agregadas.
+- Matriz de permissões é aplicada na interface, API e banco.
+- Testes comprovam negação de elevação e acesso cruzado.
+
+### Tarefa 60 — Criar métricas, alertas e relatórios completos
+
+- [ ] Consolidar painel de desempenho, comparação de campanhas, alertas e exportações XLSX, CSV e PDF.
+
+**Critérios de aprovação**
+
+- Métricas incluem enviados, entregues, lidos, respondidos, falhas e tempo médio.
+- Distribuição de falhas e estimativa de término usam dados persistidos.
+- Alertas cobrem desconexão anormal, bloqueio de conta e campanha interrompida.
+- Exportações respeitam filtros, unidade, mascaramento e contêm resumo e destinatários.
+
+### Tarefa 61 — Validar Railway, observabilidade e release
+
+- [ ] Executar testes de reinício, concorrência e carga, publicar a versão e validar observabilidade.
+
+**Critérios de aprovação**
+
+- Health check expõe versão e hash do commit sem segredo.
+- Reinício programado avisa usuários, drena o worker e retoma a fila.
+- Teste com duas instâncias, reinício forçado e campanha ativa termina sem perda ou duplicidade.
+- Typecheck, lint, build, testes unitários, integração e smoke tests de produção são aprovados.

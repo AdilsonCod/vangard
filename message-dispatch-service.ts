@@ -2,172 +2,87 @@ import type express from 'express';
 import { DisconnectReason, makeWASocket } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
-import { authenticatedUser } from './server-auth';
+import { authenticatedUser, type VerifiedFirebaseUser } from './server-auth';
 import { adminDb } from './server-firebase-admin';
 import { clearEncryptedAuthState, useEncryptedAuthState } from './message-auth-store';
 import { authorizeDispatchUnit, safeInterruptionReason, waitForCampaignReady } from './message-dispatch-policy';
-import type { VerifiedFirebaseUser } from './server-auth';
+import { createMessageCampaign, findMessageCampaignByRequest, type CreateMessageCampaignInput } from './message-campaign-creation';
+import { MESSAGE_CAMPAIGN_COLLECTIONS, type MessageCampaignDocument, type MessageCampaignRecipientDocument } from './src/services/messageCampaignSchema';
+import { claimNextMessageRecipient, finalizeMessageRecipient, renewMessageRecipientLease, withMessageLeaseRenewal } from './message-campaign-worker';
+import { recoverActiveMessageCampaigns, recoverMessageCampaign } from './message-campaign-recovery';
+import { handleMessageRecipientFailure } from './message-campaign-retry';
+import { UnitSessionRegistry, whatsappSessionVaultPath } from './message-session-scope';
+import { messageDisconnectReason, messageQrExpiresAt } from './message-session-lifecycle';
+import { acquireMessageSessionLock, releaseMessageSessionLock, renewMessageSessionLock } from './message-session-lock';
 
-type DispatchLog = { id:string; time:string; text:string; type:'info'|'success'|'warning' };
-type DispatchError = { contact:string; error:string };
-type DispatchState = {
-  enabled:boolean; connectionStatus:'disconnected'|'connecting'|'qr'|'connected'; currentQr:string; isSending:boolean;
-  progress:number; total:number; currentAction:string; logs:DispatchLog[]; campaignStatus:'idle'|'running'|'paused'|'completed'|'stopped';
-  successCount:number; errorCount:number; errorDetails:DispatchError[]; runId:string; activeUnitId:string; lastError:string; requiresNewQr:boolean;
-};
+type Log={id:string;time:string;text:string;type:'info'|'success'|'warning'};
+type Delivery={contact:string;status:'AGUARDANDO'|'ENVIADO'|'FALHA';processedAt?:string;error?:string};
+type State={enabled:boolean;connectionStatus:'disconnected'|'connecting'|'qr'|'connected';currentQr:string;qrExpiresAt:string|null;accountPhone:string;accountName:string;lastConnectedAt:string|null;disconnectReason:string;disconnectKind:'none'|'intentional'|'abnormal'|'expired';isSending:boolean;progress:number;total:number;currentAction:string;logs:Log[];campaignStatus:'idle'|'running'|'paused'|'completed'|'stopped';successCount:number;errorCount:number;errorDetails:{contact:string;error:string}[];deliveryDetails:Delivery[];runId:string;activeUnitId:string;lastError:string;requiresNewQr:boolean};
+type Session={unitId:string;state:State;socket:ReturnType<typeof makeWASocket>|null;connecting:boolean;generation:number;workerActive:boolean;intentionalDisconnect:boolean;qrTimer:ReturnType<typeof setTimeout>|null;lockTimer:ReturnType<typeof setInterval>|null;lockToken:number|null;actor?:VerifiedFirebaseUser};
 
-const AUTH_VAULT=process.env.WHATSAPP_AUTH_VAULT||'data/whatsapp/session.enc';
+const BASE_VAULT=process.env.WHATSAPP_AUTH_VAULT||'data/whatsapp/session.enc';
 const MAX_CONTACTS=200;
-const state:DispatchState={enabled:true,connectionStatus:'disconnected',currentQr:'',isSending:false,progress:0,total:0,currentAction:'Aguardando conexão.',logs:[],campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],runId:'',activeUnitId:'',lastError:'',requiresNewQr:false};
-let socket:ReturnType<typeof makeWASocket>|null=null;
-let connecting=false;
-let connectionGeneration=0;
-let workerActive=false;
-const waitUntilResumed=()=>waitForCampaignReady(state);
-let connectionActor:VerifiedFirebaseUser|undefined;
-let connectionUnitId='ALL';
+const workerId=process.env.MESSAGE_WORKER_ID?.trim()||`message-worker-${crypto.randomUUID()}`;
+const sessionInstanceId=`${process.env.RAILWAY_REPLICA_ID?.trim()||process.env.HOSTNAME?.trim()||'message-instance'}:${crypto.randomUUID()}`;
+const SESSION_LOCK_LEASE_MS=60_000;
+const SESSION_LOCK_RENEW_MS=20_000;
+const initialState=(unitId:string):State=>({enabled:true,connectionStatus:'disconnected',currentQr:'',qrExpiresAt:null,accountPhone:'',accountName:'',lastConnectedAt:null,disconnectReason:'',disconnectKind:'none',isSending:false,progress:0,total:0,currentAction:'Aguardando conexão.',logs:[],campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],deliveryDetails:[],runId:'',activeUnitId:unitId,lastError:'',requiresNewQr:false});
+const sessions=new UnitSessionRegistry<Session>(unitId=>({unitId,state:initialState(unitId),socket:null,connecting:false,generation:0,workerActive:false,intentionalDisconnect:false,qrTimer:null,lockTimer:null,lockToken:null}));
+const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+const log=(session:Session,text:string,type:Log['type']='info')=>{session.state.logs.unshift({id:crypto.randomUUID(),time:new Date().toLocaleTimeString('pt-BR'),text,type});session.state.logs=session.state.logs.slice(0,80);};
+const publicState=(session:Session)=>({...session.state,errorDetails:session.state.errorDetails.slice(0,100),deliveryDetails:session.state.deliveryDetails.slice(0,200)});
 
-const addLog=(text:string,type:DispatchLog['type']='info')=>{
-  state.logs.unshift({id:crypto.randomUUID(),time:new Date().toLocaleTimeString('pt-BR'),text,type});
-  state.logs=state.logs.slice(0,80);
-};
-const pause=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milliseconds));
-const publicState=()=>({...state,currentQr:state.currentQr,errorDetails:state.errorDetails.slice(0,100)});
+async function audit(action:string,user:VerifiedFirebaseUser|undefined,unitId:string,details:Record<string,unknown>={}){try{await adminDb.collection('dispatch_audit').add({action,unitId,userId:user?.uid||'SYSTEM',profileId:user?.profileId||null,userEmail:user?.email||null,userRole:user?.role||'SYSTEM',timestamp:new Date().toISOString(),...details});}catch(error){console.error('Falha na auditoria:',error);}}
+async function persistSession(session:Session){const state=session.state;await adminDb.collection('message_whatsapp_sessions').doc(session.unitId).set({unitId:session.unitId,connectionStatus:state.connectionStatus,accountPhone:state.accountPhone,accountName:state.accountName,lastConnectedAt:state.lastConnectedAt,disconnectReason:state.disconnectReason,disconnectKind:state.disconnectKind,qrExpiresAt:state.qrExpiresAt,updatedAt:new Date().toISOString()},{merge:true}).catch(error=>console.error('Falha ao persistir metadados da sessão:',error));}
+async function releaseSessionLock(session:Session){if(session.lockTimer)clearInterval(session.lockTimer);session.lockTimer=null;const token=session.lockToken;session.lockToken=null;if(token!==null)await releaseMessageSessionLock(adminDb,session.unitId,sessionInstanceId,token).catch(()=>false);}
+async function ownsSessionLock(session:Session){const token=session.lockToken;if(token===null)return false;return renewMessageSessionLock(adminDb,session.unitId,sessionInstanceId,token,new Date(),SESSION_LOCK_LEASE_MS).catch(()=>false);}
+function startSessionLockHeartbeat(session:Session,token:number){if(session.lockTimer)clearInterval(session.lockTimer);session.lockToken=token;session.lockTimer=setInterval(async()=>{const renewed=await renewMessageSessionLock(adminDb,session.unitId,sessionInstanceId,token,new Date(),SESSION_LOCK_LEASE_MS).catch(()=>false);if(renewed||session.lockToken!==token)return;if(session.lockTimer)clearInterval(session.lockTimer);session.lockTimer=null;session.lockToken=null;session.generation++;session.connecting=false;session.intentionalDisconnect=true;session.state.isSending=false;session.state.connectionStatus='disconnected';session.state.disconnectKind='abnormal';session.state.disconnectReason='A instância perdeu o lock exclusivo da sessão.';session.state.currentAction='Sessão encerrada para evitar conexão duplicada.';try{session.socket?.end(new Error('Lock distribuído perdido.'));}catch{/* encerrada */}session.socket=null;void persistSession(session);void audit('SESSION_LOCK_LOST',session.actor,session.unitId,{instanceId:sessionInstanceId,fencingToken:token});},SESSION_LOCK_RENEW_MS);session.lockTimer.unref?.();}
 
-async function connect(actor?:VerifiedFirebaseUser,unitId='ALL'){
-  if(connecting||state.connectionStatus==='connected')return {success:true};
-  connectionActor=actor;connectionUnitId=unitId;
-  connecting=true;
-  const generation=++connectionGeneration;
-  state.connectionStatus=state.currentQr?'qr':'connecting';
-  state.lastError='';
-  state.currentAction=state.currentQr?'QR Code disponível. Renovando conexão...':'Inicializando conexão com o WhatsApp...';
+async function connect(user:VerifiedFirebaseUser|undefined,unitId:string){
+  const session=sessions.get(unitId),state=session.state;if(session.connecting||state.connectionStatus==='connected')return {success:true};session.actor=user;session.intentionalDisconnect=false;session.connecting=true;const generation=++session.generation;state.connectionStatus=state.currentQr?'qr':'connecting';state.currentAction='Inicializando conexão com o WhatsApp...';
   try{
-    const {state:authState,saveCreds,clear}=await useEncryptedAuthState(AUTH_VAULT);
-    socket=makeWASocket({auth:authState,printQRInTerminal:false,logger:pino({level:'silent'}),browser:['Van’s Management','Chrome','1.0.0']});
-    socket.ev.on('creds.update',saveCreds);
+    const lock=await acquireMessageSessionLock(adminDb,unitId,sessionInstanceId,new Date(),SESSION_LOCK_LEASE_MS);if(!lock){session.connecting=false;state.connectionStatus='disconnected';state.disconnectKind='abnormal';state.disconnectReason='Esta unidade já está conectada em outra instância do serviço.';state.currentAction='Conexão protegida por outra instância.';await persistSession(session);return {success:false,error:state.disconnectReason};}startSessionLockHeartbeat(session,lock.fencingToken);
+    const {state:auth,saveCreds,clear}=await useEncryptedAuthState(whatsappSessionVaultPath(BASE_VAULT,unitId));
+    const socket=makeWASocket({auth,printQRInTerminal:false,logger:pino({level:'silent'}),browser:[`Van’s Management - ${unitId}`,'Chrome','1.0.0']});session.socket=socket;socket.ev.on('creds.update',saveCreds);
     socket.ev.on('connection.update',async update=>{
-      if(generation!==connectionGeneration)return;
-      const {connection,lastDisconnect,qr}=update;
-      if(qr){
-        state.connectionStatus='qr';state.currentQr=await QRCode.toDataURL(qr);state.currentAction='Escaneie o QR Code para conectar.';state.lastError='';state.requiresNewQr=false;
-        console.info('QR Code do WhatsApp gerado e disponível para o painel.');
-      }
-      if(connection==='open'){connecting=false;state.connectionStatus='connected';state.currentQr='';state.currentAction='WhatsApp conectado e pronto.';state.lastError='';state.requiresNewQr=false;addLog('WhatsApp conectado com sucesso.','success');void auditLog('CONNECTION_OPENED',connectionActor,connectionUnitId);}
-      if(connection==='close'){
-        connecting=false;socket=null;
-        const code=(lastDisconnect?.error as {output?:{statusCode?:number}}|undefined)?.output?.statusCode;
-        const loggedOut=code===DisconnectReason.loggedOut;
-        if(loggedOut){
-          state.connectionStatus='disconnected';state.currentQr='';state.requiresNewQr=true;state.lastError='A sessão do WhatsApp expirou e precisa ser vinculada novamente.';state.currentAction='Sessão expirada. Gere um novo QR Code.';addLog(state.lastError,'warning');
-          await clear().catch(error=>console.error('Falha ao limpar sessão expirada:',error));
-        }else if(state.currentQr){state.connectionStatus='qr';state.currentAction='QR Code disponível. Aguardando leitura...';}
-        else{state.connectionStatus='disconnected';state.currentAction='WhatsApp desconectado. Tentando reconectar...';}
-        console.warn('Conexão do WhatsApp encerrada.',{reasonCode:code||null,qrMantido:Boolean(state.currentQr),willReconnect:!loggedOut});
-        void auditLog('CONNECTION_CLOSED',connectionActor,connectionUnitId,{reasonCode:code||null,willReconnect:code!==DisconnectReason.loggedOut});
-        if(!loggedOut)setTimeout(()=>void connect(connectionActor,connectionUnitId),3000);
-      }
-    });
-    return {success:true};
-  }catch(error){
-    const reason=error instanceof Error?error.message:'Falha de conexão.';
-    console.error('Falha ao iniciar cliente WhatsApp:',reason);
-    connecting=false;socket=null;state.connectionStatus='disconnected';state.lastError=reason;state.currentAction=`Falha ao iniciar a conexão: ${reason}`;addLog(reason,'warning');void auditLog('CONNECTION_FAILED',connectionActor,connectionUnitId,{reason});
-    return {success:false,error:reason};
-  }
+      if(generation!==session.generation)return;const {connection,lastDisconnect,qr}=update;
+      if(qr){if(session.qrTimer)clearTimeout(session.qrTimer);state.connectionStatus='qr';state.currentQr=await QRCode.toDataURL(qr);state.qrExpiresAt=messageQrExpiresAt();state.currentAction='Escaneie o QR Code para conectar.';state.lastError='';state.requiresNewQr=false;void persistSession(session);session.qrTimer=setTimeout(()=>{if(generation!==session.generation||state.connectionStatus!=='qr')return;state.currentQr='';state.qrExpiresAt=null;state.connectionStatus='disconnected';state.requiresNewQr=true;state.disconnectKind='expired';state.disconnectReason='O QR Code expirou antes da leitura.';state.currentAction='QR expirado. Gere um novo código.';session.intentionalDisconnect=true;try{session.socket?.end(new Error('QR Code expirado.'));}catch{/* encerrada */}void persistSession(session);void audit('QR_EXPIRED',session.actor,unitId);},60_000);session.qrTimer.unref?.();}
+      if(connection==='open'){if(session.qrTimer)clearTimeout(session.qrTimer);session.qrTimer=null;session.connecting=false;state.connectionStatus='connected';state.currentQr='';state.qrExpiresAt=null;state.accountPhone=String(socket.user?.id||'').split(':')[0].split('@')[0];state.accountName=socket.user?.name||'Conta WhatsApp';state.lastConnectedAt=new Date().toISOString();state.disconnectKind='none';state.disconnectReason='';state.currentAction='WhatsApp conectado e pronto.';state.lastError='';state.requiresNewQr=false;log(session,'WhatsApp conectado.','success');void persistSession(session);void audit('CONNECTION_OPENED',session.actor,unitId,{accountPhone:state.accountPhone,accountName:state.accountName});void resume(session);}
+      if(connection==='close'){if(session.qrTimer)clearTimeout(session.qrTimer);session.qrTimer=null;session.connecting=false;session.socket=null;const code=(lastDisconnect?.error as {output?:{statusCode?:number}}|undefined)?.output?.statusCode;const loggedOut=code===DisconnectReason.loggedOut;const intentional=session.intentionalDisconnect;state.connectionStatus='disconnected';state.currentQr='';state.qrExpiresAt=null;state.disconnectReason=intentional?(state.disconnectReason||'Desconectado pelo operador.'):messageDisconnectReason(lastDisconnect?.error,code);state.disconnectKind=intentional?'intentional':loggedOut?'expired':'abnormal';state.currentAction=intentional?'Sessão desconectada.':loggedOut?'Sessão expirada. Gere um novo QR Code.':'Queda detectada. Tentando reconectar...';state.requiresNewQr=loggedOut;if(loggedOut)await clear().catch(()=>undefined);await releaseSessionLock(session);void persistSession(session);void audit(intentional?'CONNECTION_DISCONNECTED':'CONNECTION_DROPPED',session.actor,unitId,{reasonCode:code||null,reason:state.disconnectReason});if(!intentional&&!loggedOut)setTimeout(()=>void connect(session.actor,unitId),3000);}
+    });return {success:true};
+  }catch(error){const reason=error instanceof Error?error.message:'Falha de conexão.';session.connecting=false;session.socket=null;state.connectionStatus='disconnected';state.lastError=reason;state.currentAction=reason;log(session,reason,'warning');await releaseSessionLock(session);return {success:false,error:reason};}
 }
 
-export const startMessageDispatchConnection = () => connect(undefined,'ALL');
-
-async function auditLog(action:string,user:VerifiedFirebaseUser|undefined,unitId:string,details:Record<string,unknown>={}){
-  try{await adminDb.collection('dispatch_audit').add({action,unitId,userId:user?.uid||'SYSTEM',profileId:user?.profileId||null,userEmail:user?.email||null,userRole:user?.role||'SYSTEM',timestamp:new Date().toISOString(),...details});}
-  catch(err){console.error('Falha ao registrar auditoria de disparo:',err);}
+async function runCampaign(session:Session,campaign:MessageCampaignDocument,user?:VerifiedFirebaseUser){
+  const state=session.state;if(session.workerActive||state.connectionStatus!=='connected'||!session.socket)return;const recovered=await recoverMessageCampaign(adminDb,campaign.id);if(!recovered||['CONCLUIDA','FALHOU'].includes(recovered.campaign.status))return;campaign=recovered.campaign;
+  const snapshot=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where('campaignId','==',campaign.id).get();const recipients=snapshot.docs.map(doc=>({id:doc.id,...doc.data()} as MessageCampaignRecipientDocument));const contacts=recipients.map(item=>item.normalizedPhone);const minDelay=Math.max(8,Math.min(120,Number(campaign.minDelaySeconds)||15));const maxDelay=Math.max(minDelay,Math.min(180,Number(campaign.maxDelaySeconds)||35));const typing=campaign.simulateTyping!==false;
+  session.workerActive=true;Object.assign(state,{isSending:true,campaignStatus:'running',runId:campaign.id,activeUnitId:campaign.unitId,successCount:campaign.sentCount,errorCount:campaign.failedCount,errorDetails:[],total:recipients.length,progress:campaign.sentCount+campaign.deliveredCount+campaign.readCount+campaign.failedCount+campaign.cancelledCount,logs:[]});state.deliveryDetails=recipients.map(item=>({contact:item.normalizedPhone,status:item.status==='ENVIADO'?'ENVIADO':item.status==='FALHOU'?'FALHA':'AGUARDANDO',...(item.processedAt?{processedAt:item.processedAt}:{}),...(item.lastError?{error:item.lastError}:{})}));log(session,`Campanha ${campaign.name} carregada da fila persistente.`);
+  try{
+    await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(campaign.id).set({status:'EM_PROCESSAMENTO',updatedAt:new Date().toISOString()},{merge:true});await adminDb.collection('message_dispatch_history').doc(campaign.id).set({name:campaign.name,createdAt:campaign.createdAt,unitId:campaign.unitId,total:contacts.length,contacts,message:campaign.message,minDelay,maxDelay,simulateTyping:typing,confirmedOptIn:campaign.confirmedOptIn===true,processed:state.progress,successCount:state.successCount,errorCount:state.errorCount,status:'EM_ANDAMENTO',deliveryDetails:state.deliveryDetails,createdBy:campaign.createdBy,createdByEmail:campaign.createdByEmail||''},{merge:true});
+    while(state.isSending){
+      if(!await waitForCampaignReady(state))break;if(!await ownsSessionLock(session))throw new Error('Lock exclusivo da sessão perdido antes do envio.');const claimed=await claimNextMessageRecipient(adminDb,{workerId,campaignId:campaign.id,unitId:campaign.unitId,leaseMs:90_000});if(!claimed)break;const contact=claimed.normalizedPhone,index=state.deliveryDetails.findIndex(item=>item.contact===contact),slot=index>=0?index:state.progress;let jid=`${contact}@s.whatsapp.net`,done=false;
+      try{await withMessageLeaseRenewal({intervalMs:30_000,renew:()=>renewMessageRecipientLease(adminDb,claimed.id,workerId,new Date(),90_000),work:async()=>{const socket=session.socket;if(!socket)throw new Error('WhatsApp desconectado durante o envio.');state.currentAction=`Validando ${claimed.maskedPhone}...`;const available=await socket.onWhatsApp(contact);if(!available?.[0]?.exists)throw new Error('Número não encontrado no WhatsApp');jid=available[0].jid;if(typing){state.currentAction=`Preparando mensagem ${state.progress+1} de ${contacts.length}...`;await socket.sendPresenceUpdate('composing',jid);await pause(Math.min(6000,Math.max(1200,claimed.personalizedMessage.length*45)));await socket.sendPresenceUpdate('paused',jid);}if(!await waitForCampaignReady(state))throw new Error('Campanha interrompida antes do envio.');await socket.sendMessage(jid,{text:claimed.personalizedMessage});}});const at=new Date().toISOString();if(!await finalizeMessageRecipient(adminDb,claimed.id,workerId,'ENVIADO',{now:new Date(at)}))throw new Error('Lease expirado.');state.successCount++;done=true;state.deliveryDetails[slot]={contact,status:'ENVIADO',processedAt:at};log(session,`Mensagem enviada para ${claimed.maskedPhone}.`,'success');}
+      catch(error){const detail=error instanceof Error?error.message:'Falha no envio';if(!state.isSending){await finalizeMessageRecipient(adminDb,claimed.id,workerId,'CANCELADO',{error:detail});done=true;}else{const failure=await handleMessageRecipientFailure(adminDb,{recipientId:claimed.id,workerId,error,baseDelayMs:30_000});if(failure?.decision.retry){const seconds=Math.ceil(failure.decision.delayMs/1000);state.currentAction=`Nova tentativa em ${seconds}s...`;log(session,`${state.currentAction} (${claimed.maskedPhone})`,'warning');for(let i=0;i<seconds&&state.isSending;i++)await pause(1000);}else{done=true;state.errorCount++;state.errorDetails.push({contact:claimed.maskedPhone,error:detail});state.deliveryDetails[slot]={contact,status:'FALHA',processedAt:new Date().toISOString(),error:detail};log(session,`Falha definitiva para ${claimed.maskedPhone}.`,'warning');}}}
+      if(done)state.progress++;if(done&&state.progress<contacts.length&&state.isSending){const seconds=Math.floor(Math.random()*(maxDelay-minDelay+1))+minDelay;for(let i=0;i<seconds&&state.isSending;i++){if(!await waitForCampaignReady(state))break;await pause(1000);}}
+    }
+    if(state.isSending){await recoverMessageCampaign(adminDb,campaign.id);state.campaignStatus='completed';state.currentAction='Campanha concluída.';log(session,'Processamento concluído.','success');await audit('CAMPAIGN_COMPLETED',user,campaign.unitId,{runId:campaign.id,processed:state.progress});await adminDb.collection('message_dispatch_history').doc(campaign.id).set({status:'CONCLUIDO',finishedAt:new Date().toISOString(),processed:state.progress,successCount:state.successCount,errorCount:state.errorCount,errorDetails:state.errorDetails,deliveryDetails:state.deliveryDetails},{merge:true});}
+  }catch(error){state.campaignStatus='stopped';state.currentAction='Campanha interrompida por falha.';log(session,state.currentAction,'warning');await audit('CAMPAIGN_FAILED',user,campaign.unitId,{runId:campaign.id,reason:error instanceof Error?error.message:'Falha'});await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(campaign.id).set({status:'NA_FILA',updatedAt:new Date().toISOString()},{merge:true});}finally{state.isSending=false;session.workerActive=false;}
 }
 
+async function resume(session:Session){if(session.workerActive||session.state.connectionStatus!=='connected')return;try{const campaigns=await recoverActiveMessageCampaigns(adminDb,{unitId:session.unitId});for(const item of campaigns){if(session.state.connectionStatus!=='connected')break;await runCampaign(session,item.campaign);}}catch(error){console.error(`Falha ao retomar ${session.unitId}:`,error);}}
 const requestedUnit=(req:express.Request)=>req.body?.unitId??req.query?.unitId;
-const requireUnit=(req:express.Request,res:express.Response)=>{const decision=authorizeDispatchUnit(authenticatedUser(req),requestedUnit(req));if(!decision.allowed){res.status(decision.status).json({error:decision.error});return null;}return decision.unitId;};
+const requireUnit=(req:express.Request,res:express.Response)=>{const decision=authorizeDispatchUnit(authenticatedUser(req),requestedUnit(req));if(!decision.allowed){res.status(decision.status).json({error:decision.error});return null;}if(decision.unitId==='ALL'){res.status(400).json({error:'Selecione uma unidade específica para usar o WhatsApp.'});return null;}return decision.unitId;};
 
-export function configureMessageDispatch(app:express.Express, requireAuth: express.RequestHandler, requireRole: express.RequestHandler){
-  app.get('/api/message-dispatch/status', requireAuth, requireRole, (req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const view=publicState();if(state.activeUnitId&&unitId!=='ALL'&&state.activeUnitId!==unitId)res.json({...view,isSending:false,progress:0,total:0,campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],runId:'',activeUnitId:''});else res.json(view);});
-  app.post('/api/message-dispatch/connect', requireAuth, requireRole, async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req);await auditLog('CONNECTION_REQUESTED',user,unitId);const result=await connect(user,unitId);if(!result.success){res.status(500).json({error:result.error||'Falha ao iniciar a conexão.'});return;}res.status(202).json({success:true});});
-  app.post('/api/message-dispatch/reset-session', requireAuth, requireRole, async(req,res)=>{
-    const unitId=requireUnit(req,res);if(!unitId)return;
-    if(state.isSending){res.status(409).json({error:'Não é possível redefinir a sessão durante uma campanha.'});return;}
-    const user=authenticatedUser(req);
-    connectionGeneration++;connecting=false;
-    try{socket?.end(new Error('Sessão redefinida pelo operador.'));}catch{ /* conexão já encerrada */ }
-    socket=null;state.connectionStatus='disconnected';state.currentQr='';state.lastError='';state.requiresNewQr=false;state.currentAction='Preparando um novo QR Code...';
-    try{await clearEncryptedAuthState(AUTH_VAULT);}catch(error){const reason=error instanceof Error?error.message:'Falha ao limpar a sessão.';state.lastError=reason;state.currentAction=reason;res.status(500).json({error:reason});return;}
-    await auditLog('CONNECTION_SESSION_RESET',user,unitId);
-    const result=await connect(user,unitId);if(!result.success){res.status(500).json({error:result.error||'Falha ao gerar um novo QR Code.'});return;}res.status(202).json({success:true});
-  });
-  for(const action of ['pause','resume'] as const){
-    app.post(`/api/message-dispatch/${action}`,requireAuth,requireRole,async(req,res)=>{
-      const unitId=requireUnit(req,res);if(!unitId)return;
-      if(state.activeUnitId&&unitId!=='ALL'&&state.activeUnitId!==unitId){res.status(403).json({error:'Esta campanha pertence a outra unidade.'});return;}
-      if(!state.isSending){res.status(409).json({error:'Não existe campanha ativa.'});return;}
-      state.campaignStatus=action==='pause'?'paused':'running';
-      state.currentAction=action==='pause'?'Campanha pausada. Retome para continuar a fila.':'Retomando campanha...';
-      addLog(state.currentAction);
-      await auditLog(action==='pause'?'CAMPAIGN_PAUSED':'CAMPAIGN_RESUMED',authenticatedUser(req),state.activeUnitId,{runId:state.runId,processed:state.progress});
-      res.json({success:true});
-    });
-  }
-  app.post('/api/message-dispatch/stop', requireAuth, requireRole, async(req,res)=>{
-    const unitId=requireUnit(req,res);if(!unitId)return;if(state.activeUnitId&&unitId!=='ALL'&&state.activeUnitId!==unitId){res.status(403).json({error:'Esta campanha pertence a outra unidade.'});return;}
-    const user=authenticatedUser(req);const reason=safeInterruptionReason(req.body?.reason);
-    state.isSending=false;state.campaignStatus='stopped';state.currentAction=reason;addLog(`Campanha interrompida por ${user?.email||'operador'}.`,'warning');
-    await auditLog('CAMPAIGN_STOPPED',user,state.activeUnitId||unitId,{runId:state.runId,processed:state.progress,success:state.successCount,errors:state.errorCount,reason});
-    if(state.runId)await adminDb.collection('message_dispatch_history').doc(state.runId).set({status:'INTERROMPIDO',finishedAt:new Date().toISOString(),processed:state.progress,successCount:state.successCount,errorCount:state.errorCount,interruptionReason:reason},{merge:true});
-    res.json({success:true});
-  });
-  app.post('/api/message-dispatch/start', requireAuth, requireRole, async(req,res)=>{
-    const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req);const userEmail=user?.email||'unknown';
-    if(workerActive){res.status(409).json({error:'Já existe uma campanha em andamento.'});return;}
-    if(state.connectionStatus!=='connected'||!socket){res.status(409).json({error:'Conecte o WhatsApp antes de iniciar.'});return;}
-    const message=typeof req.body?.message==='string'?req.body.message.trim():'';
-    const rawContacts=Array.isArray(req.body?.contacts)?req.body.contacts:String(req.body?.contacts||'').split(/\r?\n/);
-    const contacts=[...new Set(rawContacts.map((value:unknown)=>String(value).replace(/\D/g,'')).map(value=>(value.length===10||value.length===11)?`55${value}`:value).filter(value=>value.length>=12&&value.length<=13))];
-    const minDelay=Math.max(8,Math.min(120,Number(req.body?.minDelay)||15));
-    const maxDelay=Math.max(minDelay,Math.min(180,Number(req.body?.maxDelay)||35));
-    const simulateTyping=req.body?.simulateTyping!==false;
-    if(req.body?.confirmedOptIn!==true){res.status(400).json({error:'Confirme que os destinatários autorizaram o recebimento.'});return;}
-    if(!message||message.length>4096){res.status(400).json({error:'A mensagem deve ter entre 1 e 4.096 caracteres.'});return;}
-    if(!contacts.length||contacts.length>MAX_CONTACTS){res.status(400).json({error:`Informe entre 1 e ${MAX_CONTACTS} contatos válidos.`});return;}
-    workerActive=true;
-    res.json({success:true,total:contacts.length});
-    try{
-    state.isSending=true;state.campaignStatus='running';state.runId=crypto.randomUUID();state.activeUnitId=unitId;state.successCount=0;state.errorCount=0;state.errorDetails=[];state.total=contacts.length;state.progress=0;state.logs=[];
-    addLog(`Campanha iniciada por ${userEmail} com ${contacts.length} destinatário(s).`);
-    const campaignName=typeof req.body?.campaignName==='string'?req.body.campaignName.trim().slice(0,120):'Disparo sem título';
-    await auditLog('CAMPAIGN_STARTED',user,unitId,{runId:state.runId,totalContacts:contacts.length,campaignName,minDelay,maxDelay,simulateTyping,confirmedOptIn:true});
-    await adminDb.collection('message_dispatch_history').doc(state.runId).set({name:campaignName,createdAt:new Date().toISOString(),unitId,total:contacts.length,processed:0,successCount:0,errorCount:0,status:'EM_ANDAMENTO',createdBy:user?.uid||'',createdByEmail:user?.email||''});
-    for(let index=0;index<contacts.length&&state.isSending;index++){
-      if(!await waitUntilResumed())break;
-      const contact=contacts[index];
-      let jid=`${contact}@s.whatsapp.net`;
-      try{
-        state.currentAction=`Validando ${contact}...`;
-        const availability=await socket.onWhatsApp(contact);
-        if(!availability?.[0]?.exists)throw new Error('Número não encontrado no WhatsApp');
-        jid=availability[0].jid;
-        if(simulateTyping){state.currentAction=`Preparando mensagem ${index+1} de ${contacts.length}...`;await socket.sendPresenceUpdate('composing',jid);await pause(Math.min(6000,Math.max(1200,message.length*45)));await socket.sendPresenceUpdate('paused',jid);}
-        if(!await waitUntilResumed())break;
-        state.currentAction=`Enviando ${index+1} de ${contacts.length}...`;
-        await socket.sendMessage(jid,{text:message});state.successCount++;addLog(`Mensagem enviada para ${contact}.`,'success');
-      }catch(error){const detail=error instanceof Error?error.message:'Falha no envio';state.errorCount++;state.errorDetails.push({contact,error:detail});addLog(`Falha para ${contact}: ${detail}`,'warning');}
-      state.progress=index+1;
-      if(index<contacts.length-1&&state.isSending){const seconds=Math.floor(Math.random()*(maxDelay-minDelay+1))+minDelay;state.currentAction=`Intervalo operacional de ${seconds}s...`;for(let elapsed=0;elapsed<seconds&&state.isSending;elapsed++){if(!await waitUntilResumed())break;await pause(1000);}}
-    }
-    if(state.isSending){
-      state.campaignStatus='completed';state.currentAction='Campanha concluída.';addLog('Processamento concluído.','success');
-      await auditLog('CAMPAIGN_COMPLETED',user,unitId,{runId:state.runId,processed:state.progress,success:state.successCount,errors:state.errorCount,errorReasons:state.errorDetails.map(item=>item.error).slice(0,100)});
-      await adminDb.collection('message_dispatch_history').doc(state.runId).set({status:'CONCLUIDO',finishedAt:new Date().toISOString(),processed:state.progress,successCount:state.successCount,errorCount:state.errorCount},{merge:true});
-    }
-    }catch(error){
-      state.campaignStatus='stopped';state.currentAction='Campanha interrompida por falha no processamento.';
-      addLog(state.currentAction,'warning');
-      await auditLog('CAMPAIGN_FAILED',user,unitId,{runId:state.runId,reason:error instanceof Error?error.message:'Falha desconhecida'});
-    }finally{state.isSending=false;workerActive=false;}
-  });
+export async function startMessageDispatchConnection(){const configured=(process.env.MESSAGE_AUTO_CONNECT_UNITS||'').split(',').map(item=>item.trim()).filter(Boolean);const active=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).where('status','in',['NA_FILA','EM_PROCESSAMENTO']).get().catch(()=>null);const units=new Set([...configured,...(active?.docs.map(doc=>String(doc.data().unitId||'')).filter(unit=>unit&&unit!=='ALL')||[])]);for(const unitId of units)void connect(undefined,unitId);}
+
+export function configureMessageDispatch(app:express.Express,auth:express.RequestHandler,role:express.RequestHandler){
+  app.get('/api/message-dispatch/status',auth,role,(req,res)=>{const unitId=requireUnit(req,res);if(unitId)res.json(publicState(sessions.get(unitId)));});
+  app.post('/api/message-dispatch/connect',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req);await audit('CONNECTION_REQUESTED',user,unitId);const result=await connect(user,unitId);result.success?res.status(202).json({success:true}):res.status(500).json({error:result.error});});
+  app.post('/api/message-dispatch/disconnect',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId);if(session.state.isSending){res.status(409).json({error:'Pause ou encerre a campanha antes de desconectar.'});return;}session.intentionalDisconnect=true;session.generation++;session.connecting=false;if(session.qrTimer)clearTimeout(session.qrTimer);session.state.disconnectKind='intentional';session.state.disconnectReason='Desconectado pelo operador.';session.state.connectionStatus='disconnected';session.state.currentQr='';session.state.qrExpiresAt=null;session.state.currentAction='Sessão desconectada.';try{session.socket?.end(new Error('Desconectado pelo operador.'));}catch{/* encerrada */}session.socket=null;await releaseSessionLock(session);await persistSession(session);await audit('CONNECTION_DISCONNECTED',authenticatedUser(req),unitId,{reason:session.state.disconnectReason});res.json({success:true});});
+  app.post('/api/message-dispatch/reconnect',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId);if(session.state.isSending){res.status(409).json({error:'Não é possível reconectar durante uma campanha.'});return;}session.intentionalDisconnect=true;session.generation++;session.connecting=false;try{session.socket?.end(new Error('Reconexão solicitada.'));}catch{/* encerrada */}session.socket=null;session.state.connectionStatus='disconnected';await releaseSessionLock(session);await audit('CONNECTION_RECONNECT_REQUESTED',authenticatedUser(req),unitId);const result=await connect(authenticatedUser(req),unitId);result.success?res.status(202).json({success:true}):res.status(500).json({error:result.error});});
+  app.post('/api/message-dispatch/new-qr',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId);if(session.state.isSending){res.status(409).json({error:'Não é possível gerar QR durante uma campanha.'});return;}session.intentionalDisconnect=true;session.generation++;session.connecting=false;if(session.qrTimer)clearTimeout(session.qrTimer);try{session.socket?.end(new Error('Novo QR solicitado.'));}catch{/* encerrada */}session.socket=null;await releaseSessionLock(session);await clearEncryptedAuthState(whatsappSessionVaultPath(BASE_VAULT,unitId));Object.assign(session.state,initialState(unitId));await audit('CONNECTION_NEW_QR_REQUESTED',authenticatedUser(req),unitId);const result=await connect(authenticatedUser(req),unitId);result.success?res.status(202).json({success:true}):res.status(500).json({error:result.error});});
+  app.post('/api/message-dispatch/reset-session',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId);if(session.state.isSending){res.status(409).json({error:'Existe campanha ativa nesta unidade.'});return;}session.generation++;session.connecting=false;try{session.socket?.end(new Error('Sessão redefinida.'));}catch{/* encerrada */}session.socket=null;await releaseSessionLock(session);await clearEncryptedAuthState(whatsappSessionVaultPath(BASE_VAULT,unitId));Object.assign(session.state,initialState(unitId));const result=await connect(authenticatedUser(req),unitId);result.success?res.status(202).json({success:true}):res.status(500).json({error:result.error});});
+  for(const action of ['pause','resume'] as const)app.post(`/api/message-dispatch/${action}`,auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId),state=session.state;if(!state.isSending){res.status(409).json({error:'Não existe campanha ativa nesta unidade.'});return;}state.campaignStatus=action==='pause'?'paused':'running';state.currentAction=action==='pause'?'Campanha pausada.':'Retomando campanha...';if(state.runId)await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(state.runId).set({status:action==='pause'?'PAUSADA':'EM_PROCESSAMENTO',updatedAt:new Date().toISOString()},{merge:true});res.json({success:true});});
+  app.post('/api/message-dispatch/stop',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId),state=session.state,reason=safeInterruptionReason(req.body?.reason);state.isSending=false;state.campaignStatus='stopped';state.currentAction=reason;if(state.runId){await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(state.runId).set({status:'CANCELADA',cancelledCount:Math.max(0,state.total-state.progress),updatedAt:new Date().toISOString(),finishedAt:new Date().toISOString()},{merge:true});await adminDb.collection('message_dispatch_history').doc(state.runId).set({status:'INTERROMPIDO',finishedAt:new Date().toISOString(),interruptionReason:reason},{merge:true});}res.json({success:true});});
+  app.post('/api/message-dispatch/start',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId),user=authenticatedUser(req);if(session.state.connectionStatus!=='connected'||!session.socket){res.status(409).json({error:'Conecte o WhatsApp desta unidade.'});return;}const message=String(req.body?.message||'').trim(),raw=Array.isArray(req.body?.contacts)?req.body.contacts:String(req.body?.contacts||'').split(/\r?\n/),contacts=[...new Set(raw.map((value:unknown)=>String(value).replace(/\D/g,'')).map(value=>(value.length===10||value.length===11)?`55${value}`:value).filter(value=>value.length>=12&&value.length<=13))],minDelay=Math.max(8,Math.min(120,Number(req.body?.minDelay)||15)),maxDelay=Math.max(minDelay,Math.min(180,Number(req.body?.maxDelay)||35)),typing=req.body?.simulateTyping!==false;if(req.body?.confirmedOptIn!==true||!message||message.length>4096||!contacts.length||contacts.length>MAX_CONTACTS){res.status(400).json({error:'Revise mensagem, contatos e autorização.'});return;}const requestIdempotencyKey=String(req.body?.idempotencyKey||req.get('Idempotency-Key')||'').trim();if(!requestIdempotencyKey){res.status(400).json({error:'Chave de solicitação ausente.'});return;}const input:CreateMessageCampaignInput={requestIdempotencyKey,unitId,name:String(req.body?.campaignName||'Disparo sem título').trim().slice(0,120),message,contacts,minDelaySeconds:minDelay,maxDelaySeconds:maxDelay,simulateTyping:typing,confirmedOptIn:true,createdBy:user?.uid||'SYSTEM',...(user?.email?{createdByEmail:user.email}:{})};if(session.workerActive){const prior=await findMessageCampaignByRequest(adminDb,input);if(prior.existing){res.json({success:true,total:prior.existing.totalRecipients,campaignId:prior.existing.id,reused:true});return;}res.status(409).json({error:'Já existe campanha ativa nesta unidade.'});return;}let persisted;try{persisted=await createMessageCampaign(adminDb,input);}catch(error){res.status(409).json({error:error instanceof Error?error.message:'Falha ao salvar.'});return;}if(persisted.reused){res.json({success:true,total:persisted.campaign.totalRecipients,campaignId:persisted.campaign.id,reused:true});return;}res.json({success:true,total:contacts.length,campaignId:persisted.campaign.id,reused:false});await audit('CAMPAIGN_STARTED',user,unitId,{runId:persisted.campaign.id,totalContacts:contacts.length});void runCampaign(session,persisted.campaign,user);});
 }

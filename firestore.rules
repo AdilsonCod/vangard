@@ -137,6 +137,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /finMovementNatures/{natureId} {
+      allow read: if canReadFinancialOperation();
+      allow write: if isAdmin();
+    }
+
     match /finSubclassifications/{subId} {
       allow read: if canReadFinancialOperation();
       allow write: if isAdmin();
@@ -337,6 +342,41 @@ service cloud.firestore {
     match /message_dispatch_history/{documentId} {
       allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
       allow create, update, delete: if false;
+    }
+
+    match /message_campaigns/{documentId} {
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create, update, delete: if false;
+    }
+
+    match /message_campaign_recipients/{documentId} {
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create, update, delete: if false;
+    }
+
+    match /message_delivery_attempts/{documentId} {
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create, update, delete: if false;
+    }
+
+    match /message_campaign_media/{documentId} {
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create, update, delete: if false;
+    }
+
+    match /message_dead_letters/{documentId} {
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create, update, delete: if false;
+    }
+
+    match /message_whatsapp_sessions/{documentId} {
+      allow read: if canManageCommunication() && (isAdmin() || isUserInUnit(resource.data.unitId));
+      allow create, update, delete: if false;
+    }
+
+    // Lease operacional exclusivo do serviço. Nenhum cliente acessa locks.
+    match /message_whatsapp_session_locks/{documentId} {
+      allow read, create, update, delete: if false;
     }
 
     match /dispatch_audit/{documentId} {

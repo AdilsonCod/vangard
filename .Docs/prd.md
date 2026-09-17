@@ -240,6 +240,9 @@ Detalhes funcionais complementares estão em [Cálculo de Comissão](./CALCULO_C
 - A conexão do WhatsApp deve operar em serviço persistente apropriado.
 - A indisponibilidade do serviço não pode impedir o uso do restante do sistema.
 - O uso da biblioteca não oficial deve ser tratado como risco operacional conhecido.
+- Campanhas, destinatários, tentativas e estados de entrega devem ser persistentes e retomáveis após reinício do serviço.
+- O módulo deve oferecer composição com mídia, importação e segmentação de contatos, personalização, agendamento, consentimento, bloqueios, limites de frequência, sessões isoladas por unidade e atualizações em tempo real.
+- A especificação completa de fila, idempotência, sessões WhatsApp, segurança, conformidade, métricas e compatibilidade com Railway está no [Anexo do PRD — Plataforma de campanhas e mensagens](./PRD_DISPARO_MENSAGENS.md).
 
 ### 6.13 Links inteligentes
 

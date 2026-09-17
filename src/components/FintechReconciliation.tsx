@@ -479,25 +479,26 @@ export function FintechReconciliation({ onSettlementComplete }: FintechReconcili
       const data = await parseGatewayClubeFile(file);
       setClubeData(data);
       setFileNames((prev) => ({ ...prev, clube: file.name }));
-      showToast(`Gateway Clube carregado: ${data.length} transações.`);
-      
-      if (pdvData.length > 0 || redePagamentos.length > 0) {
-        const result = runScopedReconciliation(
-          pdvData,
-          data,
-          redePagamentos,
-          redeRecebidos,
-          previsaoData,
-          entradasManuaisData
-        );
-        setItems(result.items);
-        setDailyClosings(result.dailyClosings);
-        setKpis(result.kpis);
-        setCashFlowTimeline(result.cashFlowTimeline);
-        if (result.batches) setBatches(result.batches);
-        if (result.comparativoFormasPgto) setComparativoFormasPgto(result.comparativoFormasPgto);
-        if (result.resumoLotesCartao) setResumoLotesCartao(result.resumoLotesCartao);
-      }
+      const matchedRows = filterSubscriptionSources(data, [], subscriptionPlans, selectedSubscriptionPlanIds).clube.length;
+      showToast(`Relatório de assinaturas carregado: ${matchedRows} de ${data.length} linhas correspondem aos planos selecionados desta unidade.`);
+
+      // O relatório de assinaturas é uma fonte autônoma: mesmo sem PDV/Rede,
+      // cada linha selecionada precisa aparecer na Regra 1 para conferência.
+      const result = runScopedReconciliation(
+        pdvData,
+        data,
+        redePagamentos,
+        redeRecebidos,
+        previsaoData,
+        entradasManuaisData
+      );
+      setItems(result.items);
+      setDailyClosings(result.dailyClosings);
+      setKpis(result.kpis);
+      setCashFlowTimeline(result.cashFlowTimeline);
+      if (result.batches) setBatches(result.batches);
+      if (result.comparativoFormasPgto) setComparativoFormasPgto(result.comparativoFormasPgto);
+      if (result.resumoLotesCartao) setResumoLotesCartao(result.resumoLotesCartao);
     } catch (err: any) {
       alert('Erro ao processar arquivo do Clube: ' + err.message);
     }

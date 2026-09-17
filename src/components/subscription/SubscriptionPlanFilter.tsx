@@ -22,7 +22,11 @@ export function SubscriptionPlanFilter({ unitId, selectedIds, onChange, onPlansC
     if (!unitId || unitId === 'ALL') { setPlans([]); onPlansChange?.([]); return; }
     try { assertAuthorizedUnit(currentUser, unitId); } catch { setPlans([]); onPlansChange?.([]); return; }
     return onSnapshot(query(collection(db, 'subscriptionPlans'), where('unitId', '==', unitId)), snapshot => {
-      const next = snapshot.docs.map(item => item.data() as SubscriptionPlan).filter(plan => plan.isActive !== false).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+      const next = snapshot.docs.map(item => ({
+        ...(item.data() as SubscriptionPlan),
+        // O ID canônico é o do documento. Registros antigos podem não ter o campo `id` salvo.
+        id: item.id,
+      })).filter(plan => plan.isActive !== false).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
       setPlans(next);
       onPlansChange?.(next);
     }, () => setError('Não foi possível carregar os planos desta unidade.'));
