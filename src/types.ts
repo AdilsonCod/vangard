@@ -320,7 +320,7 @@ export interface CashClosing {
   expectedBalance: number;
   countedBalance: number;
   difference: number;
-  status: 'CLOSED' | 'DIVERGENT' | 'REOPENED';
+  status: 'OPEN' | 'CLOSED' | 'DIVERGENT' | 'REOPENED';
   notes?: string;
   closedAt: string;
   closedBy?: string;

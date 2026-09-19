@@ -5,9 +5,10 @@ import type { CashClosing } from '../src/types';
 
 const closing = (status: CashClosing['status'], date = '2026-09-10'): CashClosing => ({ id: `cash_closing_matriz_${date}`, unitId: 'matriz', date, openingBalance: 0, cashIncome: 100, cashOutflow: 20, expectedBalance: 80, countedBalance: 80, difference: 0, status, notes: 'snapshot persistido', closedAt: '2026-09-10T20:00:00.000Z', closedBy: 'admin' });
 
-test('fechado e divergente bloqueiam dia e mês; reaberto libera', () => {
+test('fechado e divergente bloqueiam dia e mês; aberto e reaberto liberam', () => {
   assert.throws(() => assertFinancialPeriodOpen('matriz', '2026-09-10', [closing('CLOSED')]), /período financeiro está fechado/i);
   assert.throws(() => assertFinancialPeriodOpen('matriz', '2026-09', [closing('DIVERGENT')]), /período financeiro está fechado/i);
+  assert.doesNotThrow(() => assertFinancialPeriodOpen('matriz', '2026-09-10', [closing('OPEN')]));
   assert.doesNotThrow(() => assertFinancialPeriodOpen('matriz', '2026-09-10', [closing('REOPENED')]));
 });
 

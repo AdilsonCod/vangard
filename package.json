@@ -41,6 +41,8 @@
     "unit-ids:recover-backup:apply": "tsx scripts/recover-unit-ids-from-backup.ts --apply",
     "test:unit-id-migration": "tsx --test scripts/unit-id-migration.test.ts",
     "test:financial-engine": "tsx --test scripts/financial-engine.test.ts scripts/commission-calculator.test.ts",
+    "test:cash-flow-statement": "tsx --test scripts/cash-flow-statement.test.ts",
+    "test:financial-transaction-batch": "tsx --test scripts/financial-transaction-batch.test.ts",
     "test:subscription-plans": "tsx --test scripts/subscription-plans.test.ts",
     "test:financial-period-lock": "tsx --test scripts/financial-period-lock.test.ts",
     "test:financial-audit": "tsx --test scripts/financial-audit.test.ts",

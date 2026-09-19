@@ -34,11 +34,13 @@ import { AppBadge, AppEmptyState, AppPageHeader, appControlClass } from './ui/Ap
 import { calculateTotalRevenue, resolveMovementNature, summarizeCashMovements } from '../services/financialEngine';
 import { useConfirmation } from './ui/ConfirmationDialog';
 import { formatFinancialTransactionDate as formatTransactionDate, inferFinancialSourceChannel as inferSourceChannel } from '../services/financialPresentation';
+import { financialTransactionBatchId, financialTransactionInstallmentCount } from '../services/financialTransactionBatch';
 
 const BankReconciliation = lazy(() => import('./BankReconciliation').then(module => ({ default: module.BankReconciliation })));
 const ReceivablesReconciliation = lazy(() => import('./ReceivablesReconciliation').then(module => ({ default: module.ReceivablesReconciliation })));
 const FintechReconciliation = lazy(() => import('./FintechReconciliation').then(module => ({ default: module.FintechReconciliation })));
 const ExpenseSettlement = lazy(() => import('./ExpenseSettlement').then(module => ({ default: module.ExpenseSettlement })));
+const CashFlowStatementView = lazy(() => import('./CashFlowStatementView').then(module => ({ default: module.CashFlowStatementView })));
 
 type FinancialTransactionForm = Omit<Partial<FinancialTransaction>, 'amount'> & {
   amount?: number | string;
@@ -131,8 +133,8 @@ function cashTransactionDisplay(transaction: FinancialTransaction) {
   };
 }
 
-export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'DESPESAS' | 'CONCILIACAO_FINTECH' }) {
-  const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, cashClosings, currentUser, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing } = useStore();
+export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RESUMO' | 'CAIXA' | 'CONCILIACAO' | 'RECEBIMENTOS' | 'DESPESAS' | 'CONCILIACAO_FINTECH' | 'DFC' }) {
+  const { entries, payments, gdvEntries, monthlyBarberStats, users, systemUnits, transactions, cashClosings, currentUser, saveTransactionsAtomically, deleteTransaction, saveCashClosing, reopenCashClosing } = useStore();
   const confirmAction = useConfirmation();
   
   const activeTab = currentTab;
@@ -175,9 +177,13 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
   const [filterReconciliationStatus, setFilterReconciliationStatus] = useState<string>('ALL');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
+  const [filterDueDateFrom, setFilterDueDateFrom] = useState<string>('');
+  const [filterDueDateTo, setFilterDueDateTo] = useState<string>('');
   const [filterSearch, setFilterSearch] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isSavingTransaction, setIsSavingTransaction] = useState(false);
+  const transactionSaveLockRef = useRef(false);
+  const transactionOperationIdRef = useRef(crypto.randomUUID());
   const [transactionFeedback, setTransactionFeedback] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -204,7 +210,9 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     filterReconciliationStatus !== 'ALL' ||
     Boolean(filterSearch.trim()) ||
     Boolean(filterDateFrom) ||
-    Boolean(filterDateTo);
+    Boolean(filterDateTo) ||
+    Boolean(filterDueDateFrom) ||
+    Boolean(filterDueDateTo);
   const activeCashFilterCount = [
     filterType !== 'ALL',
     filterStatus !== 'ALL',
@@ -218,6 +226,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     Boolean(filterSearch.trim()),
     Boolean(filterDateFrom),
     Boolean(filterDateTo),
+    Boolean(filterDueDateFrom),
+    Boolean(filterDueDateTo),
   ].filter(Boolean).length;
 
   const clearCashFilters = () => {
@@ -233,6 +243,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     setFilterSearch('');
     setFilterDateFrom('');
     setFilterDateTo('');
+    setFilterDueDateFrom('');
+    setFilterDueDateTo('');
   };
 
   const applyCashQuickFilter = (
@@ -253,6 +265,8 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
       hasAutoSelectedTransactionPeriod.current ||
       filterDateFrom ||
       filterDateTo ||
+      filterDueDateFrom ||
+      filterDueDateTo ||
       transactions.length === 0
     ) {
       return;
@@ -266,7 +280,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     const latestPeriod = getLatestFinancialPeriod(transactions);
     if (latestPeriod) selectFinancialPeriod(latestPeriod);
     hasAutoSelectedTransactionPeriod.current = true;
-  }, [activeTab, filterDateFrom, filterDateTo, monthStr, transactions]);
+  }, [activeTab, filterDateFrom, filterDateTo, filterDueDateFrom, filterDueDateTo, monthStr, transactions]);
 
   useEffect(() => {
     if (!selectedTransaction) return;
@@ -359,7 +373,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
   };
 
   const handleSaveTransaction = async () => {
-    if (isSavingTransaction) return;
+    if (transactionSaveLockRef.current) return;
 
     const invalidFormIndex = transForms.findIndex(
       form => !form.category || parseFinancialAmount(form.amount) <= 0
@@ -369,18 +383,20 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
       return;
     }
 
+    transactionSaveLockRef.current = true;
     setIsSavingTransaction(true);
     setTransactionFeedback(null);
     const savedDates: string[] = [];
     let savedCount = 0;
+    const preparedTransactions: FinancialTransaction[] = [];
 
     try {
-      for (const transForm of transForms) {
+      for (const [formIndex, transForm] of transForms.entries()) {
       
-      const installments = (transForm.recurrence !== 'NONE' && transForm.installments && transForm.installments > 1) ? transForm.installments : 1;
+      const installments = financialTransactionInstallmentCount(transForm, editingId);
       
       for (let i = 0; i < installments; i++) {
-        const id = (editingId && installments === 1) ? editingId : `trans_${Date.now()}_${Math.random().toString(36).substring(2,9)}`;
+        const id = financialTransactionBatchId(transactionOperationIdRef.current, formIndex, i, editingId);
         
         let nextDate = transForm.date || new Date().toISOString().split('T')[0];
         let nextDueDate = transForm.dueDate || new Date().toISOString().split('T')[0];
@@ -450,15 +466,14 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
         // Remove undefined keys to prevent Firestore unsupported field value errors
         Object.keys(t).forEach(key => t[key] === undefined && delete t[key]);
         
-        if (editingId && installments === 1) {
-          await updateTransaction(t);
-        } else {
-          await addTransaction(t);
-        }
+        preparedTransactions.push(t as FinancialTransaction);
         savedDates.push(nextDate);
         savedCount += 1;
       }
+
       }
+
+      await saveTransactionsAtomically(preparedTransactions);
 
       // Ao criar, exibe imediatamente o novo lançamento. Durante uma edição,
       // preserva período e filtros para o usuário continuar na mesma consulta.
@@ -473,6 +488,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
 
       setIsModalOpen(false);
       setEditingId(null);
+      transactionOperationIdRef.current = crypto.randomUUID();
       setTransactionFeedback({
         type: 'success',
         message: `${savedCount} lançamento${savedCount === 1 ? '' : 's'} salvo${savedCount === 1 ? '' : 's'} com sucesso.`
@@ -485,6 +501,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
         message: `Não foi possível salvar o lançamento: ${message}`
       });
     } finally {
+      transactionSaveLockRef.current = false;
       setIsSavingTransaction(false);
     }
   };
@@ -709,6 +726,13 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
       filtered = filtered.filter(t => t.date && t.date.startsWith(monthStr));
     }
 
+    if (filterDueDateFrom) {
+      filtered = filtered.filter(transaction => Boolean(transaction.dueDate) && transaction.dueDate! >= filterDueDateFrom);
+    }
+    if (filterDueDateTo) {
+      filtered = filtered.filter(transaction => Boolean(transaction.dueDate) && transaction.dueDate! <= filterDueDateTo);
+    }
+
     if (filterType !== 'ALL') {
       filtered = filtered.filter(transaction => {
         if (transaction.type !== filterType) return false;
@@ -734,7 +758,7 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
     }
 
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, filterType, filterStatus, filterAccount, filterUnit, filterSupplier, filterClass, filterSubclass, filterSourceChannel, filterReconciliationStatus, filterSearch, filterDateFrom, filterDateTo, monthStr]);
+  }, [transactions, filterType, filterStatus, filterAccount, filterUnit, filterSupplier, filterClass, filterSubclass, filterSourceChannel, filterReconciliationStatus, filterSearch, filterDateFrom, filterDateTo, filterDueDateFrom, filterDueDateTo, monthStr]);
 
   const operationsCenter = useMemo(() => {
     const anchor = /^\d{4}-\d{2}-\d{2}$/.test(operationsDate)
@@ -1611,6 +1635,9 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
       {activeTab === 'DESPESAS' && (
         <ExpenseSettlement />
       )}
+      {activeTab === 'DFC' && (
+        <CashFlowStatementView period={monthStr} />
+      )}
 
       {activeTab === 'CAIXA' && (
         <div className="flex min-h-[640px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -1767,12 +1794,34 @@ export function FinancialDashboard({ currentTab = 'RESUMO' }: { currentTab?: 'RE
               </div>
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Data De</label>
+                  <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Lançamento de</label>
                   <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm font-semibold" />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Data Até</label>
+                  <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Lançamento até</label>
                   <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm font-semibold" />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Vencimento de</label>
+                  <input
+                    type="date"
+                    value={filterDueDateFrom}
+                    max={filterDueDateTo || undefined}
+                    onChange={event => setFilterDueDateFrom(event.target.value)}
+                    className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm font-semibold"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase mb-1">Vencimento até</label>
+                  <input
+                    type="date"
+                    value={filterDueDateTo}
+                    min={filterDueDateFrom || undefined}
+                    onChange={event => setFilterDueDateTo(event.target.value)}
+                    className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-2 text-sm font-semibold"
+                  />
                 </div>
               </div>
               <div className="flex items-end md:col-span-4 md:justify-end">

@@ -98,6 +98,7 @@ interface AppState {
   financialAuditEvents: FinancialAuditEvent[];
   addTransaction: (t: FinancialTransaction) => Promise<void>;
   updateTransaction: (t: FinancialTransaction) => Promise<void>;
+  saveTransactionsAtomically: (items: FinancialTransaction[]) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   saveCashClosing: (closing: CashClosing) => Promise<void>;
   reopenCashClosing: (closingId: string, reason: string) => Promise<void>;
@@ -637,18 +638,41 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
     await batch.commit();
   };
+  const saveTransactionsAtomically = async (items: FinancialTransaction[]) => {
+    if (!items.length) return;
+    if (items.length > 240) throw new Error('O lote excede 240 lançamentos. Divida-o em duas operações.');
+    const ids = new Set<string>();
+    items.forEach(item => {
+      if (!item.id || ids.has(item.id)) throw new Error('O lote contém identificadores repetidos. Atualize a página e tente novamente.');
+      ids.add(item.id);
+      assertFinancialPeriodOpen(item.unitId, item.date, cashClosings);
+    });
+    const existingById = new Map(transactions.map(item => [item.id, item]));
+    const batch = writeBatch(db);
+    items.forEach(item => {
+      const previous = existingById.get(item.id);
+      if (previous) assertFinancialPeriodOpen(previous.unitId, previous.date, cashClosings);
+      batch.set(doc(db, 'transactions', item.id), cleanUndefined(item));
+      const event = auditFor({ unitId: item.unitId, occurredOn: item.date, action: previous ? 'UPDATED' : 'CREATED', entityType: 'TRANSACTION', entityId: item.id, previousValue: previous, newValue: item, metadata: { atomicBatch: true } });
+      batch.set(doc(db, 'financialAuditEvents', event.id), cleanUndefined(event));
+    });
+    await batch.commit();
+  };
   const saveCashClosing = async (closing: CashClosing) => {
     const existing = cashClosings.find(item => item.id === closing.id);
-    if (existing && existing.status !== 'REOPENED') throw new Error('Este período já está fechado. Reabra-o antes de realizar um novo fechamento.');
     const now = new Date().toISOString();
-    const event: FinancialPeriodEvent = { id: `period_event_${Date.now()}_${crypto.randomUUID()}`, action: 'CLOSED', unitId: closing.unitId, date: closing.date, actorId: currentUser?.id || 'unknown', actorRole: currentUser?.role || 'RECEPTION', createdAt: now, closingSnapshot: cleanUndefined(closing) as CashClosing };
     const batch = writeBatch(db);
     batch.set(doc(db, 'cashClosings', closing.id), cleanUndefined(closing));
-    batch.set(doc(db, 'financialPeriodEvents', event.id), cleanUndefined(event));
-    const audit = auditFor({ unitId: closing.unitId, occurredOn: closing.date, action: 'CLOSED', entityType: 'CASH_CLOSING', entityId: closing.id, previousValue: existing, newValue: closing });
+    const isFinalized = closing.status === 'CLOSED' || closing.status === 'DIVERGENT';
+    if (isFinalized) {
+      const event: FinancialPeriodEvent = { id: `period_event_${Date.now()}_${crypto.randomUUID()}`, action: 'CLOSED', unitId: closing.unitId, date: closing.date, actorId: currentUser?.id || 'unknown', actorRole: currentUser?.role || 'RECEPTION', createdAt: now, closingSnapshot: cleanUndefined(closing) as CashClosing };
+      batch.set(doc(db, 'financialPeriodEvents', event.id), cleanUndefined(event));
+    }
+    const audit = auditFor({ unitId: closing.unitId, occurredOn: closing.date, action: existing ? 'UPDATED' : 'CREATED', entityType: 'CASH_CLOSING', entityId: closing.id, previousValue: existing, newValue: closing });
     batch.set(doc(db, 'financialAuditEvents', audit.id), cleanUndefined(audit));
-    batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date}`), { unitId: closing.unitId, period: closing.date, closingId: closing.id, active: true, updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
-    batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date.slice(0, 7)}`), { unitId: closing.unitId, period: closing.date.slice(0, 7), closingId: closing.id, active: true, updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
+    batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date}`), { unitId: closing.unitId, period: closing.date, closingId: closing.id, active: isFinalized, updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
+    const otherClosedDay = cashClosings.find(item => item.id !== closing.id && item.unitId === closing.unitId && item.date.startsWith(closing.date.slice(0, 7)) && item.status !== 'REOPENED' && item.status !== 'OPEN');
+    batch.set(doc(db, 'financialPeriodLocks', `${closing.unitId}_${closing.date.slice(0, 7)}`), { unitId: closing.unitId, period: closing.date.slice(0, 7), closingId: isFinalized ? closing.id : otherClosedDay?.id || closing.id, active: isFinalized || Boolean(otherClosedDay), updatedAt: now, updatedBy: currentUser?.id || 'unknown' });
     await batch.commit();
   };
   const reopenCashClosing = async (closingId: string, reason: string) => {
@@ -1024,7 +1048,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
     <StoreContext.Provider value={{ 
       quarterlyRankingVisible, setQuarterlyRankingVisible,
       financialCategories, suppliers, finClassifications, finMovementNatures, finSubclassifications, financialAuditEvents, users, entries, gdvEntries, gdvSettings, transactions, cashClosings, monthlyUnitStats, monthlyBarberStats, targets, catalog, payments, currentUser, categories, subcategories, systemUnits, notifications, announcements,
-      login, logout, addUser, updateUser, attachUserAuthentication, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, deleteTransaction, saveCashClosing, reopenCashClosing, recordFinancialAudit, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, saveFinMovementNature, deleteFinMovementNature, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
+      login, logout, addUser, updateUser, attachUserAuthentication, deleteUser, addEntry, updateEntry, deleteEntry, addTransaction, updateTransaction, saveTransactionsAtomically, deleteTransaction, saveCashClosing, reopenCashClosing, recordFinancialAudit, addFinancialCategory, deleteFinancialCategory, addSupplier, deleteSupplier, addFinClassification, deleteFinClassification, saveFinMovementNature, deleteFinMovementNature, addFinSubclassification, deleteFinSubclassification, updateGDVEntry, updateGDVSettings, updateMonthlyUnitStats, updateMonthlyBarberStats, deleteMonthlyBarberStats, deleteMonthlyUnitStats, updateTarget, updateCatalog,
       updateCategories, updateSubcategories, addSystemUnit, updateSystemUnit, deleteSystemUnit, addPayment, updatePayment, deletePayment, addNotification, addNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, addAnnouncement, updateAnnouncement, deleteAnnouncement, themeColor, setThemeColor: setThemeColor as any, themeLightBg, setThemeLightBg, themeDarkBg, setThemeDarkBg,
       lightLogo, setLightLogo, darkLogo, setDarkLogo, isDarkMode, setIsDarkMode
     }}>

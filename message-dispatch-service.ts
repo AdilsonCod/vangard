@@ -1,150 +1,2066 @@
-import type express from 'express';
-import { DisconnectReason, makeWASocket } from '@whiskeysockets/baileys';
-import pino from 'pino';
-import QRCode from 'qrcode';
-import { authenticatedUser, type VerifiedFirebaseUser } from './server-auth';
-import { adminBucket, adminDb } from './server-firebase-admin';
-import { clearEncryptedAuthState, useEncryptedAuthState } from './message-auth-store';
-import { authorizeDispatchUnit, safeInterruptionReason, waitForCampaignReady } from './message-dispatch-policy';
-import { createMessageCampaign, findMessageCampaignByRequest, normalizeMessageContact, planMessageCampaignCreation, type CreateMessageCampaignInput } from './message-campaign-creation';
-import { MESSAGE_CAMPAIGN_COLLECTIONS, maskMessagePhone, type MessageCampaignDocument, type MessageCampaignRecipientDocument } from './src/services/messageCampaignSchema';
-import { claimNextMessageRecipient, finalizeMessageRecipient, renewMessageRecipientLease, withMessageLeaseRenewal } from './message-campaign-worker';
-import { recoverActiveMessageCampaigns, recoverMessageCampaign } from './message-campaign-recovery';
-import { handleMessageRecipientFailure } from './message-campaign-retry';
-import { UnitSessionRegistry, whatsappSessionVaultPath } from './message-session-scope';
-import { messageDisconnectReason, messageQrExpiresAt } from './message-session-lifecycle';
-import { acquireMessageSessionLock, releaseMessageSessionLock, renewMessageSessionLock } from './message-session-lock';
-import { encodeSseEvent, MessageRealtimeBroker, type MessageRealtimeEvent } from './message-realtime';
-import { blockMessageContact, canUnblockMessageContact, incomingWhatsAppText, isMessageContactBlocked, isMessageOptOut, unblockMessageContact } from './message-blocklist';
-import { applyMessagePhoneRetention, messageConsentId, reconstructConsentAt, registerMessageConsents, type ContactConsentInput, type MessageConsentEvent } from './message-consent';
-import { loadMessageDispatchPolicy, MessageDispatchPolicyBlockedError, normalizeMessageDispatchPolicy } from './message-dispatch-limits';
-import { recordMessageDeliverySafety, validateAutomaticPauseResume, type CampaignSafetyEvaluation } from './message-campaign-safety';
-import { consumeHighVolumeChallenge, DEFAULT_HIGH_VOLUME_THRESHOLD, issueHighVolumeChallenge, MESSAGE_CAMPAIGN_TEST_COLLECTION } from './message-campaign-confirmation';
-import { buildDirectoryContact, createSnapshotSegment, MESSAGE_CONTACT_DIRECTORY_COLLECTION, MESSAGE_CONTACT_SEGMENT_COLLECTION, searchDirectoryContacts, type MessageDirectoryContact } from './message-contact-directory';
-import { buildSavedMessage, materializeMessage, MESSAGE_DRAFT_COLLECTION, MESSAGE_TEMPLATE_COLLECTION } from './message-personalization';
-import { buildMessageMediaUpload, MESSAGE_MEDIA_LIMITS } from './message-campaign-media';
-import { approveCampaignTransition, buildCampaignDuplicateDraft, cancelCampaignTransition, nextCampaignOccurrence } from './message-campaign-scheduling';
-import { canPerformMessageCampaignAction, type MessageCampaignAction } from './message-campaign-permissions';
-import { buildCampaignPerformance, safeCampaignRecipientExport, summarizeCampaignPerformance } from './message-campaign-analytics';
+import type express from "express";
+import { DisconnectReason, makeWASocket } from "@whiskeysockets/baileys";
+import pino from "pino";
+import QRCode from "qrcode";
+import { authenticatedUser, type VerifiedFirebaseUser } from "./server-auth";
+import { adminBucket, adminDb } from "./server-firebase-admin";
+import { clearEncryptedAuthState, useEncryptedAuthState } from "./message-auth-store";
+import { authorizeDispatchUnit, safeInterruptionReason, waitForCampaignReady } from "./message-dispatch-policy";
+import { createMessageCampaign, findMessageCampaignByRequest, normalizeMessageContact, planMessageCampaignCreation, type CreateMessageCampaignInput } from "./message-campaign-creation";
+import { MESSAGE_CAMPAIGN_COLLECTIONS, maskMessagePhone, type MessageCampaignDocument, type MessageCampaignRecipientDocument } from "./src/services/messageCampaignSchema";
+import { claimNextMessageRecipient, finalizeMessageRecipient, renewMessageRecipientLease, withMessageLeaseRenewal } from "./message-campaign-worker";
+import { recoverActiveMessageCampaigns, recoverMessageCampaign } from "./message-campaign-recovery";
+import { handleMessageRecipientFailure } from "./message-campaign-retry";
+import { UnitSessionRegistry, whatsappSessionDocumentId, whatsappSessionScope, whatsappSessionVaultPath } from "./message-session-scope";
+import { messageDisconnectReason, messageQrExpiresAt } from "./message-session-lifecycle";
+import { acquireMessageSessionLock, releaseMessageSessionLock, renewMessageSessionLock } from "./message-session-lock";
+import { encodeSseEvent, MessageRealtimeBroker, type MessageRealtimeEvent } from "./message-realtime";
+import { blockMessageContact, canUnblockMessageContact, incomingWhatsAppText, isMessageContactBlocked, isMessageOptOut, unblockMessageContact } from "./message-blocklist";
+import { applyMessagePhoneRetention, messageConsentId, reconstructConsentAt, registerMessageConsents, type ContactConsentInput, type MessageConsentEvent } from "./message-consent";
+import { loadMessageDispatchPolicy, MessageDispatchPolicyBlockedError, normalizeMessageDispatchPolicy } from "./message-dispatch-limits";
+import { recordMessageDeliverySafety, validateAutomaticPauseResume, type CampaignSafetyEvaluation } from "./message-campaign-safety";
+import { consumeHighVolumeChallenge, DEFAULT_HIGH_VOLUME_THRESHOLD, issueHighVolumeChallenge, MESSAGE_CAMPAIGN_TEST_COLLECTION } from "./message-campaign-confirmation";
+import { buildDirectoryContact, createSnapshotSegment, MESSAGE_CONTACT_DIRECTORY_COLLECTION, MESSAGE_CONTACT_SEGMENT_COLLECTION, searchDirectoryContacts, type MessageDirectoryContact } from "./message-contact-directory";
+import { buildSavedMessage, materializeMessage, MESSAGE_DRAFT_COLLECTION, MESSAGE_TEMPLATE_COLLECTION } from "./message-personalization";
+import { buildMessageMediaUpload, MESSAGE_MEDIA_LIMITS } from "./message-campaign-media";
+import { approveCampaignTransition, buildCampaignDuplicateDraft, cancelCampaignTransition, nextCampaignOccurrence } from "./message-campaign-scheduling";
+import { canPerformMessageCampaignAction, type MessageCampaignAction } from "./message-campaign-permissions";
+import { buildCampaignPerformance, safeCampaignRecipientExport, summarizeCampaignPerformance } from "./message-campaign-analytics";
 
-type Log={id:string;time:string;text:string;type:'info'|'success'|'warning'};
-type Delivery={contact:string;status:'AGUARDANDO'|'ENVIADO'|'FALHA';processedAt?:string;error?:string};
-type State={enabled:boolean;connectionStatus:'disconnected'|'connecting'|'qr'|'connected';currentQr:string;qrExpiresAt:string|null;accountPhone:string;accountName:string;lastConnectedAt:string|null;disconnectReason:string;disconnectKind:'none'|'intentional'|'abnormal'|'expired';isSending:boolean;progress:number;total:number;currentAction:string;logs:Log[];campaignStatus:'idle'|'running'|'paused'|'completed'|'stopped';successCount:number;errorCount:number;errorDetails:{contact:string;error:string}[];deliveryDetails:Delivery[];runId:string;activeUnitId:string;lastError:string;requiresNewQr:boolean;policyBlockReason:string;policyBlockedUntil:string|null};
-type Session={unitId:string;state:State;socket:ReturnType<typeof makeWASocket>|null;connecting:boolean;generation:number;workerActive:boolean;intentionalDisconnect:boolean;qrTimer:ReturnType<typeof setTimeout>|null;lockTimer:ReturnType<typeof setInterval>|null;lockToken:number|null;actor?:VerifiedFirebaseUser};
-type LoadedCampaignMedia={type:'IMAGE'|'VIDEO';storagePath:string;caption:string;order:number;mimeType:string;buffer:Buffer};
+type Log = {
+  id: string;
+  time: string;
+  text: string;
+  type: "info" | "success" | "warning";
+};
+type Delivery = {
+  contact: string;
+  status: "AGUARDANDO" | "ENVIADO" | "FALHA";
+  processedAt?: string;
+  error?: string;
+};
+type State = {
+  enabled: boolean;
+  connectionStatus: "disconnected" | "connecting" | "qr" | "connected";
+  currentQr: string;
+  qrExpiresAt: string | null;
+  accountPhone: string;
+  accountName: string;
+  lastConnectedAt: string | null;
+  disconnectReason: string;
+  disconnectKind: "none" | "intentional" | "abnormal" | "expired";
+  isSending: boolean;
+  progress: number;
+  total: number;
+  currentAction: string;
+  logs: Log[];
+  campaignStatus: "idle" | "running" | "paused" | "completed" | "stopped";
+  successCount: number;
+  errorCount: number;
+  errorDetails: { contact: string; error: string }[];
+  deliveryDetails: Delivery[];
+  runId: string;
+  activeUnitId: string;
+  lastError: string;
+  requiresNewQr: boolean;
+  policyBlockReason: string;
+  policyBlockedUntil: string | null;
+};
+type Session = {
+  scopeId: string;
+  unitId: string;
+  ownerId: string;
+  state: State;
+  socket: ReturnType<typeof makeWASocket> | null;
+  connecting: boolean;
+  generation: number;
+  workerActive: boolean;
+  intentionalDisconnect: boolean;
+  qrTimer: ReturnType<typeof setTimeout> | null;
+  lockTimer: ReturnType<typeof setInterval> | null;
+  lockToken: number | null;
+  actor?: VerifiedFirebaseUser;
+};
+type LoadedCampaignMedia = {
+  type: "IMAGE" | "VIDEO";
+  storagePath: string;
+  caption: string;
+  order: number;
+  mimeType: string;
+  buffer: Buffer;
+};
 
-const BASE_VAULT=process.env.WHATSAPP_AUTH_VAULT||'data/whatsapp/session.enc';
-const MAX_CONTACTS=200;
-const HIGH_VOLUME_THRESHOLD=Math.max(10,Math.min(MAX_CONTACTS,Number(process.env.MESSAGE_HIGH_VOLUME_THRESHOLD)||DEFAULT_HIGH_VOLUME_THRESHOLD));
-const workerId=process.env.MESSAGE_WORKER_ID?.trim()||`message-worker-${crypto.randomUUID()}`;
-const sessionInstanceId=`${process.env.RAILWAY_REPLICA_ID?.trim()||process.env.HOSTNAME?.trim()||'message-instance'}:${crypto.randomUUID()}`;
-const SESSION_LOCK_LEASE_MS=60_000;
-const SESSION_LOCK_RENEW_MS=20_000;
-const initialState=(unitId:string):State=>({enabled:true,connectionStatus:'disconnected',currentQr:'',qrExpiresAt:null,accountPhone:'',accountName:'',lastConnectedAt:null,disconnectReason:'',disconnectKind:'none',isSending:false,progress:0,total:0,currentAction:'Aguardando conexão.',logs:[],campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],deliveryDetails:[],runId:'',activeUnitId:unitId,lastError:'',requiresNewQr:false,policyBlockReason:'',policyBlockedUntil:null});
-function campaignRequest(req:express.Request,unitId:string,user:VerifiedFirebaseUser|undefined){const message=String(req.body?.message||'').trim(),raw=Array.isArray(req.body?.contacts)?req.body.contacts:String(req.body?.contacts||'').split(/\r?\n/),contacts=[...new Set(raw.map(normalizeMessageContact).filter(Boolean))],minDelay=Math.max(8,Math.min(120,Number(req.body?.minDelay)||15)),maxDelay=Math.max(minDelay,Math.min(180,Number(req.body?.maxDelay)||35)),requestIdempotencyKey=String(req.body?.idempotencyKey||req.get('Idempotency-Key')||'').trim(),recipientData=Array.isArray(req.body?.recipientData)?req.body.recipientData:[],mediaIds=Array.isArray(req.body?.mediaIds)?req.body.mediaIds.map(String):[];const input:CreateMessageCampaignInput={requestIdempotencyKey,unitId,name:String(req.body?.campaignName||'Disparo sem título').trim().slice(0,120),message,contacts,recipientData,mediaIds,scheduledAt:req.body?.scheduledAt?String(req.body.scheduledAt):null,timeZone:String(req.body?.timeZone||'America/Sao_Paulo'),recurrence:String(req.body?.recurrence||'NONE').toUpperCase() as CreateMessageCampaignInput['recurrence'],recurrenceEndsAt:req.body?.recurrenceEndsAt?String(req.body.recurrenceEndsAt):null,approvalRequired:req.body?.approvalRequired===true,minDelaySeconds:minDelay,maxDelaySeconds:maxDelay,simulateTyping:req.body?.simulateTyping!==false,confirmedOptIn:true,createdBy:user?.uid||'SYSTEM',...(user?.email?{createdByEmail:user.email}:{})};return {input,message,contacts,minDelay,maxDelay};}
-const sessions=new UnitSessionRegistry<Session>(unitId=>({unitId,state:initialState(unitId),socket:null,connecting:false,generation:0,workerActive:false,intentionalDisconnect:false,qrTimer:null,lockTimer:null,lockToken:null}));
-let serviceDraining=false;
-const serviceTimers=new Set<ReturnType<typeof setInterval>>();
-const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
-const log=(session:Session,text:string,type:Log['type']='info')=>{session.state.logs.unshift({id:crypto.randomUUID(),time:new Date().toLocaleTimeString('pt-BR'),text,type});session.state.logs=session.state.logs.slice(0,80);publishState(session,type==='warning'?'alert':'progress');};
-const publicState=(session:Session)=>({...session.state,accountPhone:maskMessagePhone(session.state.accountPhone),errorDetails:session.state.errorDetails.slice(0,100).map(item=>({...item,contact:maskMessagePhone(item.contact)})),deliveryDetails:session.state.deliveryDetails.slice(0,200).map(item=>({...item,contact:maskMessagePhone(item.contact)}))});
-const realtimeBroker=new MessageRealtimeBroker<ReturnType<typeof publicState>>();
-function publishState(session:Session,type:MessageRealtimeEvent<ReturnType<typeof publicState>>['type']='progress'){realtimeBroker.publish(session.unitId,type,publicState(session));}
-async function loadCampaignMedia(mediaIds:string[]|undefined,unitId:string,campaignId?:string):Promise<LoadedCampaignMedia[]>{if(!mediaIds?.length)return[];const snapshots=await Promise.all(mediaIds.map(id=>adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(id).get()));const valid=snapshots.filter(item=>item.exists&&item.data()?.unitId===unitId&&(!campaignId||item.data()?.campaignId===campaignId));if(valid.length!==mediaIds.length)throw new Error('Um dos anexos não está mais disponível para esta campanha.');const media=await Promise.all(valid.map(async item=>{const data=item.data() as Omit<LoadedCampaignMedia,'buffer'>;const [buffer]=await adminBucket.file(data.storagePath).download();return {...data,buffer};}));return media.sort((a,b)=>a.order-b.order);}
-async function sendCampaignContent(socket:ReturnType<typeof makeWASocket>,jid:string,text:string,variables:Record<string,string>,media:LoadedCampaignMedia[]){for(const item of media){const caption=materializeMessage(item.caption,{name:variables.nome,variables});if(item.type==='IMAGE')await socket.sendMessage(jid,{image:item.buffer,caption,mimetype:item.mimeType});else await socket.sendMessage(jid,{video:item.buffer,caption,mimetype:item.mimeType});}if(text)await socket.sendMessage(jid,{text});}
-async function createRecurringOccurrence(campaign:MessageCampaignDocument){const scheduledAt=nextCampaignOccurrence(campaign);if(!scheduledAt)return null;const [recipientsSnapshot,mediaSnapshots]=await Promise.all([adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where('campaignId','==',campaign.id).get(),Promise.all((campaign.mediaIds||[]).map(id=>adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(id).get()))]);const id=`campaign_${crypto.randomUUID().replace(/-/g,'')}`,createdAt=new Date().toISOString(),mediaIds:string[]=[];const batch=adminDb.batch();for(const snapshot of mediaSnapshots){if(!snapshot.exists)continue;const mediaId=`media_${crypto.randomUUID().replace(/-/g,'')}`;mediaIds.push(mediaId);batch.set(adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(mediaId),{...snapshot.data(),id:mediaId,campaignId:id,createdAt,updatedAt:createdAt});}const reset={...campaign,id,status:campaign.approvalRequired?'AGUARDANDO_APROVACAO' as const:'AGENDADA' as const,scheduledAt,recurrenceParentId:campaign.recurrenceParentId||campaign.id,mediaIds,totalRecipients:recipientsSnapshot.size,pendingCount:recipientsSnapshot.size,processingCount:0,sentCount:0,deliveredCount:0,readCount:0,failedCount:0,cancelledCount:0,createdAt,updatedAt:createdAt,requestIdempotencyKey:crypto.randomUUID()};for(const key of ['payloadHash','finishedAt','firstSentAt','approvedAt','approvedBy','approvedByEmail','cancelledAt','cancelledBy'] as const)delete reset[key];const nextCampaign=reset as MessageCampaignDocument;batch.set(adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(id),nextCampaign);for(const snapshot of recipientsSnapshot.docs){const recipient=snapshot.data() as MessageCampaignRecipientDocument,recipientId=`recipient_${crypto.randomUUID().replace(/-/g,'')}`;batch.set(adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).doc(recipientId),{...recipient,id:recipientId,campaignId:id,status:'PENDENTE',idempotencyKey:crypto.randomUUID(),attemptCount:0,nextAttemptAt:scheduledAt,leaseOwner:null,leaseExpiresAt:null,createdAt,updatedAt:createdAt,processedAt:null,lastError:null,policyReservedAt:null,contactNextAllowedAt:null});}await batch.commit();return nextCampaign;}
-
-async function audit(action:string,user:VerifiedFirebaseUser|undefined,unitId:string,details:Record<string,unknown>={}){try{await adminDb.collection('dispatch_audit').add({action,unitId,userId:user?.uid||'SYSTEM',profileId:user?.profileId||null,userEmail:user?.email||null,userRole:user?.role||'SYSTEM',timestamp:new Date().toISOString(),...details});}catch(error){console.error('Falha na auditoria:',error);}}
-async function recordInboundCampaignResponse(unitId:string,phone:string,text:string){try{const snapshot=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where('normalizedPhone','==',normalizeMessageContact(phone)).limit(25).get();const recipient=snapshot.docs.map(document=>({reference:document.ref,data:document.data() as MessageCampaignRecipientDocument})).filter(item=>item.data.unitId===unitId&&['ENVIADO','ENTREGUE','LIDO'].includes(item.data.status)).sort((a,b)=>String(b.data.processedAt||b.data.updatedAt).localeCompare(String(a.data.processedAt||a.data.updatedAt)))[0];if(!recipient)return;const reference=adminDb.collection('message_campaign_responses').doc(recipient.data.id);await adminDb.runTransaction(async transaction=>{const existing=await transaction.get(reference);if(existing.exists)return;transaction.create(reference,{id:recipient.data.id,recipientId:recipient.data.id,campaignId:recipient.data.campaignId,unitId,maskedPhone:maskMessagePhone(phone),receivedAt:new Date().toISOString(),textPreview:text.trim().slice(0,80)});});}catch(error){console.error('Falha ao registrar resposta de campanha:',error);}}
-async function notifyAdminsOfCampaignPause(unitId:string,campaignId:string,evaluation:CampaignSafetyEvaluation){try{const admins=await adminDb.collection('users').where('role','==','ADMIN').get(),batch=adminDb.batch(),timestamp=new Date().toISOString();admins.docs.filter(document=>document.data().isActive!==false).forEach(document=>{const reference=adminDb.collection('notifications').doc();batch.set(reference,{userId:document.id,unitId,type:'MESSAGE_CAMPAIGN_AUTO_PAUSED',title:'Campanha pausada automaticamente',message:`Taxa de falhas de ${evaluation.failureRate.toFixed(1)}% em ${evaluation.sampleSize} envios.`,campaignId,read:false,createdAt:timestamp,timestamp});});if(admins.docs.length)await batch.commit();}catch(error){console.error('Falha ao notificar administradores:',error);}}
-async function applyCampaignSafety(session:Session,campaign:MessageCampaignDocument,evaluation:CampaignSafetyEvaluation,user?:VerifiedFirebaseUser){if(!evaluation.shouldPause)return false;const reason=`Campanha pausada automaticamente: ${evaluation.failureRate.toFixed(1)}% de falhas em ${evaluation.sampleSize} envios.`;session.state.campaignStatus='paused';session.state.currentAction=reason;session.state.policyBlockReason=reason;session.state.policyBlockedUntil=evaluation.resumeAllowedAt;log(session,reason,'warning');publishState(session,'alert');await audit('CAMPAIGN_AUTO_PAUSED',user,campaign.unitId,{runId:campaign.id,failures:evaluation.failures,sampleSize:evaluation.sampleSize,failureRate:evaluation.failureRate,threshold:evaluation.threshold,resumeAllowedAt:evaluation.resumeAllowedAt});await notifyAdminsOfCampaignPause(campaign.unitId,campaign.id,evaluation);return true;}
-async function persistSession(session:Session){const state=session.state;await adminDb.collection('message_whatsapp_sessions').doc(session.unitId).set({unitId:session.unitId,connectionStatus:state.connectionStatus,accountPhone:state.accountPhone,accountName:state.accountName,lastConnectedAt:state.lastConnectedAt,disconnectReason:state.disconnectReason,disconnectKind:state.disconnectKind,qrExpiresAt:state.qrExpiresAt,updatedAt:new Date().toISOString()},{merge:true}).catch(error=>console.error('Falha ao persistir metadados da sessão:',error));publishState(session,state.connectionStatus==='qr'?'qr':state.disconnectKind==='abnormal'?'alert':'connection');}
-async function releaseSessionLock(session:Session){if(session.lockTimer)clearInterval(session.lockTimer);session.lockTimer=null;const token=session.lockToken;session.lockToken=null;if(token!==null)await releaseMessageSessionLock(adminDb,session.unitId,sessionInstanceId,token).catch(()=>false);}
-async function ownsSessionLock(session:Session){const token=session.lockToken;if(token===null)return false;return renewMessageSessionLock(adminDb,session.unitId,sessionInstanceId,token,new Date(),SESSION_LOCK_LEASE_MS).catch(()=>false);}
-function startSessionLockHeartbeat(session:Session,token:number){if(session.lockTimer)clearInterval(session.lockTimer);session.lockToken=token;session.lockTimer=setInterval(async()=>{const renewed=await renewMessageSessionLock(adminDb,session.unitId,sessionInstanceId,token,new Date(),SESSION_LOCK_LEASE_MS).catch(()=>false);if(renewed||session.lockToken!==token)return;if(session.lockTimer)clearInterval(session.lockTimer);session.lockTimer=null;session.lockToken=null;session.generation++;session.connecting=false;session.intentionalDisconnect=true;session.state.isSending=false;session.state.connectionStatus='disconnected';session.state.disconnectKind='abnormal';session.state.disconnectReason='A instância perdeu o lock exclusivo da sessão.';session.state.currentAction='Sessão encerrada para evitar conexão duplicada.';try{session.socket?.end(new Error('Lock distribuído perdido.'));}catch{/* encerrada */}session.socket=null;void persistSession(session);void audit('SESSION_LOCK_LOST',session.actor,session.unitId,{instanceId:sessionInstanceId,fencingToken:token});},SESSION_LOCK_RENEW_MS);session.lockTimer.unref?.();}
-
-async function connect(user:VerifiedFirebaseUser|undefined,unitId:string){
-  const session=sessions.get(unitId),state=session.state;if(session.connecting||state.connectionStatus==='connected')return {success:true};session.actor=user;session.intentionalDisconnect=false;session.connecting=true;const generation=++session.generation;state.connectionStatus=state.currentQr?'qr':'connecting';state.currentAction='Inicializando conexão com o WhatsApp...';
-  try{
-    const lock=await acquireMessageSessionLock(adminDb,unitId,sessionInstanceId,new Date(),SESSION_LOCK_LEASE_MS);if(!lock){session.connecting=false;state.connectionStatus='disconnected';state.disconnectKind='abnormal';state.disconnectReason='Esta unidade já está conectada em outra instância do serviço.';state.currentAction='Conexão protegida por outra instância.';await persistSession(session);return {success:false,error:state.disconnectReason};}startSessionLockHeartbeat(session,lock.fencingToken);
-    const {state:auth,saveCreds,clear}=await useEncryptedAuthState(whatsappSessionVaultPath(BASE_VAULT,unitId));
-    const socket=makeWASocket({auth,printQRInTerminal:false,logger:pino({level:'silent'}),browser:[`Van’s Management - ${unitId}`,'Chrome','1.0.0']});session.socket=socket;socket.ev.on('creds.update',saveCreds);
-    socket.ev.on('messages.upsert',async event=>{if(event.type!=='notify')return;for(const item of event.messages){if(item.key.fromMe||!item.message)continue;const jid=item.key.remoteJid||'';if(!jid.endsWith('@s.whatsapp.net'))continue;const text=incomingWhatsAppText(item.message as unknown as Record<string,unknown>),phone=jid.split('@')[0].split(':')[0];void recordInboundCampaignResponse(unitId,phone,text);if(!isMessageOptOut(text))continue;try{const blocked=await blockMessageContact(adminDb,{phone,reason:`Opt-out recebido pelo WhatsApp: ${text.trim()}`,source:'WHATSAPP_OPT_OUT',actorId:'WHATSAPP'});log(session,`Opt-out registrado para ${blocked.normalizedPhone.slice(0,4)}*****${blocked.normalizedPhone.slice(-4)}.`,'warning');void audit('CONTACT_OPTED_OUT',undefined,unitId,{phoneHash:blocked.id,cancelledRecipients:blocked.cancelledRecipients});}catch(error){console.error('Falha ao processar opt-out recebido:',error);}}});
-    socket.ev.on('connection.update',async update=>{
-      if(generation!==session.generation)return;const {connection,lastDisconnect,qr}=update;
-      if(qr){if(session.qrTimer)clearTimeout(session.qrTimer);state.connectionStatus='qr';state.currentQr=await QRCode.toDataURL(qr);state.qrExpiresAt=messageQrExpiresAt();state.currentAction='Escaneie o QR Code para conectar.';state.lastError='';state.requiresNewQr=false;void persistSession(session);session.qrTimer=setTimeout(()=>{if(generation!==session.generation||state.connectionStatus!=='qr')return;state.currentQr='';state.qrExpiresAt=null;state.connectionStatus='disconnected';state.requiresNewQr=true;state.disconnectKind='expired';state.disconnectReason='O QR Code expirou antes da leitura.';state.currentAction='QR expirado. Gere um novo código.';session.intentionalDisconnect=true;try{session.socket?.end(new Error('QR Code expirado.'));}catch{/* encerrada */}void persistSession(session);void audit('QR_EXPIRED',session.actor,unitId);},60_000);session.qrTimer.unref?.();}
-      if(connection==='open'){if(session.qrTimer)clearTimeout(session.qrTimer);session.qrTimer=null;session.connecting=false;state.connectionStatus='connected';state.currentQr='';state.qrExpiresAt=null;state.accountPhone=String(socket.user?.id||'').split(':')[0].split('@')[0];state.accountName=socket.user?.name||'Conta WhatsApp';state.lastConnectedAt=new Date().toISOString();state.disconnectKind='none';state.disconnectReason='';state.currentAction='WhatsApp conectado e pronto.';state.lastError='';state.requiresNewQr=false;log(session,'WhatsApp conectado.','success');void persistSession(session);void audit('CONNECTION_OPENED',session.actor,unitId,{accountPhone:state.accountPhone,accountName:state.accountName});void resume(session);}
-      if(connection==='close'){if(session.qrTimer)clearTimeout(session.qrTimer);session.qrTimer=null;session.connecting=false;session.socket=null;const code=(lastDisconnect?.error as {output?:{statusCode?:number}}|undefined)?.output?.statusCode;const loggedOut=code===DisconnectReason.loggedOut;const intentional=session.intentionalDisconnect;state.connectionStatus='disconnected';state.currentQr='';state.qrExpiresAt=null;state.disconnectReason=intentional?(state.disconnectReason||'Desconectado pelo operador.'):messageDisconnectReason(lastDisconnect?.error,code);state.disconnectKind=intentional?'intentional':loggedOut?'expired':'abnormal';state.currentAction=intentional?'Sessão desconectada.':loggedOut?'Sessão expirada. Gere um novo QR Code.':'Queda detectada. Tentando reconectar...';state.requiresNewQr=loggedOut;if(loggedOut)await clear().catch(()=>undefined);await releaseSessionLock(session);void persistSession(session);void audit(intentional?'CONNECTION_DISCONNECTED':'CONNECTION_DROPPED',session.actor,unitId,{reasonCode:code||null,reason:state.disconnectReason});if(!intentional&&!loggedOut)setTimeout(()=>void connect(session.actor,unitId),3000);}
-    });return {success:true};
-  }catch(error){const reason=error instanceof Error?error.message:'Falha de conexão.';session.connecting=false;session.socket=null;state.connectionStatus='disconnected';state.lastError=reason;state.currentAction=reason;log(session,reason,'warning');await releaseSessionLock(session);return {success:false,error:reason};}
-}
-
-async function runCampaign(session:Session,campaign:MessageCampaignDocument,user?:VerifiedFirebaseUser){
-  const state=session.state;if(session.workerActive||state.connectionStatus!=='connected'||!session.socket)return;const recovered=await recoverMessageCampaign(adminDb,campaign.id);if(!recovered||!['NA_FILA','EM_PROCESSAMENTO'].includes(recovered.campaign.status))return;campaign=recovered.campaign;
-  const snapshot=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where('campaignId','==',campaign.id).get();const recipients=snapshot.docs.map(doc=>({id:doc.id,...doc.data()} as MessageCampaignRecipientDocument));const contacts=recipients.map(item=>item.normalizedPhone);const minDelay=Math.max(8,Math.min(120,Number(campaign.minDelaySeconds)||15));const maxDelay=Math.max(minDelay,Math.min(180,Number(campaign.maxDelaySeconds)||35));const typing=campaign.simulateTyping!==false;const media=await loadCampaignMedia(campaign.mediaIds,campaign.unitId,campaign.id);
-  session.workerActive=true;Object.assign(state,{isSending:true,campaignStatus:'running',runId:campaign.id,activeUnitId:campaign.unitId,successCount:campaign.sentCount,errorCount:campaign.failedCount,errorDetails:[],total:recipients.length,progress:campaign.sentCount+campaign.deliveredCount+campaign.readCount+campaign.failedCount+campaign.cancelledCount,logs:[]});state.deliveryDetails=recipients.map(item=>({contact:item.normalizedPhone,status:item.status==='ENVIADO'?'ENVIADO':item.status==='FALHOU'?'FALHA':'AGUARDANDO',...(item.processedAt?{processedAt:item.processedAt}:{}),...(item.lastError?{error:item.lastError}:{})}));log(session,`Campanha ${campaign.name} carregada da fila persistente.`);
-  try{
-    await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(campaign.id).set({status:'EM_PROCESSAMENTO',updatedAt:new Date().toISOString()},{merge:true});await adminDb.collection('message_dispatch_history').doc(campaign.id).set({name:campaign.name,createdAt:campaign.createdAt,unitId:campaign.unitId,total:contacts.length,contacts,message:campaign.message,minDelay,maxDelay,simulateTyping:typing,confirmedOptIn:campaign.confirmedOptIn===true,processed:state.progress,successCount:state.successCount,errorCount:state.errorCount,status:'EM_ANDAMENTO',deliveryDetails:state.deliveryDetails,createdBy:campaign.createdBy,createdByEmail:campaign.createdByEmail||''},{merge:true});
-    while(state.isSending){
-      if(!await waitForCampaignReady(state))break;if(!await ownsSessionLock(session))throw new Error('Lock exclusivo da sessão perdido antes do envio.');let claimed;try{claimed=await claimNextMessageRecipient(adminDb,{workerId,campaignId:campaign.id,unitId:campaign.unitId,accountId:state.accountPhone||campaign.unitId,leaseMs:90_000});}catch(error){if(error instanceof MessageDispatchPolicyBlockedError){const retryAt=new Date(error.block.retryAt),waitMs=Math.max(1000,Math.min(60_000,retryAt.getTime()-Date.now()));state.policyBlockReason=error.block.message;state.policyBlockedUntil=retryAt.toISOString();state.currentAction=`${error.block.message} Liberação estimada: ${retryAt.toLocaleString('pt-BR')}.`;log(session,state.currentAction,'warning');publishState(session,'progress');await pause(waitMs);continue;}throw error;}if(!claimed)break;state.policyBlockReason='';state.policyBlockedUntil=null;const contact=claimed.normalizedPhone,index=state.deliveryDetails.findIndex(item=>item.contact===contact),slot=index>=0?index:state.progress;let jid=`${contact}@s.whatsapp.net`,done=false;
-      try{await withMessageLeaseRenewal({intervalMs:30_000,renew:()=>renewMessageRecipientLease(adminDb,claimed.id,workerId,new Date(),90_000),work:async()=>{const socket=session.socket;if(!socket)throw new Error('WhatsApp desconectado durante o envio.');if(await isMessageContactBlocked(adminDb,contact))throw new Error('Contato bloqueado pela lista global não enviar.');state.currentAction=`Validando ${claimed.maskedPhone}...`;const available=await socket.onWhatsApp(contact);if(!available?.[0]?.exists)throw new Error('Número não encontrado no WhatsApp');jid=available[0].jid;if(typing){state.currentAction=`Preparando mensagem ${state.progress+1} de ${contacts.length}...`;await socket.sendPresenceUpdate('composing',jid);await pause(Math.min(6000,Math.max(1200,claimed.personalizedMessage.length*45)));await socket.sendPresenceUpdate('paused',jid);}if(!await waitForCampaignReady(state))throw new Error('Campanha interrompida antes do envio.');if(await isMessageContactBlocked(adminDb,contact))throw new Error('Contato bloqueado pela lista global não enviar.');await sendCampaignContent(socket,jid,claimed.personalizedMessage,claimed.variables,media);}});const at=new Date().toISOString();if(!campaign.firstSentAt){campaign.firstSentAt=at;await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(campaign.id).set({firstSentAt:at,updatedAt:at},{merge:true});}if(!await finalizeMessageRecipient(adminDb,claimed.id,workerId,'ENVIADO',{now:new Date(at)}))throw new Error('Lease expirado.');state.successCount++;done=true;state.deliveryDetails[slot]={contact,status:'ENVIADO',processedAt:at};log(session,`Mensagem enviada para ${claimed.maskedPhone}.`,'success');const safety=await recordMessageDeliverySafety(adminDb,{unitId:campaign.unitId,accountId:state.accountPhone||campaign.unitId,campaignId:campaign.id,success:true,now:new Date(at)});await applyCampaignSafety(session,campaign,safety,user);}
-      catch(error){const detail=error instanceof Error?error.message:'Falha no envio';if(/lista global|bloquead/i.test(detail)){await finalizeMessageRecipient(adminDb,claimed.id,workerId,'CANCELADO',{error:detail});done=true;state.deliveryDetails[slot]={contact,status:'FALHA',processedAt:new Date().toISOString(),error:detail};log(session,`Envio cancelado para ${claimed.maskedPhone}: contato bloqueado.`,'warning');}else if(!state.isSending){await finalizeMessageRecipient(adminDb,claimed.id,workerId,'CANCELADO',{error:detail});done=true;}else{const failure=await handleMessageRecipientFailure(adminDb,{recipientId:claimed.id,workerId,error,baseDelayMs:30_000});if(failure?.decision.retry){const seconds=Math.ceil(failure.decision.delayMs/1000);state.currentAction=`Nova tentativa em ${seconds}s...`;log(session,`${state.currentAction} (${claimed.maskedPhone})`,'warning');for(let i=0;i<seconds&&state.isSending;i++)await pause(1000);}else{done=true;state.errorCount++;state.errorDetails.push({contact:claimed.maskedPhone,error:detail});state.deliveryDetails[slot]={contact,status:'FALHA',processedAt:new Date().toISOString(),error:detail};log(session,`Falha definitiva para ${claimed.maskedPhone}.`,'warning');const safety=await recordMessageDeliverySafety(adminDb,{unitId:campaign.unitId,accountId:state.accountPhone||campaign.unitId,campaignId:campaign.id,success:false});await applyCampaignSafety(session,campaign,safety,user);}}}
-      if(done){state.progress++;publishState(session,'progress');}if(serviceDraining){state.isSending=false;state.currentAction='Envio pausado para reinício seguro; a fila será retomada automaticamente.';log(session,state.currentAction,'warning');break;}if(done&&state.progress<contacts.length&&state.isSending){const seconds=Math.floor(Math.random()*(maxDelay-minDelay+1))+minDelay;for(let i=0;i<seconds&&state.isSending;i++){if(!await waitForCampaignReady(state))break;await pause(1000);}}
-    }
-    if(state.isSending){await recoverMessageCampaign(adminDb,campaign.id);state.campaignStatus='completed';state.currentAction='Campanha concluída.';log(session,'Processamento concluído.','success');await audit('CAMPAIGN_COMPLETED',user,campaign.unitId,{runId:campaign.id,processed:state.progress});await adminDb.collection('message_dispatch_history').doc(campaign.id).set({status:'CONCLUIDO',finishedAt:new Date().toISOString(),processed:state.progress,successCount:state.successCount,errorCount:state.errorCount,errorDetails:state.errorDetails,deliveryDetails:state.deliveryDetails},{merge:true});const next=await createRecurringOccurrence(campaign);if(next)await audit('CAMPAIGN_RECURRENCE_CREATED',user,campaign.unitId,{runId:campaign.id,nextCampaignId:next.id,scheduledAt:next.scheduledAt});}
-  }catch(error){state.campaignStatus='stopped';state.currentAction='Campanha interrompida por falha.';log(session,state.currentAction,'warning');await audit('CAMPAIGN_FAILED',user,campaign.unitId,{runId:campaign.id,reason:error instanceof Error?error.message:'Falha'});await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(campaign.id).set({status:'NA_FILA',updatedAt:new Date().toISOString()},{merge:true});}finally{state.isSending=false;session.workerActive=false;publishState(session,state.campaignStatus==='stopped'?'alert':'progress');}
-}
-
-async function resume(session:Session){if(session.workerActive||session.state.connectionStatus!=='connected')return;try{const campaigns=await recoverActiveMessageCampaigns(adminDb,{unitId:session.unitId});for(const item of campaigns){if(session.state.connectionStatus!=='connected')break;await runCampaign(session,item.campaign);}}catch(error){console.error(`Falha ao retomar ${session.unitId}:`,error);}}
-async function releaseDueCampaigns(){const snapshot=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).where('status','==','AGENDADA').limit(100).get(),now=new Date();for(const document of snapshot.docs){const campaign=document.data() as MessageCampaignDocument;if(!campaign.scheduledAt||Date.parse(campaign.scheduledAt)>now.getTime())continue;await document.ref.set({status:'NA_FILA',updatedAt:now.toISOString()},{merge:true});const session=sessions.get(campaign.unitId);if(session.state.connectionStatus==='connected')void runCampaign(session,{...campaign,status:'NA_FILA',updatedAt:now.toISOString()});}}
-const requestedUnit=(req:express.Request)=>req.body?.unitId??req.query?.unitId;
-const requireUnit=(req:express.Request,res:express.Response)=>{const decision=authorizeDispatchUnit(authenticatedUser(req),requestedUnit(req));if(!decision.allowed){res.status(decision.status).json({error:decision.error});return null;}if(decision.unitId==='ALL'){res.status(400).json({error:'Selecione uma unidade específica para usar o WhatsApp.'});return null;}return decision.unitId;};
-
-export async function startMessageDispatchConnection(){serviceDraining=false;const retentionDays=Math.max(30,Number(process.env.MESSAGE_PHONE_RETENTION_DAYS)||730);void applyMessagePhoneRetention(adminDb,new Date(),retentionDays).catch(error=>console.error('Falha na retenção de telefones:',error));const retentionTimer=setInterval(()=>void applyMessagePhoneRetention(adminDb,new Date(),retentionDays).catch(error=>console.error('Falha na retenção de telefones:',error)),86_400_000);serviceTimers.add(retentionTimer);retentionTimer.unref?.();const scheduleTimer=setInterval(()=>void releaseDueCampaigns().catch(error=>console.error('Falha ao liberar campanhas agendadas:',error)),15_000);serviceTimers.add(scheduleTimer);scheduleTimer.unref?.();void releaseDueCampaigns().catch(error=>console.error('Falha ao verificar campanhas agendadas:',error));const configured=(process.env.MESSAGE_AUTO_CONNECT_UNITS||'').split(',').map(item=>item.trim()).filter(Boolean);const active=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).where('status','in',['NA_FILA','EM_PROCESSAMENTO']).get().catch(()=>null);const units=new Set([...configured,...(active?.docs.map(doc=>String(doc.data().unitId||'')).filter(unit=>unit&&unit!=='ALL')||[])]);for(const unitId of units)void connect(undefined,unitId);}
-
-export async function shutdownMessageDispatchService(timeoutMs=25_000){serviceDraining=true;for(const timer of serviceTimers)clearInterval(timer);serviceTimers.clear();for(const session of sessions.values()){session.state.currentAction='Reinício programado: concluindo o envio atual com segurança.';publishState(session,'alert');}const deadline=Date.now()+timeoutMs;while(sessions.values().some(session=>session.workerActive)&&Date.now()<deadline)await pause(250);await Promise.all(sessions.values().map(async session=>{session.generation++;session.intentionalDisconnect=true;if(session.qrTimer)clearTimeout(session.qrTimer);session.qrTimer=null;try{session.socket?.end(new Error('Reinício programado do serviço.'));}catch{/* conexão já encerrada */}session.socket=null;session.state.connectionStatus='disconnected';session.state.disconnectKind='intentional';session.state.disconnectReason='Reinício programado do serviço.';session.state.currentAction='Serviço reiniciando; campanhas pendentes serão retomadas.';await releaseSessionLock(session);await persistSession(session);}));}
-
-export function configureMessageDispatch(app:express.Express,auth:express.RequestHandler,role:express.RequestHandler){
-  const requireCampaignAction=(action:MessageCampaignAction):express.RequestHandler=>(req,res,next)=>{if(!canPerformMessageCampaignAction(authenticatedUser(req),action)){res.status(403).json({error:`Seu perfil não possui permissão para ${action==='create'?'criar':action==='approve'?'aprovar':'executar'} campanhas.`});return;}next();};
-  const actionRoutes:Record<string,MessageCampaignAction>={
-    'campaigns/approve':'approve','campaigns/cancel':'execute','campaigns/duplicate':'create',
-    'start':'execute','test-send':'execute','high-volume-challenge':'execute',
-    'pause':'execute','resume':'execute','stop':'execute','connect':'execute','disconnect':'execute','reconnect':'execute','new-qr':'execute','reset-session':'execute',
-    'drafts':'create','templates':'create','media/upload':'create','media/configure':'create','media/delete':'create','contacts/import':'create','segments':'create',
+const BASE_VAULT = process.env.WHATSAPP_AUTH_VAULT || "data/whatsapp/session.enc";
+const MAX_CONTACTS = 200;
+const HIGH_VOLUME_THRESHOLD = Math.max(10, Math.min(MAX_CONTACTS, Number(process.env.MESSAGE_HIGH_VOLUME_THRESHOLD) || DEFAULT_HIGH_VOLUME_THRESHOLD));
+const workerId = process.env.MESSAGE_WORKER_ID?.trim() || `message-worker-${crypto.randomUUID()}`;
+const sessionInstanceId = `${process.env.RAILWAY_REPLICA_ID?.trim() || process.env.HOSTNAME?.trim() || "message-instance"}:${crypto.randomUUID()}`;
+const SESSION_LOCK_LEASE_MS = 60_000;
+const SESSION_LOCK_RENEW_MS = 20_000;
+const initialState = (unitId: string): State => ({
+  enabled: true,
+  connectionStatus: "disconnected",
+  currentQr: "",
+  qrExpiresAt: null,
+  accountPhone: "",
+  accountName: "",
+  lastConnectedAt: null,
+  disconnectReason: "",
+  disconnectKind: "none",
+  isSending: false,
+  progress: 0,
+  total: 0,
+  currentAction: "Aguardando conexão.",
+  logs: [],
+  campaignStatus: "idle",
+  successCount: 0,
+  errorCount: 0,
+  errorDetails: [],
+  deliveryDetails: [],
+  runId: "",
+  activeUnitId: unitId,
+  lastError: "",
+  requiresNewQr: false,
+  policyBlockReason: "",
+  policyBlockedUntil: null,
+});
+function campaignRequest(req: express.Request, unitId: string, user: VerifiedFirebaseUser | undefined) {
+  const message = String(req.body?.message || "").trim(),
+    raw = Array.isArray(req.body?.contacts) ? req.body.contacts : String(req.body?.contacts || "").split(/\r?\n/),
+    contacts = [...new Set(raw.map(normalizeMessageContact).filter(Boolean))],
+    minDelay = Math.max(8, Math.min(120, Number(req.body?.minDelay) || 15)),
+    maxDelay = Math.max(minDelay, Math.min(180, Number(req.body?.maxDelay) || 35)),
+    requestIdempotencyKey = String(req.body?.idempotencyKey || req.get("Idempotency-Key") || "").trim(),
+    recipientData = Array.isArray(req.body?.recipientData) ? req.body.recipientData : [],
+    mediaIds = Array.isArray(req.body?.mediaIds) ? req.body.mediaIds.map(String) : [];
+  const ownerId = user?.uid || "SYSTEM";
+  const input: CreateMessageCampaignInput = {
+    requestIdempotencyKey,
+    unitId,
+    name: String(req.body?.campaignName || "Disparo sem título")
+      .trim()
+      .slice(0, 120),
+    message,
+    contacts,
+    recipientData,
+    mediaIds,
+    scheduledAt: req.body?.scheduledAt ? String(req.body.scheduledAt) : null,
+    timeZone: String(req.body?.timeZone || "America/Sao_Paulo"),
+    recurrence: String(req.body?.recurrence || "NONE").toUpperCase() as CreateMessageCampaignInput["recurrence"],
+    recurrenceEndsAt: req.body?.recurrenceEndsAt ? String(req.body.recurrenceEndsAt) : null,
+    approvalRequired: req.body?.approvalRequired === true,
+    minDelaySeconds: minDelay,
+    maxDelaySeconds: maxDelay,
+    simulateTyping: req.body?.simulateTyping !== false,
+    confirmedOptIn: true,
+    createdBy: ownerId,
+    sessionOwnerId: ownerId,
+    ...(user?.email ? { createdByEmail: user.email } : {}),
   };
-  app.use('/api/message-dispatch',auth,role,(req,res,next)=>{if(req.method!=='POST'){next();return;}const action=actionRoutes[req.path.replace(/^\//,'')];if(!action){next();return;}requireCampaignAction(action)(req,res,next);});
-  app.get('/api/message-dispatch/status',auth,role,(req,res)=>{const unitId=requireUnit(req,res);if(unitId)res.json(publicState(sessions.get(unitId)));});
-  app.get('/api/message-dispatch/events',auth,role,(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId);res.status(200);res.setHeader('Content-Type','text/event-stream; charset=utf-8');res.setHeader('Cache-Control','no-cache, no-transform');res.setHeader('Connection','keep-alive');res.setHeader('X-Accel-Buffering','no');res.flushHeaders();res.write('retry: 2000\n\n');res.write(encodeSseEvent(realtimeBroker.snapshot(unitId,publicState(session))));const unsubscribe=realtimeBroker.subscribe(unitId,event=>res.write(encodeSseEvent(event)));const heartbeat=setInterval(()=>res.write(`: heartbeat ${Date.now()}\n\n`),15_000);heartbeat.unref?.();req.on('close',()=>{clearInterval(heartbeat);unsubscribe();res.end();});});
-  app.get('/api/message-dispatch/blocklist',auth,role,async(_req,res)=>{const snapshot=await adminDb.collection('message_global_blocklist').where('status','==','BLOCKED').limit(500).get();res.json(snapshot.docs.map(document=>{const data=document.data();return {id:document.id,maskedPhone:data.maskedPhone,reason:data.reason,source:data.source,blockedAt:data.blockedAt,updatedAt:data.updatedAt};}));});
-  app.get('/api/message-dispatch/consent-audit',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const phone=String(req.query.phone||''),at=new Date(String(req.query.at||new Date().toISOString()));if(!phone||Number.isNaN(at.getTime())){res.status(400).json({error:'Informe telefone e data válidos.'});return;}const phoneHash=messageConsentId(unitId,phone),snapshot=await adminDb.collection('message_consent_events').where('phoneHash','==',phoneHash).get(),events=snapshot.docs.map(document=>document.data() as MessageConsentEvent).filter(event=>event.unitId===unitId);const reconstructed=reconstructConsentAt(events,at);res.json({unitId,phoneHash,at:at.toISOString(),granted:reconstructed.granted,latest:reconstructed.latest,events:events.sort((a,b)=>a.timestamp.localeCompare(b.timestamp))});});
-  app.get('/api/message-dispatch/policy',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(unitId)res.json(await loadMessageDispatchPolicy(adminDb,unitId));});
-  app.get('/api/message-dispatch/content',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const [drafts,templates]=await Promise.all([adminDb.collection(MESSAGE_DRAFT_COLLECTION).where('unitId','==',unitId).limit(100).get(),adminDb.collection(MESSAGE_TEMPLATE_COLLECTION).where('unitId','==',unitId).limit(100).get()]);const sort=(items:FirebaseFirestore.QueryDocumentSnapshot[])=>items.map(item=>item.data()).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));res.json({drafts:sort(drafts.docs),templates:sort(templates.docs)});});
-  app.get('/api/message-dispatch/campaigns',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const snapshot=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).where('unitId','==',unitId).limit(100).get();res.json(snapshot.docs.map(item=>item.data()).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).map(campaign=>({id:campaign.id,name:campaign.name,status:campaign.status,scheduledAt:campaign.scheduledAt,timeZone:campaign.timeZone,recurrence:campaign.recurrence,approvalRequired:campaign.approvalRequired,createdAt:campaign.createdAt,createdBy:campaign.createdBy,createdByEmail:campaign.createdByEmail,totalRecipients:campaign.totalRecipients,firstSentAt:campaign.firstSentAt})));});
-  app.get('/api/message-dispatch/metrics',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const from=String(req.query.from||''),to=String(req.query.to||''),campaignsSnapshot=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).where('unitId','==',unitId).limit(100).get();const campaigns=campaignsSnapshot.docs.map(item=>item.data() as MessageCampaignDocument).filter(item=>(!from||item.createdAt>=from)&&(!to||item.createdAt<=to)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));const campaignIds=new Set(campaigns.map(item=>item.id));const [recipientsSnapshot,responsesSnapshot]=await Promise.all([adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where('unitId','==',unitId).limit(5000).get(),adminDb.collection('message_campaign_responses').where('unitId','==',unitId).limit(5000).get()]);const recipients=recipientsSnapshot.docs.map(item=>item.data() as MessageCampaignRecipientDocument).filter(item=>campaignIds.has(item.campaignId)),responded=new Set(responsesSnapshot.docs.map(item=>String(item.data().recipientId||item.id))),items=campaigns.map(campaign=>buildCampaignPerformance(campaign,recipients,responded)),sessionState=sessions.get(unitId).state;res.json({unitId,filters:{from:from||null,to:to||null},summary:summarizeCampaignPerformance(items),campaigns:items,recipients:recipients.map(safeCampaignRecipientExport),alerts:{abnormalDisconnect:sessionState.disconnectKind==='abnormal'?sessionState.disconnectReason:null,accountBlocked:sessionState.requiresNewQr&&sessionState.disconnectKind==='expired'?(sessionState.disconnectReason||'A conta exige uma nova vinculação.'):null,interruptedCampaigns:campaigns.filter(item=>['FALHOU','PAUSADA','CANCELADA'].includes(item.status)).map(item=>({id:item.id,name:item.name,status:item.status,reason:item.autoPauseReason||null}))}});});
-  app.post('/api/message-dispatch/campaigns/approve',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req);if(user?.role!=='ADMIN'){res.status(403).json({error:'Somente administradores podem aprovar campanhas.'});return;}const reference=adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(String(req.body?.campaignId||'')),snapshot=await reference.get();if(!snapshot.exists||snapshot.data()?.unitId!==unitId){res.status(404).json({error:'Campanha não encontrada nesta unidade.'});return;}try{const campaign=snapshot.data() as MessageCampaignDocument,transition=approveCampaignTransition(campaign,user.uid,user.email);await reference.set(transition,{merge:true});await audit('CAMPAIGN_APPROVED',user,unitId,{runId:campaign.id,status:transition.status});res.json({...campaign,...transition});if(transition.status==='NA_FILA'){const session=sessions.get(unitId);if(session.state.connectionStatus==='connected')void runCampaign(session,{...campaign,...transition});}}catch(error){res.status(409).json({error:error instanceof Error?error.message:'Falha ao aprovar campanha.'});}});
-  app.post('/api/message-dispatch/campaigns/cancel',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req),reference=adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(String(req.body?.campaignId||'')),snapshot=await reference.get();if(!snapshot.exists||snapshot.data()?.unitId!==unitId){res.status(404).json({error:'Campanha não encontrada nesta unidade.'});return;}try{const campaign=snapshot.data() as MessageCampaignDocument,transition=cancelCampaignTransition(campaign,user?.uid||'SYSTEM',String(req.body?.reason||''));const recipients=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where('campaignId','==',campaign.id).get(),batch=adminDb.batch();batch.set(reference,transition,{merge:true});recipients.docs.forEach(item=>batch.set(item.ref,{status:'CANCELADO',nextAttemptAt:null,updatedAt:transition.updatedAt},{merge:true}));await batch.commit();await audit('CAMPAIGN_CANCELLED_BEFORE_SEND',user,unitId,{runId:campaign.id,reason:transition.cancellationReason});res.json({...campaign,...transition});}catch(error){res.status(409).json({error:error instanceof Error?error.message:'Falha ao cancelar campanha.'});}});
-  app.post('/api/message-dispatch/campaigns/duplicate',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const snapshot=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(String(req.body?.campaignId||'')).get();if(!snapshot.exists||snapshot.data()?.unitId!==unitId){res.status(404).json({error:'Campanha não encontrada nesta unidade.'});return;}const campaign=snapshot.data() as MessageCampaignDocument,recipients=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where('campaignId','==',campaign.id).get();await audit('CAMPAIGN_DUPLICATED_TO_DRAFT',authenticatedUser(req),unitId,{sourceCampaignId:campaign.id});res.json(buildCampaignDuplicateDraft(campaign,recipients.docs.map(item=>item.data() as MessageCampaignRecipientDocument)));});
-  app.post('/api/message-dispatch/media/upload',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;try{const rawName=String(req.get('X-File-Name')||'arquivo'),fileName=decodeURIComponent(rawName),uploadId=String(req.get('X-Upload-Id')||''),mimeType=String(req.get('X-File-Type')||''),buffer=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);const existing=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).where('uploadId','==',uploadId).where('unitId','==',unitId).get();if(existing.size>=MESSAGE_MEDIA_LIMITS.maxFiles){res.status(409).json({error:`É permitido anexar no máximo ${MESSAGE_MEDIA_LIMITS.maxFiles} arquivos.`});return;}const media=buildMessageMediaUpload({unitId,uploadId,fileName,mimeType,buffer,caption:String(req.get('X-Media-Caption')||''),order:Number(req.get('X-Media-Order')||existing.size)}),file=adminBucket.file(media.storagePath);await file.save(buffer,{resumable:false,contentType:media.mimeType,metadata:{cacheControl:'private, max-age=0',metadata:{unitId,uploadId,mediaId:media.id}}});try{await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(media.id).create(media);}catch(error){await file.delete({ignoreNotFound:true});throw error;}await audit('MESSAGE_MEDIA_UPLOADED',authenticatedUser(req),unitId,{mediaId:media.id,type:media.type,sizeBytes:media.sizeBytes});res.status(201).json(media);}catch(error){res.status(400).json({error:error instanceof Error?error.message:'Falha ao enviar anexo.'});}});
-  app.post('/api/message-dispatch/media/configure',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const items=Array.isArray(req.body?.media)?req.body.media.slice(0,MESSAGE_MEDIA_LIMITS.maxFiles):[];try{const snapshots=await Promise.all(items.map((item:{id?:unknown})=>adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(String(item.id||'')).get()));if(snapshots.some(snapshot=>!snapshot.exists||snapshot.data()?.unitId!==unitId||snapshot.data()?.campaignId)){res.status(403).json({error:'Há anexos inválidos, já utilizados ou pertencentes a outra unidade.'});return;}const batch=adminDb.batch();items.forEach((item:{id?:unknown;caption?:unknown;order?:unknown},index:number)=>batch.update(snapshots[index].ref,{caption:String(item.caption||'').trim().slice(0,1024),order:Math.max(0,Math.floor(Number(item.order) || index)),updatedAt:new Date().toISOString()}));await batch.commit();res.json({success:true,count:items.length});}catch(error){res.status(400).json({error:error instanceof Error?error.message:'Falha ao organizar anexos.'});}});
-  app.post('/api/message-dispatch/media/delete',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const reference=adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(String(req.body?.mediaId||'')),snapshot=await reference.get();if(!snapshot.exists){res.status(404).json({error:'Anexo não encontrado.'});return;}const media=snapshot.data() as {unitId:string;campaignId?:string;storagePath:string};if(media.unitId!==unitId){res.status(403).json({error:'Este anexo pertence a outra unidade.'});return;}if(media.campaignId){res.status(409).json({error:'Não é possível remover uma mídia vinculada a uma campanha.'});return;}await adminBucket.file(media.storagePath).delete({ignoreNotFound:true});await reference.delete();await audit('MESSAGE_MEDIA_DELETED',authenticatedUser(req),unitId,{mediaId:snapshot.id});res.json({success:true});});
-  for(const target of [{path:'drafts',collection:MESSAGE_DRAFT_COLLECTION,kind:'DRAFT' as const},{path:'templates',collection:MESSAGE_TEMPLATE_COLLECTION,kind:'TEMPLATE' as const}])app.post(`/api/message-dispatch/${target.path}`,auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req),id=String(req.body?.id||crypto.randomUUID()),reference=adminDb.collection(target.collection).doc(id),existing=await reference.get();if(existing.exists&&existing.data()?.unitId!==unitId){res.status(403).json({error:'Este conteúdo pertence a outra unidade.'});return;}try{const saved=buildSavedMessage({id,unitId,name:String(req.body?.name||''),message:String(req.body?.message||''),actorId:user?.uid||'SYSTEM',kind:target.kind});await reference.set({...saved,...(existing.exists?{createdAt:existing.data()?.createdAt,createdBy:existing.data()?.createdBy}:{})},{merge:true});await audit(`MESSAGE_${target.kind}_SAVED`,user,unitId,{contentId:id});res.status(existing.exists?200:201).json(saved);}catch(error){res.status(400).json({error:error instanceof Error?error.message:'Falha ao salvar conteúdo.'});}});
-  app.post('/api/message-dispatch/contacts/import',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const rows=Array.isArray(req.body?.contacts)?req.body.contacts:[];if(!rows.length||rows.length>500){res.status(400).json({error:'Envie entre 1 e 500 contatos por importação.'});return;}try{const batch=adminDb.batch(),now=new Date().toISOString(),contacts=rows.map((row:Record<string,unknown>)=>buildDirectoryContact(unitId,row,now));contacts.forEach(contact=>batch.set(adminDb.collection(MESSAGE_CONTACT_DIRECTORY_COLLECTION).doc(contact.id),contact,{merge:true}));await batch.commit();await audit('MESSAGE_CONTACTS_IMPORTED',authenticatedUser(req),unitId,{count:contacts.length});res.status(201).json({success:true,count:contacts.length});}catch(error){res.status(400).json({error:error instanceof Error?error.message:'Falha ao importar contatos.'});}});
-  app.get('/api/message-dispatch/contacts',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const snapshot=await adminDb.collection(MESSAGE_CONTACT_DIRECTORY_COLLECTION).where('unitId','==',unitId).limit(500).get();const contacts=snapshot.docs.map(document=>document.data() as MessageDirectoryContact);res.json(searchDirectoryContacts(contacts,{unitId,query:String(req.query.q||''),page:Number(req.query.page)||1,pageSize:Number(req.query.pageSize)||10}));});
-  app.post('/api/message-dispatch/contacts/resolve',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const ids=[...new Set((Array.isArray(req.body?.contactIds)?req.body.contactIds:[]).map(String))].slice(0,500);const snapshots=await Promise.all(ids.map(id=>adminDb.collection(MESSAGE_CONTACT_DIRECTORY_COLLECTION).doc(id).get()));const contacts=snapshots.filter(snapshot=>snapshot.exists).map(snapshot=>snapshot.data() as MessageDirectoryContact);if(contacts.some(contact=>contact.unitId!==unitId)){res.status(403).json({error:'Há contatos de outra unidade nesta solicitação.'});return;}res.json({contacts:contacts.map(contact=>({id:contact.id,name:contact.name,phone:contact.normalizedPhone,origin:contact.origin,consentAt:contact.consentAt,evidence:contact.evidence,variables:contact.variables}))});});
-  app.get('/api/message-dispatch/segments',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const snapshot=await adminDb.collection(MESSAGE_CONTACT_SEGMENT_COLLECTION).where('unitId','==',unitId).limit(100).get();res.json(snapshot.docs.map(document=>document.data()).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt))));});
-  app.post('/api/message-dispatch/segments',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;try{const user=authenticatedUser(req),segment=createSnapshotSegment({id:crypto.randomUUID(),unitId,name:String(req.body?.name||''),contactIds:Array.isArray(req.body?.contactIds)?req.body.contactIds.map(String):[],actorId:user?.uid||'SYSTEM'});const contacts=await Promise.all(segment.contactIds.map(id=>adminDb.collection(MESSAGE_CONTACT_DIRECTORY_COLLECTION).doc(id).get()));if(contacts.some(snapshot=>!snapshot.exists||snapshot.data()?.unitId!==unitId)){res.status(403).json({error:'O segmento contém contatos inexistentes ou de outra unidade.'});return;}await adminDb.collection(MESSAGE_CONTACT_SEGMENT_COLLECTION).doc(segment.id).create(segment);await audit('MESSAGE_CONTACT_SEGMENT_CREATED',user,unitId,{segmentId:segment.id,contactCount:segment.contactCount,policy:segment.policy});res.status(201).json(segment);}catch(error){res.status(400).json({error:error instanceof Error?error.message:'Falha ao salvar segmento.'});}});
-  app.post('/api/message-dispatch/segments/resolve',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const snapshot=await adminDb.collection(MESSAGE_CONTACT_SEGMENT_COLLECTION).doc(String(req.body?.segmentId||'')).get();if(!snapshot.exists||snapshot.data()?.unitId!==unitId){res.status(404).json({error:'Segmento não encontrado nesta unidade.'});return;}const segment=snapshot.data() as {id:string;name:string;policy:'SNAPSHOT';contactIds:string[]};const contacts=await Promise.all(segment.contactIds.map(id=>adminDb.collection(MESSAGE_CONTACT_DIRECTORY_COLLECTION).doc(id).get()));res.json({segment:{id:segment.id,name:segment.name,policy:segment.policy},contacts:contacts.filter(item=>item.exists&&item.data()?.unitId===unitId).map(item=>{const contact=item.data() as MessageDirectoryContact;return {id:contact.id,name:contact.name,phone:contact.normalizedPhone,origin:contact.origin,consentAt:contact.consentAt,evidence:contact.evidence,variables:contact.variables};})});});
-  app.put('/api/message-dispatch/policy',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req);if(user?.role!=='ADMIN'){res.status(403).json({error:'Somente administradores podem alterar os limites de envio.'});return;}const policy=normalizeMessageDispatchPolicy(req.body||{});await adminDb.collection('message_dispatch_policies').doc(unitId).set({...policy,unitId,updatedAt:new Date().toISOString(),updatedBy:user.uid},{merge:true});await audit('MESSAGE_POLICY_UPDATED',user,unitId,policy);res.json(policy);});
-  app.post('/api/message-dispatch/blocklist',auth,role,async(req,res)=>{const user=authenticatedUser(req);try{const result=await blockMessageContact(adminDb,{phone:String(req.body?.phone||''),reason:String(req.body?.reason||'Bloqueio manual'),source:'MANUAL',actorId:user?.uid||'SYSTEM',...(user?.email?{actorEmail:user.email}:{})});await audit('CONTACT_BLOCKED',user,'ALL',{phoneHash:result.id,cancelledRecipients:result.cancelledRecipients});res.status(201).json({id:result.id,maskedPhone:`${result.normalizedPhone.slice(0,4)}*****${result.normalizedPhone.slice(-4)}`,cancelledRecipients:result.cancelledRecipients});}catch(error){res.status(400).json({error:error instanceof Error?error.message:'Falha ao bloquear contato.'});}});
-  app.post('/api/message-dispatch/blocklist/unblock',auth,role,async(req,res)=>{const user=authenticatedUser(req);if(!canUnblockMessageContact(user?.role)){res.status(403).json({error:'Somente administradores podem remover um contato da lista não enviar.'});return;}try{const result=await unblockMessageContact(adminDb,{id:String(req.body?.id||''),justification:String(req.body?.justification||''),actorId:user?.uid||'SYSTEM'});await audit('CONTACT_UNBLOCKED',user,'ALL',{phoneHash:result.id,justification:result.unblockReason});res.json({success:true});}catch(error){res.status(400).json({error:error instanceof Error?error.message:'Falha ao desbloquear contato.'});}});
-  app.post('/api/message-dispatch/connect',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req);await audit('CONNECTION_REQUESTED',user,unitId);const result=await connect(user,unitId);result.success?res.status(202).json({success:true}):res.status(500).json({error:result.error});});
-  app.post('/api/message-dispatch/disconnect',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId);if(session.state.isSending){res.status(409).json({error:'Pause ou encerre a campanha antes de desconectar.'});return;}session.intentionalDisconnect=true;session.generation++;session.connecting=false;if(session.qrTimer)clearTimeout(session.qrTimer);session.state.disconnectKind='intentional';session.state.disconnectReason='Desconectado pelo operador.';session.state.connectionStatus='disconnected';session.state.currentQr='';session.state.qrExpiresAt=null;session.state.currentAction='Sessão desconectada.';try{session.socket?.end(new Error('Desconectado pelo operador.'));}catch{/* encerrada */}session.socket=null;await releaseSessionLock(session);await persistSession(session);await audit('CONNECTION_DISCONNECTED',authenticatedUser(req),unitId,{reason:session.state.disconnectReason});res.json({success:true});});
-  app.post('/api/message-dispatch/reconnect',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId);if(session.state.isSending){res.status(409).json({error:'Não é possível reconectar durante uma campanha.'});return;}session.intentionalDisconnect=true;session.generation++;session.connecting=false;try{session.socket?.end(new Error('Reconexão solicitada.'));}catch{/* encerrada */}session.socket=null;session.state.connectionStatus='disconnected';await releaseSessionLock(session);await audit('CONNECTION_RECONNECT_REQUESTED',authenticatedUser(req),unitId);const result=await connect(authenticatedUser(req),unitId);result.success?res.status(202).json({success:true}):res.status(500).json({error:result.error});});
-  app.post('/api/message-dispatch/new-qr',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId);if(session.state.isSending){res.status(409).json({error:'Não é possível gerar QR durante uma campanha.'});return;}session.intentionalDisconnect=true;session.generation++;session.connecting=false;if(session.qrTimer)clearTimeout(session.qrTimer);try{session.socket?.end(new Error('Novo QR solicitado.'));}catch{/* encerrada */}session.socket=null;await releaseSessionLock(session);await clearEncryptedAuthState(whatsappSessionVaultPath(BASE_VAULT,unitId));Object.assign(session.state,initialState(unitId));await audit('CONNECTION_NEW_QR_REQUESTED',authenticatedUser(req),unitId);const result=await connect(authenticatedUser(req),unitId);result.success?res.status(202).json({success:true}):res.status(500).json({error:result.error});});
-  app.post('/api/message-dispatch/reset-session',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId);if(session.state.isSending){res.status(409).json({error:'Existe campanha ativa nesta unidade.'});return;}session.generation++;session.connecting=false;try{session.socket?.end(new Error('Sessão redefinida.'));}catch{/* encerrada */}session.socket=null;await releaseSessionLock(session);await clearEncryptedAuthState(whatsappSessionVaultPath(BASE_VAULT,unitId));Object.assign(session.state,initialState(unitId));const result=await connect(authenticatedUser(req),unitId);result.success?res.status(202).json({success:true}):res.status(500).json({error:result.error});});
-  for(const action of ['pause','resume'] as const)app.post(`/api/message-dispatch/${action}`,auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId),state=session.state,user=authenticatedUser(req);if(!state.isSending){res.status(409).json({error:'Não existe campanha ativa nesta unidade.'});return;}if(action==='resume'&&state.runId){if(user?.role!=='ADMIN'){const campaign=await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(state.runId).get();if(campaign.data()?.autoPaused===true){res.status(403).json({error:'Somente administradores podem retomar uma campanha pausada por segurança.'});return;}}try{await validateAutomaticPauseResume(adminDb,{campaignId:state.runId,unitId,accountId:state.accountPhone||unitId,actorId:user?.uid||'SYSTEM'});}catch(error){res.status(409).json({error:error instanceof Error?error.message:'A retomada ainda não é segura.'});return;}}state.campaignStatus=action==='pause'?'paused':'running';state.currentAction=action==='pause'?'Campanha pausada.':'Retomando campanha...';if(action==='resume'){state.policyBlockReason='';state.policyBlockedUntil=null;await audit('CAMPAIGN_RESUMED',user,unitId,{runId:state.runId});}if(state.runId)await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(state.runId).set({status:action==='pause'?'PAUSADA':'EM_PROCESSAMENTO',updatedAt:new Date().toISOString()},{merge:true});publishState(session,'progress');res.json({success:true});});
-  app.post('/api/message-dispatch/stop',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId),state=session.state,reason=safeInterruptionReason(req.body?.reason);state.isSending=false;state.campaignStatus='stopped';state.currentAction=reason;if(state.runId){await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(state.runId).set({status:'CANCELADA',cancelledCount:Math.max(0,state.total-state.progress),updatedAt:new Date().toISOString(),finishedAt:new Date().toISOString()},{merge:true});await adminDb.collection('message_dispatch_history').doc(state.runId).set({status:'INTERROMPIDO',finishedAt:new Date().toISOString(),interruptionReason:reason},{merge:true});}publishState(session,'alert');res.json({success:true});});
-  app.post('/api/message-dispatch/high-volume-challenge',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const user=authenticatedUser(req),{input,contacts,message}=campaignRequest(req,unitId,user);if(!input.requestIdempotencyKey||!message||!contacts.length){res.status(400).json({error:'Revise os dados da campanha antes de confirmar.'});return;}if(contacts.length<HIGH_VOLUME_THRESHOLD){res.json({required:false,threshold:HIGH_VOLUME_THRESHOLD});return;}try{const plan=planMessageCampaignCreation(input),campaignId=plan.campaign.id;const challenge=await issueHighVolumeChallenge(adminDb,{campaignId,payloadHash:plan.campaign.payloadHash||'',unitId,actorId:user?.uid||'SYSTEM',recipientCount:contacts.length});await audit('CAMPAIGN_HIGH_VOLUME_CHALLENGE_ISSUED',user,unitId,{runId:campaignId,totalContacts:contacts.length,expiresAt:challenge.expiresAt});res.status(201).json({required:true,threshold:HIGH_VOLUME_THRESHOLD,...challenge});}catch(error){res.status(400).json({error:error instanceof Error?error.message:'Falha ao gerar confirmação.'});}});
-  app.post('/api/message-dispatch/test-send',auth,role,async(req,res)=>{const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId),user=authenticatedUser(req),{input,message}=campaignRequest(req,unitId,user),phone=normalizeMessageContact(req.body?.testPhone);if(session.state.connectionStatus!=='connected'||!session.socket){res.status(409).json({error:'Conecte o WhatsApp desta unidade.'});return;}if(session.workerActive){res.status(409).json({error:'Aguarde o término da campanha ativa antes do envio de teste.'});return;}if(!input.requestIdempotencyKey||!message||!phone){res.status(400).json({error:'Informe a campanha, a mensagem e um número de teste válido.'});return;}const campaignId=planMessageCampaignCreation(input).campaign.id,testId=crypto.randomUUID(),createdAt=new Date().toISOString(),reference=adminDb.collection(MESSAGE_CAMPAIGN_TEST_COLLECTION).doc(testId);await reference.create({id:testId,campaignId,unitId,normalizedPhoneHash:messageConsentId(unitId,phone),maskedPhone:`${phone.slice(0,4)}*****${phone.slice(-4)}`,status:'PROCESSANDO',message,mediaIds:input.mediaIds||[],createdAt,createdBy:user?.uid||'SYSTEM'});try{if(await isMessageContactBlocked(adminDb,phone))throw new Error('O número de teste está na lista global não enviar.');const available=await session.socket.onWhatsApp(phone);if(!available?.[0]?.exists)throw new Error('Número de teste não encontrado no WhatsApp.');const media=await loadCampaignMedia(input.mediaIds,unitId);await sendCampaignContent(session.socket,available[0].jid,message,{},media);const sentAt=new Date().toISOString();await reference.set({status:'ENVIADO',sentAt,updatedAt:sentAt},{merge:true});await audit('CAMPAIGN_TEST_SENT',user,unitId,{runId:campaignId,testSendId:testId,maskedPhone:`${phone.slice(0,4)}*****${phone.slice(-4)}`});res.json({success:true,campaignId,testSendId:testId,status:'ENVIADO',sentAt});}catch(error){const detail=error instanceof Error?error.message:'Falha no envio de teste.',failedAt=new Date().toISOString();await reference.set({status:'FALHOU',error:detail,failedAt,updatedAt:failedAt},{merge:true});await audit('CAMPAIGN_TEST_FAILED',user,unitId,{runId:campaignId,testSendId:testId,error:detail});res.status(502).json({error:detail,campaignId,testSendId:testId,status:'FALHOU'});}});
-  app.post('/api/message-dispatch/start',auth,role,async(req,res)=>{if(serviceDraining){res.status(503).json({error:'O serviço está reiniciando. Aguarde a retomada para iniciar uma campanha.'});return;}const unitId=requireUnit(req,res);if(!unitId)return;const session=sessions.get(unitId),user=authenticatedUser(req),{input,message,contacts}=campaignRequest(req,unitId,user);if(req.body?.confirmedOptIn!==true||!message||message.length>4096||!contacts.length||contacts.length>MAX_CONTACTS){res.status(400).json({error:'Revise mensagem, contatos e autorização.'});return;}if(!input.requestIdempotencyKey){res.status(400).json({error:'Chave de solicitação ausente.'});return;}const suppliedConsents=Array.isArray(req.body?.consentRecords)?req.body.consentRecords:[],consentRecords:ContactConsentInput[]=suppliedConsents.length?suppliedConsents.map((item:Record<string,unknown>)=>({phone:String(item.phone||''),origin:String(item.origin||'Confirmação na campanha'),consentAt:String(item.consentAt||new Date().toISOString()),evidence:String(item.evidence||'Consentimento confirmado pelo operador'),legalBasis:String(item.legalBasis||'CONSENT').toUpperCase() as ContactConsentInput['legalBasis']})):contacts.map(phone=>({phone,origin:String(req.body?.optInOrigin||'Confirmação na campanha'),consentAt:String(req.body?.optInDate||new Date().toISOString()),evidence:String(req.body?.optInEvidence||'Consentimento confirmado pelo operador'),legalBasis:String(req.body?.legalBasis||'CONSENT').toUpperCase() as ContactConsentInput['legalBasis']}));if(session.workerActive){const prior=await findMessageCampaignByRequest(adminDb,input);if(prior.existing){res.json({success:true,total:prior.existing.totalRecipients,campaignId:prior.existing.id,reused:true});return;}res.status(409).json({error:'Já existe campanha ativa nesta unidade.'});return;}let persisted;try{await registerMessageConsents(adminDb,{unitId,contacts:consentRecords,actorId:user?.uid||'SYSTEM'});persisted=await createMessageCampaign(adminDb,input);}catch(error){res.status(409).json({error:error instanceof Error?error.message:'Falha ao salvar.'});return;}if(persisted.reused){res.json({success:true,total:persisted.campaign.totalRecipients,campaignId:persisted.campaign.id,reused:true});return;}res.json({success:true,total:persisted.campaign.totalRecipients,campaignId:persisted.campaign.id,status:persisted.campaign.status,reused:false});await audit('CAMPAIGN_CREATED',user,unitId,{runId:persisted.campaign.id,status:persisted.campaign.status,totalContacts:persisted.campaign.totalRecipients,highVolume:contacts.length>=HIGH_VOLUME_THRESHOLD});if(persisted.campaign.status==='NA_FILA')void runCampaign(session,persisted.campaign,user);});
+  return { input, message, contacts, minDelay, maxDelay };
+}
+const sessions = new UnitSessionRegistry<Session>((scopeId) => {
+  const separator = scopeId.indexOf(":");
+  const unitId = scopeId.slice(0, separator),
+    ownerId = scopeId.slice(separator + 1);
+  return {
+    scopeId,
+    unitId,
+    ownerId,
+    state: initialState(unitId),
+    socket: null,
+    connecting: false,
+    generation: 0,
+    workerActive: false,
+    intentionalDisconnect: false,
+    qrTimer: null,
+    lockTimer: null,
+    lockToken: null,
+  };
+});
+const sessionFor = (unitId: string, ownerId: string) => sessions.get(whatsappSessionScope(unitId, ownerId));
+const sessionForUser = (unitId: string, user: VerifiedFirebaseUser | undefined) => sessionFor(unitId, user?.uid || "SYSTEM");
+const sessionForCampaign = (campaign: MessageCampaignDocument) => sessionFor(campaign.unitId, campaign.sessionOwnerId || campaign.createdBy || "SYSTEM");
+let serviceDraining = false;
+const serviceTimers = new Set<ReturnType<typeof setInterval>>();
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const log = (session: Session, text: string, type: Log["type"] = "info") => {
+  session.state.logs.unshift({
+    id: crypto.randomUUID(),
+    time: new Date().toLocaleTimeString("pt-BR"),
+    text,
+    type,
+  });
+  session.state.logs = session.state.logs.slice(0, 80);
+  publishState(session, type === "warning" ? "alert" : "progress");
+};
+const publicState = (session: Session) => ({
+  ...session.state,
+  accountPhone: maskMessagePhone(session.state.accountPhone),
+  errorDetails: session.state.errorDetails.slice(0, 100).map((item) => ({ ...item, contact: maskMessagePhone(item.contact) })),
+  deliveryDetails: session.state.deliveryDetails.slice(0, 200).map((item) => ({ ...item, contact: maskMessagePhone(item.contact) })),
+});
+const realtimeBroker = new MessageRealtimeBroker<ReturnType<typeof publicState>>();
+function publishState(session: Session, type: MessageRealtimeEvent<ReturnType<typeof publicState>>["type"] = "progress") {
+  realtimeBroker.publish(session.scopeId, type, publicState(session));
+}
+async function loadCampaignMedia(mediaIds: string[] | undefined, unitId: string, campaignId?: string): Promise<LoadedCampaignMedia[]> {
+  if (!mediaIds?.length) return [];
+  const snapshots = await Promise.all(mediaIds.map((id) => adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(id).get()));
+  const valid = snapshots.filter((item) => item.exists && item.data()?.unitId === unitId && (!campaignId || item.data()?.campaignId === campaignId));
+  if (valid.length !== mediaIds.length) throw new Error("Um dos anexos não está mais disponível para esta campanha.");
+  const media = await Promise.all(
+    valid.map(async (item) => {
+      const data = item.data() as Omit<LoadedCampaignMedia, "buffer">;
+      const [buffer] = await adminBucket.file(data.storagePath).download();
+      return { ...data, buffer };
+    }),
+  );
+  return media.sort((a, b) => a.order - b.order);
+}
+async function sendCampaignContent(socket: ReturnType<typeof makeWASocket>, jid: string, text: string, variables: Record<string, string>, media: LoadedCampaignMedia[]) {
+  for (const item of media) {
+    const caption = materializeMessage(item.caption, {
+      name: variables.nome,
+      variables,
+    });
+    if (item.type === "IMAGE")
+      await socket.sendMessage(jid, {
+        image: item.buffer,
+        caption,
+        mimetype: item.mimeType,
+      });
+    else
+      await socket.sendMessage(jid, {
+        video: item.buffer,
+        caption,
+        mimetype: item.mimeType,
+      });
+  }
+  if (text) await socket.sendMessage(jid, { text });
+}
+async function createRecurringOccurrence(campaign: MessageCampaignDocument) {
+  const scheduledAt = nextCampaignOccurrence(campaign);
+  if (!scheduledAt) return null;
+  const [recipientsSnapshot, mediaSnapshots] = await Promise.all([adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where("campaignId", "==", campaign.id).get(), Promise.all((campaign.mediaIds || []).map((id) => adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(id).get()))]);
+  const id = `campaign_${crypto.randomUUID().replace(/-/g, "")}`,
+    createdAt = new Date().toISOString(),
+    mediaIds: string[] = [];
+  const batch = adminDb.batch();
+  for (const snapshot of mediaSnapshots) {
+    if (!snapshot.exists) continue;
+    const mediaId = `media_${crypto.randomUUID().replace(/-/g, "")}`;
+    mediaIds.push(mediaId);
+    batch.set(adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(mediaId), {
+      ...snapshot.data(),
+      id: mediaId,
+      campaignId: id,
+      createdAt,
+      updatedAt: createdAt,
+    });
+  }
+  const reset = {
+    ...campaign,
+    id,
+    status: campaign.approvalRequired ? ("AGUARDANDO_APROVACAO" as const) : ("AGENDADA" as const),
+    scheduledAt,
+    recurrenceParentId: campaign.recurrenceParentId || campaign.id,
+    mediaIds,
+    totalRecipients: recipientsSnapshot.size,
+    pendingCount: recipientsSnapshot.size,
+    processingCount: 0,
+    sentCount: 0,
+    deliveredCount: 0,
+    readCount: 0,
+    failedCount: 0,
+    cancelledCount: 0,
+    createdAt,
+    updatedAt: createdAt,
+    requestIdempotencyKey: crypto.randomUUID(),
+  };
+  for (const key of ["payloadHash", "finishedAt", "firstSentAt", "approvedAt", "approvedBy", "approvedByEmail", "cancelledAt", "cancelledBy"] as const) delete reset[key];
+  const nextCampaign = reset as MessageCampaignDocument;
+  batch.set(adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(id), nextCampaign);
+  for (const snapshot of recipientsSnapshot.docs) {
+    const recipient = snapshot.data() as MessageCampaignRecipientDocument,
+      recipientId = `recipient_${crypto.randomUUID().replace(/-/g, "")}`;
+    batch.set(adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).doc(recipientId), {
+      ...recipient,
+      id: recipientId,
+      campaignId: id,
+      status: "PENDENTE",
+      idempotencyKey: crypto.randomUUID(),
+      attemptCount: 0,
+      nextAttemptAt: scheduledAt,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      createdAt,
+      updatedAt: createdAt,
+      processedAt: null,
+      lastError: null,
+      policyReservedAt: null,
+      contactNextAllowedAt: null,
+    });
+  }
+  await batch.commit();
+  return nextCampaign;
+}
+
+async function audit(action: string, user: VerifiedFirebaseUser | undefined, unitId: string, details: Record<string, unknown> = {}) {
+  try {
+    await adminDb.collection("dispatch_audit").add({
+      action,
+      unitId,
+      userId: user?.uid || "SYSTEM",
+      profileId: user?.profileId || null,
+      userEmail: user?.email || null,
+      userRole: user?.role || "SYSTEM",
+      timestamp: new Date().toISOString(),
+      ...details,
+    });
+  } catch (error) {
+    console.error("Falha na auditoria:", error);
+  }
+}
+async function recordInboundCampaignResponse(unitId: string, phone: string, text: string) {
+  try {
+    const snapshot = await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where("normalizedPhone", "==", normalizeMessageContact(phone)).limit(25).get();
+    const recipient = snapshot.docs
+      .map((document) => ({
+        reference: document.ref,
+        data: document.data() as MessageCampaignRecipientDocument,
+      }))
+      .filter((item) => item.data.unitId === unitId && ["ENVIADO", "ENTREGUE", "LIDO"].includes(item.data.status))
+      .sort((a, b) => String(b.data.processedAt || b.data.updatedAt).localeCompare(String(a.data.processedAt || a.data.updatedAt)))[0];
+    if (!recipient) return;
+    const reference = adminDb.collection("message_campaign_responses").doc(recipient.data.id);
+    await adminDb.runTransaction(async (transaction) => {
+      const existing = await transaction.get(reference);
+      if (existing.exists) return;
+      transaction.create(reference, {
+        id: recipient.data.id,
+        recipientId: recipient.data.id,
+        campaignId: recipient.data.campaignId,
+        unitId,
+        maskedPhone: maskMessagePhone(phone),
+        receivedAt: new Date().toISOString(),
+        textPreview: text.trim().slice(0, 80),
+      });
+    });
+  } catch (error) {
+    console.error("Falha ao registrar resposta de campanha:", error);
+  }
+}
+async function notifyAdminsOfCampaignPause(unitId: string, campaignId: string, evaluation: CampaignSafetyEvaluation) {
+  try {
+    const admins = await adminDb.collection("users").where("role", "==", "ADMIN").get(),
+      batch = adminDb.batch(),
+      timestamp = new Date().toISOString();
+    admins.docs
+      .filter((document) => document.data().isActive !== false)
+      .forEach((document) => {
+        const reference = adminDb.collection("notifications").doc();
+        batch.set(reference, {
+          userId: document.id,
+          unitId,
+          type: "MESSAGE_CAMPAIGN_AUTO_PAUSED",
+          title: "Campanha pausada automaticamente",
+          message: `Taxa de falhas de ${evaluation.failureRate.toFixed(1)}% em ${evaluation.sampleSize} envios.`,
+          campaignId,
+          read: false,
+          createdAt: timestamp,
+          timestamp,
+        });
+      });
+    if (admins.docs.length) await batch.commit();
+  } catch (error) {
+    console.error("Falha ao notificar administradores:", error);
+  }
+}
+async function applyCampaignSafety(session: Session, campaign: MessageCampaignDocument, evaluation: CampaignSafetyEvaluation, user?: VerifiedFirebaseUser) {
+  if (!evaluation.shouldPause) return false;
+  const reason = `Campanha pausada automaticamente: ${evaluation.failureRate.toFixed(1)}% de falhas em ${evaluation.sampleSize} envios.`;
+  session.state.campaignStatus = "paused";
+  session.state.currentAction = reason;
+  session.state.policyBlockReason = reason;
+  session.state.policyBlockedUntil = evaluation.resumeAllowedAt;
+  log(session, reason, "warning");
+  publishState(session, "alert");
+  await audit("CAMPAIGN_AUTO_PAUSED", user, campaign.unitId, {
+    runId: campaign.id,
+    failures: evaluation.failures,
+    sampleSize: evaluation.sampleSize,
+    failureRate: evaluation.failureRate,
+    threshold: evaluation.threshold,
+    resumeAllowedAt: evaluation.resumeAllowedAt,
+  });
+  await notifyAdminsOfCampaignPause(campaign.unitId, campaign.id, evaluation);
+  return true;
+}
+async function persistSession(session: Session) {
+  const state = session.state;
+  await adminDb
+    .collection("message_whatsapp_sessions")
+    .doc(whatsappSessionDocumentId(session.unitId, session.ownerId))
+    .set(
+      {
+        unitId: session.unitId,
+        ownerId: session.ownerId,
+        scopeId: session.scopeId,
+        connectionStatus: state.connectionStatus,
+        accountPhone: state.accountPhone,
+        accountName: state.accountName,
+        lastConnectedAt: state.lastConnectedAt,
+        disconnectReason: state.disconnectReason,
+        disconnectKind: state.disconnectKind,
+        qrExpiresAt: state.qrExpiresAt,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    )
+    .catch((error) => console.error("Falha ao persistir metadados da sessão:", error));
+  publishState(session, state.connectionStatus === "qr" ? "qr" : state.disconnectKind === "abnormal" ? "alert" : "connection");
+}
+async function releaseSessionLock(session: Session) {
+  if (session.lockTimer) clearInterval(session.lockTimer);
+  session.lockTimer = null;
+  const token = session.lockToken;
+  session.lockToken = null;
+  if (token !== null) await releaseMessageSessionLock(adminDb, session.scopeId, sessionInstanceId, token).catch(() => false);
+}
+async function ownsSessionLock(session: Session) {
+  const token = session.lockToken;
+  if (token === null) return false;
+  return renewMessageSessionLock(adminDb, session.scopeId, sessionInstanceId, token, new Date(), SESSION_LOCK_LEASE_MS).catch(() => false);
+}
+function startSessionLockHeartbeat(session: Session, token: number) {
+  if (session.lockTimer) clearInterval(session.lockTimer);
+  session.lockToken = token;
+  session.lockTimer = setInterval(async () => {
+    const renewed = await renewMessageSessionLock(adminDb, session.scopeId, sessionInstanceId, token, new Date(), SESSION_LOCK_LEASE_MS).catch(() => false);
+    if (renewed || session.lockToken !== token) return;
+    if (session.lockTimer) clearInterval(session.lockTimer);
+    session.lockTimer = null;
+    session.lockToken = null;
+    session.generation++;
+    session.connecting = false;
+    session.intentionalDisconnect = true;
+    session.state.isSending = false;
+    session.state.connectionStatus = "disconnected";
+    session.state.disconnectKind = "abnormal";
+    session.state.disconnectReason = "A instância perdeu o lock exclusivo da sessão.";
+    session.state.currentAction = "Sessão encerrada para evitar conexão duplicada.";
+    try {
+      session.socket?.end(new Error("Lock distribuído perdido."));
+    } catch {
+      /* encerrada */
+    }
+    session.socket = null;
+    void persistSession(session);
+    void audit("SESSION_LOCK_LOST", session.actor, session.unitId, {
+      ownerId: session.ownerId,
+      instanceId: sessionInstanceId,
+      fencingToken: token,
+    });
+  }, SESSION_LOCK_RENEW_MS);
+  session.lockTimer.unref?.();
+}
+
+async function connect(user: VerifiedFirebaseUser | undefined, unitId: string, ownerOverride?: string) {
+  const session = ownerOverride ? sessionFor(unitId, ownerOverride) : sessionForUser(unitId, user),
+    state = session.state;
+  if (session.connecting || state.connectionStatus === "connected") return { success: true };
+  session.actor = user;
+  session.intentionalDisconnect = false;
+  session.connecting = true;
+  const generation = ++session.generation;
+  state.connectionStatus = state.currentQr ? "qr" : "connecting";
+  state.currentAction = "Inicializando conexão com o WhatsApp...";
+  try {
+    const lock = await acquireMessageSessionLock(adminDb, session.scopeId, sessionInstanceId, new Date(), SESSION_LOCK_LEASE_MS);
+    if (!lock) {
+      session.connecting = false;
+      state.connectionStatus = "disconnected";
+      state.disconnectKind = "abnormal";
+      state.disconnectReason = "Sua sessão já está ativa em outra instância do serviço.";
+      state.currentAction = "Conexão protegida por outra instância.";
+      await persistSession(session);
+      return { success: false, error: state.disconnectReason };
+    }
+    startSessionLockHeartbeat(session, lock.fencingToken);
+    const { state: auth, saveCreds, clear } = await useEncryptedAuthState(whatsappSessionVaultPath(BASE_VAULT, unitId, session.ownerId));
+    const socket = makeWASocket({
+      auth,
+      printQRInTerminal: false,
+      logger: pino({ level: "silent" }),
+      browser: [`Van’s Management - ${unitId}`, "Chrome", "1.0.0"],
+    });
+    session.socket = socket;
+    socket.ev.on("creds.update", saveCreds);
+    socket.ev.on("messages.upsert", async (event) => {
+      if (event.type !== "notify") return;
+      for (const item of event.messages) {
+        if (item.key.fromMe || !item.message) continue;
+        const jid = item.key.remoteJid || "";
+        if (!jid.endsWith("@s.whatsapp.net")) continue;
+        const text = incomingWhatsAppText(item.message as unknown as Record<string, unknown>),
+          phone = jid.split("@")[0].split(":")[0];
+        void recordInboundCampaignResponse(unitId, phone, text);
+        if (!isMessageOptOut(text)) continue;
+        try {
+          const blocked = await blockMessageContact(adminDb, {
+            phone,
+            reason: `Opt-out recebido pelo WhatsApp: ${text.trim()}`,
+            source: "WHATSAPP_OPT_OUT",
+            actorId: "WHATSAPP",
+          });
+          log(session, `Opt-out registrado para ${blocked.normalizedPhone.slice(0, 4)}*****${blocked.normalizedPhone.slice(-4)}.`, "warning");
+          void audit("CONTACT_OPTED_OUT", undefined, unitId, {
+            phoneHash: blocked.id,
+            cancelledRecipients: blocked.cancelledRecipients,
+          });
+        } catch (error) {
+          console.error("Falha ao processar opt-out recebido:", error);
+        }
+      }
+    });
+    socket.ev.on("connection.update", async (update) => {
+      if (generation !== session.generation) return;
+      const { connection, lastDisconnect, qr } = update;
+      if (qr) {
+        if (session.qrTimer) clearTimeout(session.qrTimer);
+        state.connectionStatus = "qr";
+        state.currentQr = await QRCode.toDataURL(qr);
+        state.qrExpiresAt = messageQrExpiresAt();
+        state.currentAction = "Escaneie o QR Code para conectar.";
+        state.lastError = "";
+        state.requiresNewQr = false;
+        void persistSession(session);
+        session.qrTimer = setTimeout(() => {
+          if (generation !== session.generation || state.connectionStatus !== "qr") return;
+          state.currentQr = "";
+          state.qrExpiresAt = null;
+          state.connectionStatus = "disconnected";
+          state.requiresNewQr = true;
+          state.disconnectKind = "expired";
+          state.disconnectReason = "O QR Code expirou antes da leitura.";
+          state.currentAction = "QR expirado. Gere um novo código.";
+          session.intentionalDisconnect = true;
+          try {
+            session.socket?.end(new Error("QR Code expirado."));
+          } catch {
+            /* encerrada */
+          }
+          void persistSession(session);
+          void audit("QR_EXPIRED", session.actor, unitId);
+        }, 60_000);
+        session.qrTimer.unref?.();
+      }
+      if (connection === "open") {
+        if (session.qrTimer) clearTimeout(session.qrTimer);
+        session.qrTimer = null;
+        session.connecting = false;
+        state.connectionStatus = "connected";
+        state.currentQr = "";
+        state.qrExpiresAt = null;
+        state.accountPhone = String(socket.user?.id || "")
+          .split(":")[0]
+          .split("@")[0];
+        state.accountName = socket.user?.name || "Conta WhatsApp";
+        state.lastConnectedAt = new Date().toISOString();
+        state.disconnectKind = "none";
+        state.disconnectReason = "";
+        state.currentAction = "WhatsApp conectado e pronto.";
+        state.lastError = "";
+        state.requiresNewQr = false;
+        log(session, "WhatsApp conectado.", "success");
+        void persistSession(session);
+        void audit("CONNECTION_OPENED", session.actor, unitId, {
+          accountPhone: state.accountPhone,
+          accountName: state.accountName,
+        });
+        void resume(session);
+      }
+      if (connection === "close") {
+        if (session.qrTimer) clearTimeout(session.qrTimer);
+        session.qrTimer = null;
+        session.connecting = false;
+        session.socket = null;
+        const code = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
+        const loggedOut = code === DisconnectReason.loggedOut;
+        const intentional = session.intentionalDisconnect;
+        state.connectionStatus = "disconnected";
+        state.currentQr = "";
+        state.qrExpiresAt = null;
+        state.disconnectReason = intentional ? state.disconnectReason || "Desconectado pelo operador." : messageDisconnectReason(lastDisconnect?.error, code);
+        state.disconnectKind = intentional ? "intentional" : loggedOut ? "expired" : "abnormal";
+        state.currentAction = intentional ? "Sessão desconectada." : loggedOut ? "Sessão expirada. Gere um novo QR Code." : "Queda detectada. Tentando reconectar...";
+        state.requiresNewQr = loggedOut;
+        if (loggedOut) await clear().catch(() => undefined);
+        await releaseSessionLock(session);
+        void persistSession(session);
+        void audit(intentional ? "CONNECTION_DISCONNECTED" : "CONNECTION_DROPPED", session.actor, unitId, { reasonCode: code || null, reason: state.disconnectReason });
+        if (!intentional && !loggedOut) setTimeout(() => void connect(session.actor, unitId), 3000);
+      }
+    });
+    return { success: true };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "Falha de conexão.";
+    session.connecting = false;
+    session.socket = null;
+    state.connectionStatus = "disconnected";
+    state.lastError = reason;
+    state.currentAction = reason;
+    log(session, reason, "warning");
+    await releaseSessionLock(session);
+    return { success: false, error: reason };
+  }
+}
+
+async function runCampaign(session: Session, campaign: MessageCampaignDocument, user?: VerifiedFirebaseUser) {
+  const state = session.state;
+  if (session.workerActive || state.connectionStatus !== "connected" || !session.socket) return;
+  const recovered = await recoverMessageCampaign(adminDb, campaign.id);
+  if (!recovered || !["NA_FILA", "EM_PROCESSAMENTO"].includes(recovered.campaign.status)) return;
+  campaign = recovered.campaign;
+  const snapshot = await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where("campaignId", "==", campaign.id).get();
+  const recipients = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as MessageCampaignRecipientDocument);
+  const contacts = recipients.map((item) => item.normalizedPhone);
+  const minDelay = Math.max(8, Math.min(120, Number(campaign.minDelaySeconds) || 15));
+  const maxDelay = Math.max(minDelay, Math.min(180, Number(campaign.maxDelaySeconds) || 35));
+  const typing = campaign.simulateTyping !== false;
+  const media = await loadCampaignMedia(campaign.mediaIds, campaign.unitId, campaign.id);
+  session.workerActive = true;
+  Object.assign(state, {
+    isSending: true,
+    campaignStatus: "running",
+    runId: campaign.id,
+    activeUnitId: campaign.unitId,
+    successCount: campaign.sentCount,
+    errorCount: campaign.failedCount,
+    errorDetails: [],
+    total: recipients.length,
+    progress: campaign.sentCount + campaign.deliveredCount + campaign.readCount + campaign.failedCount + campaign.cancelledCount,
+    logs: [],
+  });
+  state.deliveryDetails = recipients.map((item) => ({
+    contact: item.normalizedPhone,
+    status: item.status === "ENVIADO" ? "ENVIADO" : item.status === "FALHOU" ? "FALHA" : "AGUARDANDO",
+    ...(item.processedAt ? { processedAt: item.processedAt } : {}),
+    ...(item.lastError ? { error: item.lastError } : {}),
+  }));
+  log(session, `Campanha ${campaign.name} carregada da fila persistente.`);
+  try {
+    await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(campaign.id).set({ status: "EM_PROCESSAMENTO", updatedAt: new Date().toISOString() }, { merge: true });
+    await adminDb
+      .collection("message_dispatch_history")
+      .doc(campaign.id)
+      .set(
+        {
+          name: campaign.name,
+          createdAt: campaign.createdAt,
+          unitId: campaign.unitId,
+          total: contacts.length,
+          contacts,
+          message: campaign.message,
+          minDelay,
+          maxDelay,
+          simulateTyping: typing,
+          confirmedOptIn: campaign.confirmedOptIn === true,
+          processed: state.progress,
+          successCount: state.successCount,
+          errorCount: state.errorCount,
+          status: "EM_ANDAMENTO",
+          deliveryDetails: state.deliveryDetails,
+          createdBy: campaign.createdBy,
+          createdByEmail: campaign.createdByEmail || "",
+        },
+        { merge: true },
+      );
+    while (state.isSending) {
+      if (!(await waitForCampaignReady(state))) break;
+      if (!(await ownsSessionLock(session))) throw new Error("Lock exclusivo da sessão perdido antes do envio.");
+      let claimed;
+      try {
+        claimed = await claimNextMessageRecipient(adminDb, {
+          workerId,
+          campaignId: campaign.id,
+          unitId: campaign.unitId,
+          accountId: state.accountPhone || campaign.unitId,
+          leaseMs: 90_000,
+        });
+      } catch (error) {
+        if (error instanceof MessageDispatchPolicyBlockedError) {
+          const retryAt = new Date(error.block.retryAt),
+            waitMs = Math.max(1000, Math.min(60_000, retryAt.getTime() - Date.now()));
+          state.policyBlockReason = error.block.message;
+          state.policyBlockedUntil = retryAt.toISOString();
+          state.currentAction = `${error.block.message} Liberação estimada: ${retryAt.toLocaleString("pt-BR")}.`;
+          log(session, state.currentAction, "warning");
+          publishState(session, "progress");
+          await pause(waitMs);
+          continue;
+        }
+        throw error;
+      }
+      if (!claimed) break;
+      state.policyBlockReason = "";
+      state.policyBlockedUntil = null;
+      const contact = claimed.normalizedPhone,
+        index = state.deliveryDetails.findIndex((item) => item.contact === contact),
+        slot = index >= 0 ? index : state.progress;
+      let jid = `${contact}@s.whatsapp.net`,
+        done = false;
+      try {
+        await withMessageLeaseRenewal({
+          intervalMs: 30_000,
+          renew: () => renewMessageRecipientLease(adminDb, claimed.id, workerId, new Date(), 90_000),
+          work: async () => {
+            const socket = session.socket;
+            if (!socket) throw new Error("WhatsApp desconectado durante o envio.");
+            if (await isMessageContactBlocked(adminDb, contact)) throw new Error("Contato bloqueado pela lista global não enviar.");
+            state.currentAction = `Validando ${claimed.maskedPhone}...`;
+            const available = await socket.onWhatsApp(contact);
+            if (!available?.[0]?.exists) throw new Error("Número não encontrado no WhatsApp");
+            jid = available[0].jid;
+            if (typing) {
+              state.currentAction = `Preparando mensagem ${state.progress + 1} de ${contacts.length}...`;
+              await socket.sendPresenceUpdate("composing", jid);
+              await pause(Math.min(6000, Math.max(1200, claimed.personalizedMessage.length * 45)));
+              await socket.sendPresenceUpdate("paused", jid);
+            }
+            if (!(await waitForCampaignReady(state))) throw new Error("Campanha interrompida antes do envio.");
+            if (await isMessageContactBlocked(adminDb, contact)) throw new Error("Contato bloqueado pela lista global não enviar.");
+            await sendCampaignContent(socket, jid, claimed.personalizedMessage, claimed.variables, media);
+          },
+        });
+        const at = new Date().toISOString();
+        if (!campaign.firstSentAt) {
+          campaign.firstSentAt = at;
+          await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(campaign.id).set({ firstSentAt: at, updatedAt: at }, { merge: true });
+        }
+        if (!(await finalizeMessageRecipient(adminDb, claimed.id, workerId, "ENVIADO", { now: new Date(at) }))) throw new Error("Lease expirado.");
+        state.successCount++;
+        done = true;
+        state.deliveryDetails[slot] = {
+          contact,
+          status: "ENVIADO",
+          processedAt: at,
+        };
+        log(session, `Mensagem enviada para ${claimed.maskedPhone}.`, "success");
+        const safety = await recordMessageDeliverySafety(adminDb, {
+          unitId: campaign.unitId,
+          accountId: state.accountPhone || campaign.unitId,
+          campaignId: campaign.id,
+          success: true,
+          now: new Date(at),
+        });
+        await applyCampaignSafety(session, campaign, safety, user);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Falha no envio";
+        if (/lista global|bloquead/i.test(detail)) {
+          await finalizeMessageRecipient(adminDb, claimed.id, workerId, "CANCELADO", { error: detail });
+          done = true;
+          state.deliveryDetails[slot] = {
+            contact,
+            status: "FALHA",
+            processedAt: new Date().toISOString(),
+            error: detail,
+          };
+          log(session, `Envio cancelado para ${claimed.maskedPhone}: contato bloqueado.`, "warning");
+        } else if (!state.isSending) {
+          await finalizeMessageRecipient(adminDb, claimed.id, workerId, "CANCELADO", { error: detail });
+          done = true;
+        } else {
+          const failure = await handleMessageRecipientFailure(adminDb, {
+            recipientId: claimed.id,
+            workerId,
+            error,
+            baseDelayMs: 30_000,
+          });
+          if (failure?.decision.retry) {
+            const seconds = Math.ceil(failure.decision.delayMs / 1000);
+            state.currentAction = `Nova tentativa em ${seconds}s...`;
+            log(session, `${state.currentAction} (${claimed.maskedPhone})`, "warning");
+            for (let i = 0; i < seconds && state.isSending; i++) await pause(1000);
+          } else {
+            done = true;
+            state.errorCount++;
+            state.errorDetails.push({
+              contact: claimed.maskedPhone,
+              error: detail,
+            });
+            state.deliveryDetails[slot] = {
+              contact,
+              status: "FALHA",
+              processedAt: new Date().toISOString(),
+              error: detail,
+            };
+            log(session, `Falha definitiva para ${claimed.maskedPhone}.`, "warning");
+            const safety = await recordMessageDeliverySafety(adminDb, {
+              unitId: campaign.unitId,
+              accountId: state.accountPhone || campaign.unitId,
+              campaignId: campaign.id,
+              success: false,
+            });
+            await applyCampaignSafety(session, campaign, safety, user);
+          }
+        }
+      }
+      if (done) {
+        state.progress++;
+        publishState(session, "progress");
+      }
+      if (serviceDraining) {
+        state.isSending = false;
+        state.currentAction = "Envio pausado para reinício seguro; a fila será retomada automaticamente.";
+        log(session, state.currentAction, "warning");
+        break;
+      }
+      if (done && state.progress < contacts.length && state.isSending) {
+        const seconds = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+        for (let i = 0; i < seconds && state.isSending; i++) {
+          if (!(await waitForCampaignReady(state))) break;
+          await pause(1000);
+        }
+      }
+    }
+    if (state.isSending) {
+      await recoverMessageCampaign(adminDb, campaign.id);
+      state.campaignStatus = "completed";
+      state.currentAction = "Campanha concluída.";
+      log(session, "Processamento concluído.", "success");
+      await audit("CAMPAIGN_COMPLETED", user, campaign.unitId, {
+        runId: campaign.id,
+        processed: state.progress,
+      });
+      await adminDb.collection("message_dispatch_history").doc(campaign.id).set(
+        {
+          status: "CONCLUIDO",
+          finishedAt: new Date().toISOString(),
+          processed: state.progress,
+          successCount: state.successCount,
+          errorCount: state.errorCount,
+          errorDetails: state.errorDetails,
+          deliveryDetails: state.deliveryDetails,
+        },
+        { merge: true },
+      );
+      const next = await createRecurringOccurrence(campaign);
+      if (next)
+        await audit("CAMPAIGN_RECURRENCE_CREATED", user, campaign.unitId, {
+          runId: campaign.id,
+          nextCampaignId: next.id,
+          scheduledAt: next.scheduledAt,
+        });
+    }
+  } catch (error) {
+    state.campaignStatus = "stopped";
+    state.currentAction = "Campanha interrompida por falha.";
+    log(session, state.currentAction, "warning");
+    await audit("CAMPAIGN_FAILED", user, campaign.unitId, {
+      runId: campaign.id,
+      reason: error instanceof Error ? error.message : "Falha",
+    });
+    await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(campaign.id).set({ status: "NA_FILA", updatedAt: new Date().toISOString() }, { merge: true });
+  } finally {
+    state.isSending = false;
+    session.workerActive = false;
+    publishState(session, state.campaignStatus === "stopped" ? "alert" : "progress");
+  }
+}
+
+async function resume(session: Session) {
+  if (session.workerActive || session.state.connectionStatus !== "connected") return;
+  try {
+    const campaigns = await recoverActiveMessageCampaigns(adminDb, {
+      unitId: session.unitId,
+    });
+    for (const item of campaigns) {
+      if (session.state.connectionStatus !== "connected") break;
+      if ((item.campaign.sessionOwnerId || item.campaign.createdBy) !== session.ownerId) continue;
+      await runCampaign(session, item.campaign);
+    }
+  } catch (error) {
+    console.error(`Falha ao retomar ${session.scopeId}:`, error);
+  }
+}
+async function releaseDueCampaigns() {
+  const snapshot = await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).where("status", "==", "AGENDADA").limit(100).get(),
+    now = new Date();
+  for (const document of snapshot.docs) {
+    const campaign = document.data() as MessageCampaignDocument;
+    if (!campaign.scheduledAt || Date.parse(campaign.scheduledAt) > now.getTime()) continue;
+    await document.ref.set({ status: "NA_FILA", updatedAt: now.toISOString() }, { merge: true });
+    const session = sessionForCampaign(campaign);
+    if (session.state.connectionStatus === "connected")
+      void runCampaign(session, {
+        ...campaign,
+        status: "NA_FILA",
+        updatedAt: now.toISOString(),
+      });
+  }
+}
+const requestedUnit = (req: express.Request) => req.body?.unitId ?? req.query?.unitId;
+const requireUnit = (req: express.Request, res: express.Response) => {
+  const decision = authorizeDispatchUnit(authenticatedUser(req), requestedUnit(req));
+  if (!decision.allowed) {
+    res.status(decision.status).json({ error: decision.error });
+    return null;
+  }
+  if (decision.unitId === "ALL") {
+    res.status(400).json({
+      error: "Selecione uma unidade específica para usar o WhatsApp.",
+    });
+    return null;
+  }
+  return decision.unitId;
+};
+
+export async function startMessageDispatchConnection() {
+  serviceDraining = false;
+  const retentionDays = Math.max(30, Number(process.env.MESSAGE_PHONE_RETENTION_DAYS) || 730);
+  void applyMessagePhoneRetention(adminDb, new Date(), retentionDays).catch((error) => console.error("Falha na retenção de telefones:", error));
+  const retentionTimer = setInterval(() => void applyMessagePhoneRetention(adminDb, new Date(), retentionDays).catch((error) => console.error("Falha na retenção de telefones:", error)), 86_400_000);
+  serviceTimers.add(retentionTimer);
+  retentionTimer.unref?.();
+  const scheduleTimer = setInterval(() => void releaseDueCampaigns().catch((error) => console.error("Falha ao liberar campanhas agendadas:", error)), 15_000);
+  serviceTimers.add(scheduleTimer);
+  scheduleTimer.unref?.();
+  void releaseDueCampaigns().catch((error) => console.error("Falha ao verificar campanhas agendadas:", error));
+  const active = await adminDb
+    .collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns)
+    .where("status", "in", ["NA_FILA", "EM_PROCESSAMENTO"])
+    .get()
+    .catch(() => null);
+  for (const document of active?.docs || []) {
+    const campaign = document.data() as MessageCampaignDocument;
+    const ownerId = campaign.sessionOwnerId || campaign.createdBy;
+    if (!campaign.unitId || campaign.unitId === "ALL" || !ownerId) continue;
+    void connect(undefined, campaign.unitId, ownerId);
+  }
+}
+
+export async function shutdownMessageDispatchService(timeoutMs = 25_000) {
+  serviceDraining = true;
+  for (const timer of serviceTimers) clearInterval(timer);
+  serviceTimers.clear();
+  for (const session of sessions.values()) {
+    session.state.currentAction = "Reinício programado: concluindo o envio atual com segurança.";
+    publishState(session, "alert");
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (sessions.values().some((session) => session.workerActive) && Date.now() < deadline) await pause(250);
+  await Promise.all(
+    sessions.values().map(async (session) => {
+      session.generation++;
+      session.intentionalDisconnect = true;
+      if (session.qrTimer) clearTimeout(session.qrTimer);
+      session.qrTimer = null;
+      try {
+        session.socket?.end(new Error("Reinício programado do serviço."));
+      } catch {
+        /* conexão já encerrada */
+      }
+      session.socket = null;
+      session.state.connectionStatus = "disconnected";
+      session.state.disconnectKind = "intentional";
+      session.state.disconnectReason = "Reinício programado do serviço.";
+      session.state.currentAction = "Serviço reiniciando; campanhas pendentes serão retomadas.";
+      await releaseSessionLock(session);
+      await persistSession(session);
+    }),
+  );
+}
+
+export function configureMessageDispatch(app: express.Express, auth: express.RequestHandler, role: express.RequestHandler) {
+  const requireCampaignAction =
+    (action: MessageCampaignAction): express.RequestHandler =>
+    (req, res, next) => {
+      if (!canPerformMessageCampaignAction(authenticatedUser(req), action)) {
+        res.status(403).json({
+          error: `Seu perfil não possui permissão para ${action === "create" ? "criar" : action === "approve" ? "aprovar" : "executar"} campanhas.`,
+        });
+        return;
+      }
+      next();
+    };
+  const actionRoutes: Record<string, MessageCampaignAction> = {
+    "campaigns/approve": "approve",
+    "campaigns/cancel": "execute",
+    "campaigns/duplicate": "create",
+    start: "execute",
+    "test-send": "execute",
+    "high-volume-challenge": "execute",
+    pause: "execute",
+    resume: "execute",
+    stop: "execute",
+    connect: "execute",
+    disconnect: "execute",
+    reconnect: "execute",
+    "new-qr": "execute",
+    "reset-session": "execute",
+    drafts: "create",
+    templates: "create",
+    "media/upload": "create",
+    "media/configure": "create",
+    "media/delete": "create",
+    "contacts/import": "create",
+    segments: "create",
+  };
+  app.use("/api/message-dispatch", auth, role, (req, res, next) => {
+    if (req.method !== "POST") {
+      next();
+      return;
+    }
+    const action = actionRoutes[req.path.replace(/^\//, "")];
+    if (!action) {
+      next();
+      return;
+    }
+    requireCampaignAction(action)(req, res, next);
+  });
+  app.get("/api/message-dispatch/status", auth, role, (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (unitId) res.json(publicState(sessionForUser(unitId, authenticatedUser(req))));
+  });
+  app.get("/api/message-dispatch/events", auth, role, (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const session = sessionForUser(unitId, authenticatedUser(req));
+    res.status(200);
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    res.write("retry: 2000\n\n");
+    res.write(encodeSseEvent(realtimeBroker.snapshot(session.scopeId, publicState(session))));
+    const unsubscribe = realtimeBroker.subscribe(session.scopeId, (event) => res.write(encodeSseEvent(event)));
+    const heartbeat = setInterval(() => res.write(`: heartbeat ${Date.now()}\n\n`), 15_000);
+    heartbeat.unref?.();
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      res.end();
+    });
+  });
+  app.get("/api/message-dispatch/blocklist", auth, role, async (_req, res) => {
+    const snapshot = await adminDb.collection("message_global_blocklist").where("status", "==", "BLOCKED").limit(500).get();
+    res.json(
+      snapshot.docs.map((document) => {
+        const data = document.data();
+        return {
+          id: document.id,
+          maskedPhone: data.maskedPhone,
+          reason: data.reason,
+          source: data.source,
+          blockedAt: data.blockedAt,
+          updatedAt: data.updatedAt,
+        };
+      }),
+    );
+  });
+  app.get("/api/message-dispatch/consent-audit", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const phone = String(req.query.phone || ""),
+      at = new Date(String(req.query.at || new Date().toISOString()));
+    if (!phone || Number.isNaN(at.getTime())) {
+      res.status(400).json({ error: "Informe telefone e data válidos." });
+      return;
+    }
+    const phoneHash = messageConsentId(unitId, phone),
+      snapshot = await adminDb.collection("message_consent_events").where("phoneHash", "==", phoneHash).get(),
+      events = snapshot.docs.map((document) => document.data() as MessageConsentEvent).filter((event) => event.unitId === unitId);
+    const reconstructed = reconstructConsentAt(events, at);
+    res.json({
+      unitId,
+      phoneHash,
+      at: at.toISOString(),
+      granted: reconstructed.granted,
+      latest: reconstructed.latest,
+      events: events.sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+    });
+  });
+  app.get("/api/message-dispatch/policy", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (unitId) res.json(await loadMessageDispatchPolicy(adminDb, unitId));
+  });
+  app.get("/api/message-dispatch/content", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const [drafts, templates] = await Promise.all([adminDb.collection(MESSAGE_DRAFT_COLLECTION).where("unitId", "==", unitId).limit(100).get(), adminDb.collection(MESSAGE_TEMPLATE_COLLECTION).where("unitId", "==", unitId).limit(100).get()]);
+    const sort = (items: FirebaseFirestore.QueryDocumentSnapshot[]) => items.map((item) => item.data()).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    res.json({ drafts: sort(drafts.docs), templates: sort(templates.docs) });
+  });
+  app.get("/api/message-dispatch/campaigns", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const user = authenticatedUser(req),
+      snapshot = await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).where("unitId", "==", unitId).limit(100).get();
+    res.json(
+      snapshot.docs
+        .map((item) => item.data())
+        .filter((campaign) => user?.role === "ADMIN" || (campaign.sessionOwnerId || campaign.createdBy) === user?.uid)
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+        .map((campaign) => ({
+          id: campaign.id,
+          name: campaign.name,
+          status: campaign.status,
+          scheduledAt: campaign.scheduledAt,
+          timeZone: campaign.timeZone,
+          recurrence: campaign.recurrence,
+          approvalRequired: campaign.approvalRequired,
+          createdAt: campaign.createdAt,
+          createdBy: campaign.createdBy,
+          createdByEmail: campaign.createdByEmail,
+          totalRecipients: campaign.totalRecipients,
+          pendingCount: campaign.pendingCount,
+          processingCount: campaign.processingCount,
+          sentCount: campaign.sentCount,
+          failedCount: campaign.failedCount,
+          cancelledCount: campaign.cancelledCount,
+          firstSentAt: campaign.firstSentAt,
+        })),
+    );
+  });
+  app.get("/api/message-dispatch/metrics", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const user = authenticatedUser(req),
+      from = String(req.query.from || ""),
+      to = String(req.query.to || ""),
+      campaignsSnapshot = await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).where("unitId", "==", unitId).limit(100).get();
+    const campaigns = campaignsSnapshot.docs
+      .map((item) => item.data() as MessageCampaignDocument)
+      .filter((item) => (item.sessionOwnerId || item.createdBy) === user?.uid && (!from || item.createdAt >= from) && (!to || item.createdAt <= to))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const campaignIds = new Set(campaigns.map((item) => item.id));
+    const [recipientsSnapshot, responsesSnapshot] = await Promise.all([adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where("unitId", "==", unitId).limit(5000).get(), adminDb.collection("message_campaign_responses").where("unitId", "==", unitId).limit(5000).get()]);
+    const recipients = recipientsSnapshot.docs.map((item) => item.data() as MessageCampaignRecipientDocument).filter((item) => campaignIds.has(item.campaignId)),
+      responded = new Set(responsesSnapshot.docs.map((item) => String(item.data().recipientId || item.id))),
+      items = campaigns.map((campaign) => buildCampaignPerformance(campaign, recipients, responded)),
+      sessionState = sessionForUser(unitId, user).state;
+    res.json({
+      unitId,
+      filters: { from: from || null, to: to || null },
+      summary: summarizeCampaignPerformance(items),
+      campaigns: items,
+      recipients: recipients.map(safeCampaignRecipientExport),
+      alerts: {
+        abnormalDisconnect: sessionState.disconnectKind === "abnormal" ? sessionState.disconnectReason : null,
+        accountBlocked: sessionState.requiresNewQr && sessionState.disconnectKind === "expired" ? sessionState.disconnectReason || "A conta exige uma nova vinculação." : null,
+        interruptedCampaigns: campaigns
+          .filter((item) => ["FALHOU", "PAUSADA", "CANCELADA"].includes(item.status))
+          .map((item) => ({
+            id: item.id,
+            name: item.name,
+            status: item.status,
+            reason: item.autoPauseReason || null,
+          })),
+      },
+    });
+  });
+  app.post("/api/message-dispatch/campaigns/approve", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const user = authenticatedUser(req);
+    if (user?.role !== "ADMIN") {
+      res.status(403).json({ error: "Somente administradores podem aprovar campanhas." });
+      return;
+    }
+    const reference = adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(String(req.body?.campaignId || "")),
+      snapshot = await reference.get();
+    if (!snapshot.exists || snapshot.data()?.unitId !== unitId) {
+      res.status(404).json({ error: "Campanha não encontrada nesta unidade." });
+      return;
+    }
+    try {
+      const campaign = snapshot.data() as MessageCampaignDocument,
+        transition = approveCampaignTransition(campaign, user.uid, user.email);
+      await reference.set(transition, { merge: true });
+      await audit("CAMPAIGN_APPROVED", user, unitId, {
+        runId: campaign.id,
+        status: transition.status,
+      });
+      res.json({ ...campaign, ...transition });
+      if (transition.status === "NA_FILA") {
+        const session = sessionForCampaign(campaign);
+        if (session.state.connectionStatus === "connected") void runCampaign(session, { ...campaign, ...transition });
+      }
+    } catch (error) {
+      res.status(409).json({
+        error: error instanceof Error ? error.message : "Falha ao aprovar campanha.",
+      });
+    }
+  });
+  app.post("/api/message-dispatch/campaigns/cancel", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const user = authenticatedUser(req),
+      reference = adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(String(req.body?.campaignId || "")),
+      snapshot = await reference.get();
+    if (!snapshot.exists || snapshot.data()?.unitId !== unitId) {
+      res.status(404).json({ error: "Campanha não encontrada nesta unidade." });
+      return;
+    }
+    try {
+      const campaign = snapshot.data() as MessageCampaignDocument,
+        transition = cancelCampaignTransition(campaign, user?.uid || "SYSTEM", String(req.body?.reason || ""));
+      const recipients = await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where("campaignId", "==", campaign.id).get(),
+        batch = adminDb.batch();
+      batch.set(reference, transition, { merge: true });
+      recipients.docs.forEach((item) =>
+        batch.set(
+          item.ref,
+          {
+            status: "CANCELADO",
+            nextAttemptAt: null,
+            updatedAt: transition.updatedAt,
+          },
+          { merge: true },
+        ),
+      );
+      await batch.commit();
+      await audit("CAMPAIGN_CANCELLED_BEFORE_SEND", user, unitId, {
+        runId: campaign.id,
+        reason: transition.cancellationReason,
+      });
+      res.json({ ...campaign, ...transition });
+    } catch (error) {
+      res.status(409).json({
+        error: error instanceof Error ? error.message : "Falha ao cancelar campanha.",
+      });
+    }
+  });
+  app.post("/api/message-dispatch/campaigns/duplicate", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const snapshot = await adminDb
+      .collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns)
+      .doc(String(req.body?.campaignId || ""))
+      .get();
+    if (!snapshot.exists || snapshot.data()?.unitId !== unitId) {
+      res.status(404).json({ error: "Campanha não encontrada nesta unidade." });
+      return;
+    }
+    const campaign = snapshot.data() as MessageCampaignDocument,
+      recipients = await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where("campaignId", "==", campaign.id).get();
+    await audit("CAMPAIGN_DUPLICATED_TO_DRAFT", authenticatedUser(req), unitId, { sourceCampaignId: campaign.id });
+    res.json(
+      buildCampaignDuplicateDraft(
+        campaign,
+        recipients.docs.map((item) => item.data() as MessageCampaignRecipientDocument),
+      ),
+    );
+  });
+  app.post("/api/message-dispatch/media/upload", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    try {
+      const rawName = String(req.get("X-File-Name") || "arquivo"),
+        fileName = decodeURIComponent(rawName),
+        uploadId = String(req.get("X-Upload-Id") || ""),
+        mimeType = String(req.get("X-File-Type") || ""),
+        buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      const existing = await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).where("uploadId", "==", uploadId).where("unitId", "==", unitId).get();
+      if (existing.size >= MESSAGE_MEDIA_LIMITS.maxFiles) {
+        res.status(409).json({
+          error: `É permitido anexar no máximo ${MESSAGE_MEDIA_LIMITS.maxFiles} arquivos.`,
+        });
+        return;
+      }
+      const media = buildMessageMediaUpload({
+          unitId,
+          uploadId,
+          fileName,
+          mimeType,
+          buffer,
+          caption: String(req.get("X-Media-Caption") || ""),
+          order: Number(req.get("X-Media-Order") || existing.size),
+        }),
+        file = adminBucket.file(media.storagePath);
+      await file.save(buffer, {
+        resumable: false,
+        contentType: media.mimeType,
+        metadata: {
+          cacheControl: "private, max-age=0",
+          metadata: { unitId, uploadId, mediaId: media.id },
+        },
+      });
+      try {
+        await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(media.id).create(media);
+      } catch (error) {
+        await file.delete({ ignoreNotFound: true });
+        throw error;
+      }
+      await audit("MESSAGE_MEDIA_UPLOADED", authenticatedUser(req), unitId, {
+        mediaId: media.id,
+        type: media.type,
+        sizeBytes: media.sizeBytes,
+      });
+      res.status(201).json(media);
+    } catch (error) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Falha ao enviar anexo.",
+      });
+    }
+  });
+  app.post("/api/message-dispatch/media/configure", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const items = Array.isArray(req.body?.media) ? req.body.media.slice(0, MESSAGE_MEDIA_LIMITS.maxFiles) : [];
+    try {
+      const snapshots = await Promise.all(
+        items.map((item: { id?: unknown }) =>
+          adminDb
+            .collection(MESSAGE_CAMPAIGN_COLLECTIONS.media)
+            .doc(String(item.id || ""))
+            .get(),
+        ),
+      );
+      if (snapshots.some((snapshot) => !snapshot.exists || snapshot.data()?.unitId !== unitId || snapshot.data()?.campaignId)) {
+        res.status(403).json({
+          error: "Há anexos inválidos, já utilizados ou pertencentes a outra unidade.",
+        });
+        return;
+      }
+      const batch = adminDb.batch();
+      items.forEach((item: { id?: unknown; caption?: unknown; order?: unknown }, index: number) =>
+        batch.update(snapshots[index].ref, {
+          caption: String(item.caption || "")
+            .trim()
+            .slice(0, 1024),
+          order: Math.max(0, Math.floor(Number(item.order) || index)),
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+      await batch.commit();
+      res.json({ success: true, count: items.length });
+    } catch (error) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Falha ao organizar anexos.",
+      });
+    }
+  });
+  app.post("/api/message-dispatch/media/delete", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const reference = adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.media).doc(String(req.body?.mediaId || "")),
+      snapshot = await reference.get();
+    if (!snapshot.exists) {
+      res.status(404).json({ error: "Anexo não encontrado." });
+      return;
+    }
+    const media = snapshot.data() as {
+      unitId: string;
+      campaignId?: string;
+      storagePath: string;
+    };
+    if (media.unitId !== unitId) {
+      res.status(403).json({ error: "Este anexo pertence a outra unidade." });
+      return;
+    }
+    if (media.campaignId) {
+      res.status(409).json({
+        error: "Não é possível remover uma mídia vinculada a uma campanha.",
+      });
+      return;
+    }
+    await adminBucket.file(media.storagePath).delete({ ignoreNotFound: true });
+    await reference.delete();
+    await audit("MESSAGE_MEDIA_DELETED", authenticatedUser(req), unitId, {
+      mediaId: snapshot.id,
+    });
+    res.json({ success: true });
+  });
+  for (const target of [
+    {
+      path: "drafts",
+      collection: MESSAGE_DRAFT_COLLECTION,
+      kind: "DRAFT" as const,
+    },
+    {
+      path: "templates",
+      collection: MESSAGE_TEMPLATE_COLLECTION,
+      kind: "TEMPLATE" as const,
+    },
+  ])
+    app.post(`/api/message-dispatch/${target.path}`, auth, role, async (req, res) => {
+      const unitId = requireUnit(req, res);
+      if (!unitId) return;
+      const user = authenticatedUser(req),
+        id = String(req.body?.id || crypto.randomUUID()),
+        reference = adminDb.collection(target.collection).doc(id),
+        existing = await reference.get();
+      if (existing.exists && existing.data()?.unitId !== unitId) {
+        res.status(403).json({ error: "Este conteúdo pertence a outra unidade." });
+        return;
+      }
+      try {
+        const saved = buildSavedMessage({
+          id,
+          unitId,
+          name: String(req.body?.name || ""),
+          message: String(req.body?.message || ""),
+          actorId: user?.uid || "SYSTEM",
+          kind: target.kind,
+        });
+        await reference.set(
+          {
+            ...saved,
+            ...(existing.exists
+              ? {
+                  createdAt: existing.data()?.createdAt,
+                  createdBy: existing.data()?.createdBy,
+                }
+              : {}),
+          },
+          { merge: true },
+        );
+        await audit(`MESSAGE_${target.kind}_SAVED`, user, unitId, {
+          contentId: id,
+        });
+        res.status(existing.exists ? 200 : 201).json(saved);
+      } catch (error) {
+        res.status(400).json({
+          error: error instanceof Error ? error.message : "Falha ao salvar conteúdo.",
+        });
+      }
+    });
+  app.post("/api/message-dispatch/contacts/import", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const rows = Array.isArray(req.body?.contacts) ? req.body.contacts : [];
+    if (!rows.length || rows.length > 500) {
+      res.status(400).json({ error: "Envie entre 1 e 500 contatos por importação." });
+      return;
+    }
+    try {
+      const batch = adminDb.batch(),
+        now = new Date().toISOString(),
+        contacts = rows.map((row: Record<string, unknown>) => buildDirectoryContact(unitId, row, now));
+      contacts.forEach((contact) => batch.set(adminDb.collection(MESSAGE_CONTACT_DIRECTORY_COLLECTION).doc(contact.id), contact, { merge: true }));
+      await batch.commit();
+      await audit("MESSAGE_CONTACTS_IMPORTED", authenticatedUser(req), unitId, { count: contacts.length });
+      res.status(201).json({ success: true, count: contacts.length });
+    } catch (error) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Falha ao importar contatos.",
+      });
+    }
+  });
+  app.get("/api/message-dispatch/contacts", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const snapshot = await adminDb.collection(MESSAGE_CONTACT_DIRECTORY_COLLECTION).where("unitId", "==", unitId).limit(500).get();
+    const contacts = snapshot.docs.map((document) => document.data() as MessageDirectoryContact);
+    res.json(
+      searchDirectoryContacts(contacts, {
+        unitId,
+        query: String(req.query.q || ""),
+        page: Number(req.query.page) || 1,
+        pageSize: Number(req.query.pageSize) || 10,
+      }),
+    );
+  });
+  app.post("/api/message-dispatch/contacts/resolve", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const ids = [...new Set((Array.isArray(req.body?.contactIds) ? req.body.contactIds : []).map(String))].slice(0, 500);
+    const snapshots = await Promise.all(ids.map((id) => adminDb.collection(MESSAGE_CONTACT_DIRECTORY_COLLECTION).doc(id).get()));
+    const contacts = snapshots.filter((snapshot) => snapshot.exists).map((snapshot) => snapshot.data() as MessageDirectoryContact);
+    if (contacts.some((contact) => contact.unitId !== unitId)) {
+      res.status(403).json({ error: "Há contatos de outra unidade nesta solicitação." });
+      return;
+    }
+    res.json({
+      contacts: contacts.map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        phone: contact.normalizedPhone,
+        origin: contact.origin,
+        consentAt: contact.consentAt,
+        evidence: contact.evidence,
+        variables: contact.variables,
+      })),
+    });
+  });
+  app.get("/api/message-dispatch/segments", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const snapshot = await adminDb.collection(MESSAGE_CONTACT_SEGMENT_COLLECTION).where("unitId", "==", unitId).limit(100).get();
+    res.json(snapshot.docs.map((document) => document.data()).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))));
+  });
+  app.post("/api/message-dispatch/segments", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    try {
+      const user = authenticatedUser(req),
+        segment = createSnapshotSegment({
+          id: crypto.randomUUID(),
+          unitId,
+          name: String(req.body?.name || ""),
+          contactIds: Array.isArray(req.body?.contactIds) ? req.body.contactIds.map(String) : [],
+          actorId: user?.uid || "SYSTEM",
+        });
+      const contacts = await Promise.all(segment.contactIds.map((id) => adminDb.collection(MESSAGE_CONTACT_DIRECTORY_COLLECTION).doc(id).get()));
+      if (contacts.some((snapshot) => !snapshot.exists || snapshot.data()?.unitId !== unitId)) {
+        res.status(403).json({
+          error: "O segmento contém contatos inexistentes ou de outra unidade.",
+        });
+        return;
+      }
+      await adminDb.collection(MESSAGE_CONTACT_SEGMENT_COLLECTION).doc(segment.id).create(segment);
+      await audit("MESSAGE_CONTACT_SEGMENT_CREATED", user, unitId, {
+        segmentId: segment.id,
+        contactCount: segment.contactCount,
+        policy: segment.policy,
+      });
+      res.status(201).json(segment);
+    } catch (error) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Falha ao salvar segmento.",
+      });
+    }
+  });
+  app.post("/api/message-dispatch/segments/resolve", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const snapshot = await adminDb
+      .collection(MESSAGE_CONTACT_SEGMENT_COLLECTION)
+      .doc(String(req.body?.segmentId || ""))
+      .get();
+    if (!snapshot.exists || snapshot.data()?.unitId !== unitId) {
+      res.status(404).json({ error: "Segmento não encontrado nesta unidade." });
+      return;
+    }
+    const segment = snapshot.data() as {
+      id: string;
+      name: string;
+      policy: "SNAPSHOT";
+      contactIds: string[];
+    };
+    const contacts = await Promise.all(segment.contactIds.map((id) => adminDb.collection(MESSAGE_CONTACT_DIRECTORY_COLLECTION).doc(id).get()));
+    res.json({
+      segment: { id: segment.id, name: segment.name, policy: segment.policy },
+      contacts: contacts
+        .filter((item) => item.exists && item.data()?.unitId === unitId)
+        .map((item) => {
+          const contact = item.data() as MessageDirectoryContact;
+          return {
+            id: contact.id,
+            name: contact.name,
+            phone: contact.normalizedPhone,
+            origin: contact.origin,
+            consentAt: contact.consentAt,
+            evidence: contact.evidence,
+            variables: contact.variables,
+          };
+        }),
+    });
+  });
+  app.put("/api/message-dispatch/policy", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const user = authenticatedUser(req);
+    if (user?.role !== "ADMIN") {
+      res.status(403).json({
+        error: "Somente administradores podem alterar os limites de envio.",
+      });
+      return;
+    }
+    const policy = normalizeMessageDispatchPolicy(req.body || {});
+    await adminDb
+      .collection("message_dispatch_policies")
+      .doc(unitId)
+      .set(
+        {
+          ...policy,
+          unitId,
+          updatedAt: new Date().toISOString(),
+          updatedBy: user.uid,
+        },
+        { merge: true },
+      );
+    await audit("MESSAGE_POLICY_UPDATED", user, unitId, policy);
+    res.json(policy);
+  });
+  app.post("/api/message-dispatch/blocklist", auth, role, async (req, res) => {
+    const user = authenticatedUser(req);
+    try {
+      const result = await blockMessageContact(adminDb, {
+        phone: String(req.body?.phone || ""),
+        reason: String(req.body?.reason || "Bloqueio manual"),
+        source: "MANUAL",
+        actorId: user?.uid || "SYSTEM",
+        ...(user?.email ? { actorEmail: user.email } : {}),
+      });
+      await audit("CONTACT_BLOCKED", user, "ALL", {
+        phoneHash: result.id,
+        cancelledRecipients: result.cancelledRecipients,
+      });
+      res.status(201).json({
+        id: result.id,
+        maskedPhone: `${result.normalizedPhone.slice(0, 4)}*****${result.normalizedPhone.slice(-4)}`,
+        cancelledRecipients: result.cancelledRecipients,
+      });
+    } catch (error) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Falha ao bloquear contato.",
+      });
+    }
+  });
+  app.post("/api/message-dispatch/blocklist/unblock", auth, role, async (req, res) => {
+    const user = authenticatedUser(req);
+    if (!canUnblockMessageContact(user?.role)) {
+      res.status(403).json({
+        error: "Somente administradores podem remover um contato da lista não enviar.",
+      });
+      return;
+    }
+    try {
+      const result = await unblockMessageContact(adminDb, {
+        id: String(req.body?.id || ""),
+        justification: String(req.body?.justification || ""),
+        actorId: user?.uid || "SYSTEM",
+      });
+      await audit("CONTACT_UNBLOCKED", user, "ALL", {
+        phoneHash: result.id,
+        justification: result.unblockReason,
+      });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Falha ao desbloquear contato.",
+      });
+    }
+  });
+  app.post("/api/message-dispatch/connect", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const user = authenticatedUser(req);
+    await audit("CONNECTION_REQUESTED", user, unitId);
+    const result = await connect(user, unitId);
+    result.success ? res.status(202).json({ success: true }) : res.status(500).json({ error: result.error });
+  });
+  app.post("/api/message-dispatch/disconnect", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const session = sessionForUser(unitId, authenticatedUser(req));
+    if (session.state.isSending) {
+      res.status(409).json({ error: "Pause ou encerre sua campanha antes de desconectar." });
+      return;
+    }
+    session.intentionalDisconnect = true;
+    session.generation++;
+    session.connecting = false;
+    if (session.qrTimer) clearTimeout(session.qrTimer);
+    session.state.disconnectKind = "intentional";
+    session.state.disconnectReason = "Desconectado pelo operador.";
+    session.state.connectionStatus = "disconnected";
+    session.state.currentQr = "";
+    session.state.qrExpiresAt = null;
+    session.state.currentAction = "Sessão desconectada.";
+    try {
+      session.socket?.end(new Error("Desconectado pelo operador."));
+    } catch {
+      /* encerrada */
+    }
+    session.socket = null;
+    await releaseSessionLock(session);
+    await persistSession(session);
+    await audit("CONNECTION_DISCONNECTED", authenticatedUser(req), unitId, {
+      ownerId: session.ownerId,
+      reason: session.state.disconnectReason,
+    });
+    res.json({ success: true });
+  });
+  app.post("/api/message-dispatch/reconnect", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const session = sessionForUser(unitId, authenticatedUser(req));
+    if (session.state.isSending) {
+      res.status(409).json({ error: "Não é possível reconectar durante uma campanha." });
+      return;
+    }
+    session.intentionalDisconnect = true;
+    session.generation++;
+    session.connecting = false;
+    try {
+      session.socket?.end(new Error("Reconexão solicitada."));
+    } catch {
+      /* encerrada */
+    }
+    session.socket = null;
+    session.state.connectionStatus = "disconnected";
+    await releaseSessionLock(session);
+    await audit("CONNECTION_RECONNECT_REQUESTED", authenticatedUser(req), unitId);
+    const result = await connect(authenticatedUser(req), unitId);
+    result.success ? res.status(202).json({ success: true }) : res.status(500).json({ error: result.error });
+  });
+  app.post("/api/message-dispatch/new-qr", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const session = sessionForUser(unitId, authenticatedUser(req));
+    if (session.state.isSending) {
+      res.status(409).json({ error: "Não é possível gerar QR durante uma campanha." });
+      return;
+    }
+    session.intentionalDisconnect = true;
+    session.generation++;
+    session.connecting = false;
+    if (session.qrTimer) clearTimeout(session.qrTimer);
+    try {
+      session.socket?.end(new Error("Novo QR solicitado."));
+    } catch {
+      /* encerrada */
+    }
+    session.socket = null;
+    await releaseSessionLock(session);
+    await clearEncryptedAuthState(whatsappSessionVaultPath(BASE_VAULT, unitId, session.ownerId));
+    Object.assign(session.state, initialState(unitId));
+    await audit("CONNECTION_NEW_QR_REQUESTED", authenticatedUser(req), unitId);
+    const result = await connect(authenticatedUser(req), unitId);
+    result.success ? res.status(202).json({ success: true }) : res.status(500).json({ error: result.error });
+  });
+  app.post("/api/message-dispatch/reset-session", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const session = sessionForUser(unitId, authenticatedUser(req));
+    if (session.state.isSending) {
+      res.status(409).json({ error: "Existe campanha ativa nesta unidade." });
+      return;
+    }
+    session.generation++;
+    session.connecting = false;
+    try {
+      session.socket?.end(new Error("Sessão redefinida."));
+    } catch {
+      /* encerrada */
+    }
+    session.socket = null;
+    await releaseSessionLock(session);
+    await clearEncryptedAuthState(whatsappSessionVaultPath(BASE_VAULT, unitId, session.ownerId));
+    Object.assign(session.state, initialState(unitId));
+    const result = await connect(authenticatedUser(req), unitId);
+    result.success ? res.status(202).json({ success: true }) : res.status(500).json({ error: result.error });
+  });
+  for (const action of ["pause", "resume"] as const)
+    app.post(`/api/message-dispatch/${action}`, auth, role, async (req, res) => {
+      const unitId = requireUnit(req, res);
+      if (!unitId) return;
+      const user = authenticatedUser(req),
+        session = sessionForUser(unitId, user),
+        state = session.state;
+      if (!state.isSending) {
+        res.status(409).json({ error: "Não existe campanha ativa nesta unidade." });
+        return;
+      }
+      if (action === "resume" && state.runId) {
+        if (user?.role !== "ADMIN") {
+          const campaign = await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns).doc(state.runId).get();
+          if (campaign.data()?.autoPaused === true) {
+            res.status(403).json({
+              error: "Somente administradores podem retomar uma campanha pausada por segurança.",
+            });
+            return;
+          }
+        }
+        try {
+          await validateAutomaticPauseResume(adminDb, {
+            campaignId: state.runId,
+            unitId,
+            accountId: state.accountPhone || unitId,
+            actorId: user?.uid || "SYSTEM",
+          });
+        } catch (error) {
+          res.status(409).json({
+            error: error instanceof Error ? error.message : "A retomada ainda não é segura.",
+          });
+          return;
+        }
+      }
+      state.campaignStatus = action === "pause" ? "paused" : "running";
+      state.currentAction = action === "pause" ? "Campanha pausada." : "Retomando campanha...";
+      if (action === "resume") {
+        state.policyBlockReason = "";
+        state.policyBlockedUntil = null;
+        await audit("CAMPAIGN_RESUMED", user, unitId, { runId: state.runId });
+      }
+      if (state.runId)
+        await adminDb
+          .collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns)
+          .doc(state.runId)
+          .set(
+            {
+              status: action === "pause" ? "PAUSADA" : "EM_PROCESSAMENTO",
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true },
+          );
+      publishState(session, "progress");
+      res.json({ success: true });
+    });
+  app.post("/api/message-dispatch/stop", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const session = sessionForUser(unitId, authenticatedUser(req)),
+      state = session.state,
+      reason = safeInterruptionReason(req.body?.reason);
+    state.isSending = false;
+    state.campaignStatus = "stopped";
+    state.currentAction = reason;
+    if (state.runId) {
+      const cancelledAt = new Date().toISOString();
+      await adminDb
+        .collection(MESSAGE_CAMPAIGN_COLLECTIONS.campaigns)
+        .doc(state.runId)
+        .set(
+          {
+            status: "CANCELADA",
+            cancelledCount: Math.max(0, state.total - state.progress),
+            cancelledAt,
+            cancelledBy: session.ownerId,
+            updatedAt: cancelledAt,
+            finishedAt: cancelledAt,
+          },
+          { merge: true },
+        );
+      const pendingRecipients = await adminDb.collection(MESSAGE_CAMPAIGN_COLLECTIONS.recipients).where("campaignId", "==", state.runId).get();
+      const cancellationBatch = adminDb.batch();
+      pendingRecipients.docs
+        .filter((item) => ["PENDENTE", "PROCESSANDO"].includes(item.data().status))
+        .forEach((item) =>
+          cancellationBatch.set(
+            item.ref,
+            {
+              status: "CANCELADO",
+              nextAttemptAt: null,
+              leaseOwner: null,
+              leaseExpiresAt: null,
+              updatedAt: cancelledAt,
+              processedAt: cancelledAt,
+              lastError: reason,
+            },
+            { merge: true },
+          ),
+        );
+      await cancellationBatch.commit();
+      await adminDb.collection("message_dispatch_history").doc(state.runId).set(
+        {
+          status: "INTERROMPIDO",
+          finishedAt: cancelledAt,
+          interruptionReason: reason,
+        },
+        { merge: true },
+      );
+    }
+    publishState(session, "alert");
+    res.json({ success: true });
+  });
+  app.post("/api/message-dispatch/high-volume-challenge", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const user = authenticatedUser(req),
+      { input, contacts, message } = campaignRequest(req, unitId, user);
+    if (!input.requestIdempotencyKey || !message || !contacts.length) {
+      res.status(400).json({ error: "Revise os dados da campanha antes de confirmar." });
+      return;
+    }
+    if (contacts.length < HIGH_VOLUME_THRESHOLD) {
+      res.json({ required: false, threshold: HIGH_VOLUME_THRESHOLD });
+      return;
+    }
+    try {
+      const plan = planMessageCampaignCreation(input),
+        campaignId = plan.campaign.id;
+      const challenge = await issueHighVolumeChallenge(adminDb, {
+        campaignId,
+        payloadHash: plan.campaign.payloadHash || "",
+        unitId,
+        actorId: user?.uid || "SYSTEM",
+        recipientCount: contacts.length,
+      });
+      await audit("CAMPAIGN_HIGH_VOLUME_CHALLENGE_ISSUED", user, unitId, {
+        runId: campaignId,
+        totalContacts: contacts.length,
+        expiresAt: challenge.expiresAt,
+      });
+      res.status(201).json({
+        required: true,
+        threshold: HIGH_VOLUME_THRESHOLD,
+        ...challenge,
+      });
+    } catch (error) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Falha ao gerar confirmação.",
+      });
+    }
+  });
+  app.post("/api/message-dispatch/test-send", auth, role, async (req, res) => {
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const user = authenticatedUser(req),
+      session = sessionForUser(unitId, user),
+      { input, message } = campaignRequest(req, unitId, user),
+      phone = normalizeMessageContact(req.body?.testPhone);
+    if (session.state.connectionStatus !== "connected" || !session.socket) {
+      res.status(409).json({ error: "Conecte o WhatsApp desta unidade." });
+      return;
+    }
+    if (session.workerActive) {
+      res.status(409).json({
+        error: "Aguarde o término da campanha ativa antes do envio de teste.",
+      });
+      return;
+    }
+    if (!input.requestIdempotencyKey || !message || !phone) {
+      res.status(400).json({
+        error: "Informe a campanha, a mensagem e um número de teste válido.",
+      });
+      return;
+    }
+    const campaignId = planMessageCampaignCreation(input).campaign.id,
+      testId = crypto.randomUUID(),
+      createdAt = new Date().toISOString(),
+      reference = adminDb.collection(MESSAGE_CAMPAIGN_TEST_COLLECTION).doc(testId);
+    await reference.create({
+      id: testId,
+      campaignId,
+      unitId,
+      normalizedPhoneHash: messageConsentId(unitId, phone),
+      maskedPhone: `${phone.slice(0, 4)}*****${phone.slice(-4)}`,
+      status: "PROCESSANDO",
+      message,
+      mediaIds: input.mediaIds || [],
+      createdAt,
+      createdBy: user?.uid || "SYSTEM",
+    });
+    try {
+      if (await isMessageContactBlocked(adminDb, phone)) throw new Error("O número de teste está na lista global não enviar.");
+      const available = await session.socket.onWhatsApp(phone);
+      if (!available?.[0]?.exists) throw new Error("Número de teste não encontrado no WhatsApp.");
+      const media = await loadCampaignMedia(input.mediaIds, unitId);
+      await sendCampaignContent(session.socket, available[0].jid, message, {}, media);
+      const sentAt = new Date().toISOString();
+      await reference.set({ status: "ENVIADO", sentAt, updatedAt: sentAt }, { merge: true });
+      await audit("CAMPAIGN_TEST_SENT", user, unitId, {
+        runId: campaignId,
+        testSendId: testId,
+        maskedPhone: `${phone.slice(0, 4)}*****${phone.slice(-4)}`,
+      });
+      res.json({
+        success: true,
+        campaignId,
+        testSendId: testId,
+        status: "ENVIADO",
+        sentAt,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Falha no envio de teste.",
+        failedAt = new Date().toISOString();
+      await reference.set({ status: "FALHOU", error: detail, failedAt, updatedAt: failedAt }, { merge: true });
+      await audit("CAMPAIGN_TEST_FAILED", user, unitId, {
+        runId: campaignId,
+        testSendId: testId,
+        error: detail,
+      });
+      res.status(502).json({
+        error: detail,
+        campaignId,
+        testSendId: testId,
+        status: "FALHOU",
+      });
+    }
+  });
+  app.post("/api/message-dispatch/start", auth, role, async (req, res) => {
+    if (serviceDraining) {
+      res.status(503).json({
+        error: "O serviço está reiniciando. Aguarde a retomada para iniciar uma campanha.",
+      });
+      return;
+    }
+    const unitId = requireUnit(req, res);
+    if (!unitId) return;
+    const user = authenticatedUser(req),
+      session = sessionForUser(unitId, user),
+      { input, message, contacts } = campaignRequest(req, unitId, user);
+    if (req.body?.confirmedOptIn !== true || !message || message.length > 4096 || !contacts.length || contacts.length > MAX_CONTACTS) {
+      res.status(400).json({ error: "Revise mensagem, contatos e autorização." });
+      return;
+    }
+    if (!input.requestIdempotencyKey) {
+      res.status(400).json({ error: "Chave de solicitação ausente." });
+      return;
+    }
+    const suppliedConsents = Array.isArray(req.body?.consentRecords) ? req.body.consentRecords : [],
+      consentRecords: ContactConsentInput[] = suppliedConsents.length
+        ? suppliedConsents.map((item: Record<string, unknown>) => ({
+            phone: String(item.phone || ""),
+            origin: String(item.origin || "Confirmação na campanha"),
+            consentAt: String(item.consentAt || new Date().toISOString()),
+            evidence: String(item.evidence || "Consentimento confirmado pelo operador"),
+            legalBasis: String(item.legalBasis || "CONSENT").toUpperCase() as ContactConsentInput["legalBasis"],
+          }))
+        : contacts.map((phone) => ({
+            phone,
+            origin: String(req.body?.optInOrigin || "Confirmação na campanha"),
+            consentAt: String(req.body?.optInDate || new Date().toISOString()),
+            evidence: String(req.body?.optInEvidence || "Consentimento confirmado pelo operador"),
+            legalBasis: String(req.body?.legalBasis || "CONSENT").toUpperCase() as ContactConsentInput["legalBasis"],
+          }));
+    if (session.workerActive) {
+      const prior = await findMessageCampaignByRequest(adminDb, input);
+      if (prior.existing) {
+        res.json({
+          success: true,
+          total: prior.existing.totalRecipients,
+          campaignId: prior.existing.id,
+          reused: true,
+        });
+        return;
+      }
+      res.status(409).json({ error: "Já existe campanha ativa nesta unidade." });
+      return;
+    }
+    let persisted;
+    try {
+      await registerMessageConsents(adminDb, {
+        unitId,
+        contacts: consentRecords,
+        actorId: user?.uid || "SYSTEM",
+      });
+      persisted = await createMessageCampaign(adminDb, input);
+    } catch (error) {
+      res.status(409).json({
+        error: error instanceof Error ? error.message : "Falha ao salvar.",
+      });
+      return;
+    }
+    if (persisted.reused) {
+      res.json({
+        success: true,
+        total: persisted.campaign.totalRecipients,
+        campaignId: persisted.campaign.id,
+        reused: true,
+      });
+      return;
+    }
+    res.json({
+      success: true,
+      total: persisted.campaign.totalRecipients,
+      campaignId: persisted.campaign.id,
+      status: persisted.campaign.status,
+      reused: false,
+    });
+    await audit("CAMPAIGN_CREATED", user, unitId, {
+      runId: persisted.campaign.id,
+      status: persisted.campaign.status,
+      totalContacts: persisted.campaign.totalRecipients,
+      highVolume: contacts.length >= HIGH_VOLUME_THRESHOLD,
+    });
+    if (persisted.campaign.status === "NA_FILA") void runCampaign(session, persisted.campaign, user);
+  });
 }

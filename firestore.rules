@@ -206,6 +206,16 @@ service cloud.firestore {
       ) || (
         resource.data.status == 'REOPENED' && canReadFinancialOperation() &&
         request.resource.data.status != 'REOPENED' && (isAdmin() || isUserInUnit(request.resource.data.unitId))
+      ) || (
+        canReadFinancialOperation() &&
+        resource.data.unitId == request.resource.data.unitId &&
+        resource.data.date == request.resource.data.date &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'openingBalance', 'cashIncome', 'cashOutflow', 'expectedBalance',
+          'countedBalance', 'difference', 'status', 'notes', 'closedAt', 'closedBy'
+        ]) &&
+        request.resource.data.status in ['OPEN', 'CLOSED', 'DIVERGENT'] &&
+        (isAdmin() || isUserInUnit(request.resource.data.unitId))
       );
       allow delete: if isAdmin();
     }
@@ -223,7 +233,9 @@ service cloud.firestore {
         request.resource.data.closingId is string &&
         (isAdmin() || isUserInUnit(request.resource.data.unitId)) &&
         getAfter(/databases/$(database)/documents/cashClosings/$(request.resource.data.closingId)).data.unitId == request.resource.data.unitId &&
-        request.resource.data.active == (getAfter(/databases/$(database)/documents/cashClosings/$(request.resource.data.closingId)).data.status != 'REOPENED');
+        request.resource.data.active == (
+          getAfter(/databases/$(database)/documents/cashClosings/$(request.resource.data.closingId)).data.status in ['CLOSED', 'DIVERGENT']
+        );
       allow delete: if false;
     }
 

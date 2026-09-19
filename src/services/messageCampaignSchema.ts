@@ -1,8 +1,8 @@
 export const MESSAGE_CAMPAIGN_SCHEMA_VERSION = 1 as const;
 
-export type MessageCampaignStatus = 'RASCUNHO' | 'AGUARDANDO_APROVACAO' | 'AGENDADA' | 'NA_FILA' | 'EM_PROCESSAMENTO' | 'PAUSADA' | 'CONCLUIDA' | 'FALHOU' | 'CANCELADA';
-export type MessageRecipientStatus = 'PENDENTE' | 'PROCESSANDO' | 'ENVIADO' | 'ENTREGUE' | 'LIDO' | 'FALHOU' | 'CANCELADO';
-export type MessageCampaignRecurrence = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+export type MessageCampaignStatus = "RASCUNHO" | "AGUARDANDO_APROVACAO" | "AGENDADA" | "NA_FILA" | "EM_PROCESSAMENTO" | "PAUSADA" | "CONCLUIDA" | "FALHOU" | "CANCELADA";
+export type MessageRecipientStatus = "PENDENTE" | "PROCESSANDO" | "ENVIADO" | "ENTREGUE" | "LIDO" | "FALHOU" | "CANCELADO";
+export type MessageCampaignRecurrence = "NONE" | "DAILY" | "WEEKLY" | "MONTHLY";
 
 export interface MessageCampaignDocument {
   schemaVersion: typeof MESSAGE_CAMPAIGN_SCHEMA_VERSION;
@@ -39,6 +39,8 @@ export interface MessageCampaignDocument {
   createdAt: string;
   createdBy: string;
   createdByEmail?: string;
+  /** Usuário cuja conexão persistente do WhatsApp executa esta campanha. */
+  sessionOwnerId?: string;
   updatedAt: string;
   requestIdempotencyKey?: string;
   payloadHash?: string;
@@ -55,7 +57,7 @@ export interface MessageCampaignDocument {
   highVolumeRecipientCount?: number;
   latestTestSendId?: string;
   latestTestSendAt?: string;
-  latestTestSendStatus?: 'ENVIADO' | 'FALHOU';
+  latestTestSendStatus?: "ENVIADO" | "FALHOU";
 }
 
 export interface MessageCampaignRecipientDocument {
@@ -91,7 +93,7 @@ export interface MessageDeliveryAttemptDocument {
   attemptNumber: number;
   startedAt: string;
   finishedAt?: string;
-  result: 'PROCESSANDO' | 'SUCESSO' | 'FALHA_TRANSITORIA' | 'FALHA_DEFINITIVA';
+  result: "PROCESSANDO" | "SUCESSO" | "FALHA_TRANSITORIA" | "FALHA_DEFINITIVA";
   errorCode?: string;
   errorMessage?: string;
 }
@@ -101,7 +103,7 @@ export interface MessageCampaignMediaDocument {
   id: string;
   campaignId: string;
   unitId: string;
-  type: 'IMAGE' | 'VIDEO';
+  type: "IMAGE" | "VIDEO";
   storagePath: string;
   mimeType: string;
   sizeBytes: number;
@@ -127,15 +129,15 @@ export interface MessageDeadLetterDocument {
 }
 
 export const MESSAGE_CAMPAIGN_COLLECTIONS = {
-  campaigns: 'message_campaigns',
-  recipients: 'message_campaign_recipients',
-  attempts: 'message_delivery_attempts',
-  media: 'message_campaign_media',
-  deadLetters: 'message_dead_letters',
+  campaigns: "message_campaigns",
+  recipients: "message_campaign_recipients",
+  attempts: "message_delivery_attempts",
+  media: "message_campaign_media",
+  deadLetters: "message_dead_letters",
 } as const;
 
 export function maskMessagePhone(value: string) {
-  const digits = value.replace(/\D/g, '');
-  if (digits.length < 6) return '***';
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 6) return "***";
   return `${digits.slice(0, 4)}*****${digits.slice(-4)}`;
 }
