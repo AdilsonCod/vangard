@@ -37,6 +37,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
   const [isSavingUser, setIsSavingUser] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [role, setRole] = useState<Role>(subTab === 'MANAGERS' ? 'ADMIN' : subTab === 'RECEPTION' ? 'RECEPTION' : 'BARBER');
+  const [dispatchPermissions, setDispatchPermissions] = useState({ create: true, approve: true, execute: true });
   const [unit, setUnit] = useState<string>(systemUnits?.[0]?.id || 'UNIT_1');
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
   const [unitName, setUnitName] = useState<string>('');
@@ -73,6 +74,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     setPassword('');
     setRole(subTab === 'MANAGERS' ? 'ADMIN' : subTab === 'RECEPTION' ? 'RECEPTION' : 'BARBER');
     setUnit(systemUnits?.[0]?.id || 'UNIT_1');
+    setDispatchPermissions({ create: true, approve: true, execute: true });
   };
 
   const handleSaveUser = async (e: React.FormEvent) => {
@@ -137,6 +139,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
           role: assignedRole,
           unit: assignedUnit,
           unitIds: assignedUnit ? [assignedUnit] : [],
+          dispatchPermissions: ['ADMIN', 'MARKETING', 'RECEPTION'].includes(assignedRole) ? dispatchPermissions : undefined,
         });
         if (needsAccessCreation && password) {
           await createFirebaseUserWithProfile(normalizedEmail, password, authUid =>
@@ -160,6 +163,7 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
             role: assignedRole,
             unit: assignedUnit,
             unitIds: assignedUnit ? [assignedUnit] : [],
+            dispatchPermissions: ['ADMIN', 'MARKETING', 'RECEPTION'].includes(assignedRole) ? dispatchPermissions : undefined,
             isActive: true,
             createdAt: new Date().toISOString(),
           })
@@ -197,6 +201,11 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
     setEmail(u.email || '');
     setRole(u.role);
     setUnit(u.unit || systemUnits?.[0]?.id || 'UNIT_1');
+    setDispatchPermissions({
+      create: u.dispatchPermissions?.create !== false,
+      approve: u.dispatchPermissions?.approve !== false,
+      execute: u.dispatchPermissions?.execute !== false,
+    });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -574,6 +583,25 @@ export function UsersDashboard({ tabView }: { tabView?: "BARBERS" | "RECEPTION" 
                    )}
                 </button>
              </div>
+             {['ADMIN', 'MARKETING', 'RECEPTION'].includes(role) && (
+               <fieldset className="rounded-xl border border-gray-200 p-3 dark:border-zinc-800 md:col-span-2 lg:col-span-6">
+                 <legend className="px-2 text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-zinc-400">Permissões de campanhas</legend>
+                 <div className="flex flex-wrap gap-4">
+                   {([
+                     ['create', 'Criar e editar'],
+                     ['approve', 'Aprovar'],
+                     ['execute', 'Executar e controlar'],
+                   ] as const).map(([permission, label]) => {
+                     const available = role === 'ADMIN' || permission !== 'approve';
+                     return <label key={permission} className={`inline-flex items-center gap-2 text-sm font-semibold ${available ? '' : 'opacity-50'}`}>
+                       <input type="checkbox" checked={available && dispatchPermissions[permission]} disabled={!available} onChange={(event) => setDispatchPermissions(current => ({ ...current, [permission]: event.target.checked }))}/>
+                       {label}
+                     </label>;
+                   })}
+                 </div>
+                 <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">A aprovação é exclusiva da gerência. As restrições também são validadas pelo servidor.</p>
+               </fieldset>
+             )}
           </form>
 
           <div className="border border-gray-200 dark:border-zinc-800 rounded-xl overflow-hidden mt-6">

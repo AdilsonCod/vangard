@@ -33,6 +33,11 @@ export interface User {
   role: Role;
   unit: Unit | null;
   unitIds?: string[];
+  dispatchPermissions?: {
+    create?: boolean;
+    approve?: boolean;
+    execute?: boolean;
+  };
   notes?: string; 
   barberNotes?: string;
 }

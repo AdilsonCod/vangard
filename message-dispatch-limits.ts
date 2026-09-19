@@ -3,14 +3,12 @@ import type { Firestore, Transaction } from 'firebase-admin/firestore';
 
 export const MESSAGE_POLICY_COLLECTION = 'message_dispatch_policies';
 export const MESSAGE_QUOTA_COLLECTION = 'message_dispatch_quota_counters';
-export const MESSAGE_FREQUENCY_COLLECTION = 'message_contact_frequency';
 export const MESSAGE_ACCOUNT_SAFETY_COLLECTION = 'message_account_safety';
 
 export type MessageDispatchPolicy = {
   globalDailyLimit: number;
   unitDailyLimit: number;
   accountDailyLimit: number;
-  contactFrequencyHours: number;
   quietHoursEnabled: boolean;
   quietStart: string;
   quietEnd: string;
@@ -24,7 +22,7 @@ export type MessageDispatchPolicy = {
   autoPauseCooldownMinutes: number;
 };
 
-export type DispatchBlock = { code: 'QUIET_HOURS' | 'GLOBAL_DAILY_LIMIT' | 'UNIT_DAILY_LIMIT' | 'ACCOUNT_DAILY_LIMIT' | 'WARMUP_DAILY_LIMIT' | 'CONTACT_FREQUENCY'; message: string; retryAt: string };
+export type DispatchBlock = { code: 'QUIET_HOURS' | 'GLOBAL_DAILY_LIMIT' | 'UNIT_DAILY_LIMIT' | 'ACCOUNT_DAILY_LIMIT' | 'WARMUP_DAILY_LIMIT'; message: string; retryAt: string };
 
 export class MessageDispatchPolicyBlockedError extends Error {
   constructor(public readonly block: DispatchBlock) { super(block.message); this.name = 'MessageDispatchPolicyBlockedError'; }
@@ -34,7 +32,6 @@ const defaults: MessageDispatchPolicy = {
   globalDailyLimit: 10_000,
   unitDailyLimit: 2_000,
   accountDailyLimit: 2_000,
-  contactFrequencyHours: 24,
   quietHoursEnabled: true,
   quietStart: '22:00',
   quietEnd: '08:00',
@@ -60,7 +57,6 @@ export function normalizeMessageDispatchPolicy(value: Partial<MessageDispatchPol
     globalDailyLimit: bounded(value.globalDailyLimit, defaults.globalDailyLimit, 1, 1_000_000),
     unitDailyLimit: bounded(value.unitDailyLimit, defaults.unitDailyLimit, 1, 100_000),
     accountDailyLimit: bounded(value.accountDailyLimit, defaults.accountDailyLimit, 1, 100_000),
-    contactFrequencyHours: bounded(value.contactFrequencyHours, defaults.contactFrequencyHours, 1, 24 * 90),
     quietHoursEnabled: value.quietHoursEnabled !== false,
     quietStart: validTime(value.quietStart, defaults.quietStart),
     quietEnd: validTime(value.quietEnd, defaults.quietEnd),
@@ -93,7 +89,6 @@ export function quietHoursBlock(policy: MessageDispatchPolicy, now = new Date())
   return { code: 'QUIET_HOURS', message: `Envios pausados pelo horário silencioso até ${policy.quietEnd}.`, retryAt: retryAt.toISOString() };
 }
 
-export const messageFrequencyId = (unitId: string, phone: string) => createHash('sha256').update(`${unitId}:${phone}`).digest('hex');
 const safeId = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 32);
 
 export async function loadMessageDispatchPolicy(db: Firestore, unitId: string) {
@@ -133,12 +128,6 @@ export async function reserveMessageDispatchSlot(options: {
     { scope: 'conta', id: `account_${safeId(options.accountId || options.unitId)}_${local.day}`, limit: effectiveAccountLimit, code: (policy.warmupEnabled && warmupLimit < policy.accountDailyLimit ? 'WARMUP_DAILY_LIMIT' : 'ACCOUNT_DAILY_LIMIT') as 'WARMUP_DAILY_LIMIT' | 'ACCOUNT_DAILY_LIMIT' },
   ];
   const counterSnapshots = await Promise.all(counters.map(item => options.transaction.get(options.db.collection(MESSAGE_QUOTA_COLLECTION).doc(item.id))));
-  const frequencyReference = options.db.collection(MESSAGE_FREQUENCY_COLLECTION).doc(messageFrequencyId(options.unitId, options.phone));
-  const frequencySnapshot = await options.transaction.get(frequencyReference);
-  const frequency = frequencySnapshot.exists ? frequencySnapshot.data() as { campaignId?: string; nextAllowedAt?: string } : null;
-  if (frequency?.campaignId !== options.campaignId && frequency?.nextAllowedAt && Date.parse(frequency.nextAllowedAt) > options.now.getTime()) {
-    throw new MessageDispatchPolicyBlockedError({ code: 'CONTACT_FREQUENCY', message: `Contato aguardando a janela mínima entre campanhas até ${new Date(frequency.nextAllowedAt).toLocaleString('pt-BR')}.`, retryAt: frequency.nextAllowedAt });
-  }
   for (let index = 0; index < counters.length; index += 1) {
     const used = Number(counterSnapshots[index].data()?.used || 0);
     if (used >= counters[index].limit) throw new MessageDispatchPolicyBlockedError({ code: counters[index].code, message: `Limite diário ${counters[index].scope} atingido. Novos envios serão liberados no próximo dia.`, retryAt: tomorrow });
@@ -147,8 +136,6 @@ export async function reserveMessageDispatchSlot(options: {
     const reference = options.db.collection(MESSAGE_QUOTA_COLLECTION).doc(item.id), used = Number(counterSnapshots[index].data()?.used || 0);
     options.transaction.set(reference, { scope: item.scope, scopeId: item.scope === 'global' ? 'ALL' : item.scope === 'unidade' ? options.unitId : options.accountId, day: local.day, used: used + 1, limit: item.limit, updatedAt: options.now.toISOString() }, { merge: true });
   });
-  const nextAllowedAt = new Date(options.now.getTime() + policy.contactFrequencyHours * 60 * 60_000).toISOString();
-  options.transaction.set(frequencyReference, { unitId: options.unitId, phoneHash: frequencyReference.id, campaignId: options.campaignId, lastReservedAt: options.now.toISOString(), nextAllowedAt }, { merge: true });
   options.transaction.set(accountSafetyReference, { unitId: options.unitId, accountId: options.accountId || options.unitId, warmupStartedAt, warmupStage, warmupDailyLimit: effectiveAccountLimit, updatedAt: options.now.toISOString() }, { merge: true });
-  return { reservedAt: options.now.toISOString(), nextAllowedAt };
+  return { reservedAt: options.now.toISOString(), nextAllowedAt: options.now.toISOString() };
 }

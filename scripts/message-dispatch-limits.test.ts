@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { after, before } from 'node:test';
 import { applicationDefault, deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
-import { claimNextMessageRecipient } from '../message-campaign-worker';
+import { claimNextMessageRecipient, finalizeMessageRecipient } from '../message-campaign-worker';
 import { planMessageCampaignCreation } from '../message-campaign-creation';
 import { MessageDispatchPolicyBlockedError, normalizeMessageDispatchPolicy, quietHoursBlock } from '../message-dispatch-limits';
 
@@ -47,20 +47,18 @@ test('reservas concorrentes não ultrapassam o limite diário global', async () 
   assert.equal((rejected as PromiseRejectedResult).reason.block.code, 'GLOBAL_DAILY_LIMIT');
 });
 
-test('mesmo contato não é reservado por campanhas simultâneas ou recentes', async () => {
+test('mesmo contato pode receber nova campanha sem janela mínima após o envio anterior', async () => {
   const first = await seedCampaign('frequency-a', 'frequency-unit', '11999990111');
   const second = await seedCampaign('frequency-b', 'frequency-unit', '11999990111');
-  await db.collection('message_dispatch_policies').doc('frequency-unit').set({ globalDailyLimit: 100, unitDailyLimit: 100, accountDailyLimit: 100, contactFrequencyHours: 24, quietHoursEnabled: false });
+  await db.collection('message_dispatch_policies').doc('frequency-unit').set({ globalDailyLimit: 100, unitDailyLimit: 100, accountDailyLimit: 100, quietHoursEnabled: false, warmupEnabled: false });
   const now = new Date('2026-09-17T15:01:00.000Z');
   const claimed = await claimNextMessageRecipient(db, { workerId: 'worker-a', campaignId: first.campaign.id, unitId: 'frequency-unit', accountId: 'account-a', now });
   assert.ok(claimed);
-  await assert.rejects(
-    () => claimNextMessageRecipient(db, { workerId: 'worker-b', campaignId: second.campaign.id, unitId: 'frequency-unit', accountId: 'account-a', now }),
-    (error: unknown) => error instanceof MessageDispatchPolicyBlockedError && error.block.code === 'CONTACT_FREQUENCY',
-  );
+  assert.equal(await finalizeMessageRecipient(db, claimed!.id, 'worker-a', 'ENVIADO', { now }), true);
+  const next = await claimNextMessageRecipient(db, { workerId: 'worker-b', campaignId: second.campaign.id, unitId: 'frequency-unit', accountId: 'account-a', now: new Date(now.getTime() + 1_000) });
+  assert.ok(next);
   const snapshot = await db.collection('message_campaign_recipients').doc(second.recipients[0].id).get();
-  assert.equal(snapshot.data()?.status, 'PENDENTE');
-  assert.equal(snapshot.data()?.nextAttemptAt, second.recipients[0].nextAttemptAt);
+  assert.equal(snapshot.data()?.status, 'PROCESSANDO');
 });
 
 test('retentativa do mesmo destinatário reutiliza a reserva sem consumir nova cota', async () => {

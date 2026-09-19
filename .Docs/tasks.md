@@ -695,7 +695,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 59 — Aplicar retenção, mascaramento e permissões granulares
 
-- [ ] Implementar retenção de telefones e permissões separadas para criar, aprovar e executar.
+- [x] Implementar retenção de telefones e permissões separadas para criar, aprovar e executar.
 
 **Critérios de aprovação**
 
