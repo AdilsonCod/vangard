@@ -74,6 +74,13 @@
     "test:message-consent": "firebase emulators:exec --only firestore --project vans-message-consent-test \"tsx --test scripts/message-consent.test.ts\"",
     "test:message-dispatch-limits": "firebase emulators:exec --only firestore --project vans-message-limits-test \"tsx --test scripts/message-dispatch-limits.test.ts\"",
     "test:message-campaign-safety": "firebase emulators:exec --only firestore --project vans-message-safety-test \"tsx --test scripts/message-campaign-safety.test.ts\"",
+    "test:message-campaign-confirmation": "tsx --test scripts/message-campaign-confirmation.test.ts",
+    "test:message-contact-import": "tsx --test scripts/message-contact-import.test.ts",
+    "test:message-contact-directory": "tsx --test scripts/message-contact-directory.test.ts",
+    "test:message-personalization": "tsx --test scripts/message-personalization.test.ts",
+    "test:message-campaign-media": "tsx --test scripts/message-campaign-media.test.ts",
+    "test:message-campaign-scheduling": "tsx --test scripts/message-campaign-scheduling.test.ts",
+    "test:message-campaign-permissions": "tsx --test scripts/message-campaign-permissions.test.ts",
     "test:smart-link-security": "tsx --test scripts/smart-link-security.test.ts",
     "preview": "vite preview",
     "test:admin-sdk": "firebase emulators:exec --only firestore --project demo-vans-admin-sdk \"tsx --test scripts/admin-sdk-compatibility.test.ts\""

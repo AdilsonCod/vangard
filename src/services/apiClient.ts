@@ -26,7 +26,7 @@ async function errorMessage(response: Response) {
 export function createAuthenticatedApiClient(dependencies: ApiClientDependencies) {
   const fetcher = dependencies.fetcher || fetch;
 
-  const request = async (input: RequestInfo | URL, init: RequestInit = {}) => {
+  const requestWithPolicy = async (input: RequestInfo | URL, init: RequestInit = {}, logoutOnUnauthorized = true) => {
     const user = dependencies.currentUser();
     if (!user) throw new ApiError('Sua sessão expirou. Entre novamente para continuar.', 401);
 
@@ -39,17 +39,25 @@ export function createAuthenticatedApiClient(dependencies: ApiClientDependencies
 
     let response = await execute(false);
     if (response.status === 401) response = await execute(true);
-    if (response.status === 401) await dependencies.logout().catch(() => undefined);
+    if (response.status === 401 && logoutOnUnauthorized) await dependencies.logout().catch(() => undefined);
     if (!response.ok) throw new ApiError(await errorMessage(response), response.status);
     return response;
   };
+
+  const request = (input: RequestInfo | URL, init: RequestInit = {}) => requestWithPolicy(input, init, true);
+  const requestWithoutLogout = (input: RequestInfo | URL, init: RequestInit = {}) => requestWithPolicy(input, init, false);
 
   const json = async <T>(input: RequestInfo | URL, init: RequestInit = {}) => {
     const response = await request(input, init);
     return response.json() as Promise<T>;
   };
 
-  return { request, json };
+  const jsonWithoutLogout = async <T>(input: RequestInfo | URL, init: RequestInit = {}) => {
+    const response = await requestWithoutLogout(input, init);
+    return response.json() as Promise<T>;
+  };
+
+  return { request, json, requestWithoutLogout, jsonWithoutLogout };
 }
 
 export const authenticatedApi = createAuthenticatedApiClient({

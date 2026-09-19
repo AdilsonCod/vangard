@@ -2,6 +2,7 @@ export const MESSAGE_CAMPAIGN_SCHEMA_VERSION = 1 as const;
 
 export type MessageCampaignStatus = 'RASCUNHO' | 'AGUARDANDO_APROVACAO' | 'AGENDADA' | 'NA_FILA' | 'EM_PROCESSAMENTO' | 'PAUSADA' | 'CONCLUIDA' | 'FALHOU' | 'CANCELADA';
 export type MessageRecipientStatus = 'PENDENTE' | 'PROCESSANDO' | 'ENVIADO' | 'ENTREGUE' | 'LIDO' | 'FALHOU' | 'CANCELADO';
+export type MessageCampaignRecurrence = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
 
 export interface MessageCampaignDocument {
   schemaVersion: typeof MESSAGE_CAMPAIGN_SCHEMA_VERSION;
@@ -10,6 +11,7 @@ export interface MessageCampaignDocument {
   name: string;
   status: MessageCampaignStatus;
   message: string;
+  mediaIds?: string[];
   minDelaySeconds?: number;
   maxDelaySeconds?: number;
   simulateTyping?: boolean;
@@ -23,6 +25,17 @@ export interface MessageCampaignDocument {
   failedCount: number;
   cancelledCount: number;
   scheduledAt: string | null;
+  timeZone?: string;
+  recurrence?: MessageCampaignRecurrence;
+  recurrenceEndsAt?: string | null;
+  recurrenceParentId?: string;
+  approvalRequired?: boolean;
+  approvedAt?: string;
+  approvedBy?: string;
+  approvedByEmail?: string;
+  firstSentAt?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
   createdAt: string;
   createdBy: string;
   createdByEmail?: string;
@@ -37,6 +50,12 @@ export interface MessageCampaignDocument {
   resumeAllowedAt?: string;
   resumedAt?: string;
   resumedBy?: string;
+  highVolumeConfirmedAt?: string;
+  highVolumeConfirmedBy?: string;
+  highVolumeRecipientCount?: number;
+  latestTestSendId?: string;
+  latestTestSendAt?: string;
+  latestTestSendStatus?: 'ENVIADO' | 'FALHOU';
 }
 
 export interface MessageCampaignRecipientDocument {
@@ -89,6 +108,8 @@ export interface MessageCampaignMediaDocument {
   caption: string;
   order: number;
   createdAt: string;
+  uploadId?: string;
+  originalName?: string;
 }
 
 export interface MessageDeadLetterDocument {

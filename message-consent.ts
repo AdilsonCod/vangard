@@ -92,11 +92,11 @@ export async function registerMessageConsents(db: Firestore, input: { unitId: st
 
 export async function applyMessagePhoneRetention(db: Firestore, now = new Date(), retentionDays = 730) {
   const cutoff = new Date(now.getTime() - Math.max(30, retentionDays) * 86_400_000).toISOString();
-  let anonymizedRecipients = 0, anonymizedHistories = 0;
+  let anonymizedRecipients = 0, anonymizedHistories = 0, deletedDirectoryContacts = 0, deletedConsents = 0;
   const recipients = await db.collection('message_campaign_recipients').where('processedAt', '<=', cutoff).limit(400).get();
   if (!recipients.empty) {
     const batch = db.batch();
-    recipients.docs.forEach(document => { const data = document.data(); if (String(data.normalizedPhone || '').startsWith('anon_')) return; const hash = digest(String(data.normalizedPhone || '')); batch.update(document.ref, { normalizedPhone: `anon_${hash}`, maskedPhone: 'ANONIMIZADO', variables: {}, updatedAt: now.toISOString() }); anonymizedRecipients++; });
+    recipients.docs.forEach(document => { const data = document.data(); if (String(data.normalizedPhone || '').startsWith('anon_')) return; const hash = digest(String(data.normalizedPhone || '')); batch.update(document.ref, { normalizedPhone: `anon_${hash}`, maskedPhone: 'ANONIMIZADO', personalizedMessage: '', variables: {}, lastError: null, updatedAt: now.toISOString() }); anonymizedRecipients++; });
     if (anonymizedRecipients) await batch.commit();
   }
   const histories = await db.collection('message_dispatch_history').where('finishedAt', '<=', cutoff).limit(200).get();
@@ -105,5 +105,15 @@ export async function applyMessagePhoneRetention(db: Firestore, now = new Date()
     histories.docs.forEach(document => { const data = document.data(); if (data.phoneDataAnonymizedAt) return; batch.update(document.ref, { contacts: [], deliveryDetails: [], errorDetails: [], phoneDataAnonymizedAt: now.toISOString() }); anonymizedHistories++; });
     if (anonymizedHistories) await batch.commit();
   }
-  return { cutoff, anonymizedRecipients, anonymizedHistories };
+  const [directory, consents] = await Promise.all([
+    db.collection('message_contact_directory').where('updatedAt', '<=', cutoff).limit(400).get(),
+    db.collection(MESSAGE_CONSENT_COLLECTION).where('updatedAt', '<=', cutoff).limit(400).get(),
+  ]);
+  if (!directory.empty || !consents.empty) {
+    const batch = db.batch();
+    directory.docs.forEach(document => { batch.delete(document.ref); deletedDirectoryContacts++; });
+    consents.docs.forEach(document => { batch.delete(document.ref); deletedConsents++; });
+    await batch.commit();
+  }
+  return { cutoff, anonymizedRecipients, anonymizedHistories, deletedDirectoryContacts, deletedConsents };
 }

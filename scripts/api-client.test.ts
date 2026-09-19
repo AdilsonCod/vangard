@@ -57,6 +57,22 @@ test('encerra a sessão após uma segunda resposta 401', async () => {
   assert.equal(logoutCalls, 1);
 });
 
+test('serviço auxiliar pode retornar 401 sem encerrar a sessão principal', async () => {
+  let logoutCalls = 0;
+  const client = createAuthenticatedApiClient({
+    currentUser: () => ({ getIdToken: async () => 'rejected-token' }),
+    logout: async () => { logoutCalls += 1; },
+    fetcher: async () => Response.json({ error: 'Credencial do serviço indisponível.' }, { status: 401 }),
+  });
+
+  await assert.rejects(() => client.jsonWithoutLogout('/auxiliary-service'), (error: unknown) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.status, 401);
+    return true;
+  });
+  assert.equal(logoutCalls, 0);
+});
+
 test('sessão ausente e acesso negado produzem mensagens controladas em português', async () => {
   const absent = createAuthenticatedApiClient({
     currentUser: () => null,

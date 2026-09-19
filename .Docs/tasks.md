@@ -629,7 +629,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 53 — Adicionar confirmação de alto volume e envio de teste
 
-- [ ] Exigir texto de confirmação para alto volume e permitir teste individual antes da liberação.
+- [x] Exigir texto de confirmação para alto volume e permitir teste individual antes da liberação.
 
 **Critérios de aprovação**
 
@@ -640,7 +640,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 54 — Importar contatos com mapeamento de colunas
 
-- [ ] Aceitar CSV, XLSX, XLS e ODS, oferecendo mapeamento de nome, telefone, consentimento e variáveis.
+- [x] Aceitar CSV, XLSX, XLS e ODS, oferecendo mapeamento de nome, telefone, consentimento e variáveis.
 
 **Critérios de aprovação**
 
@@ -651,7 +651,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 55 — Criar busca de clientes e segmentos reutilizáveis
 
-- [ ] Permitir adicionar clientes da base e salvar segmentos por filtros autorizados.
+- [x] Permitir adicionar clientes da base e salvar segmentos por filtros autorizados.
 
 **Critérios de aprovação**
 
@@ -662,7 +662,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 56 — Implementar rascunhos, modelos e personalização
 
-- [ ] Persistir mensagens, criar biblioteca de modelos e materializar tags por destinatário.
+- [x] Persistir mensagens, criar biblioteca de modelos e materializar tags por destinatário.
 
 **Critérios de aprovação**
 
@@ -673,7 +673,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 57 — Adicionar imagens, vídeos e legendas
 
-- [ ] Permitir múltiplas mídias privadas com pré-visualização, ordem e legenda individual.
+- [x] Permitir múltiplas mídias privadas com pré-visualização, ordem e legenda individual.
 
 **Critérios de aprovação**
 
@@ -684,7 +684,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 58 — Implementar agendamento, recorrência e aprovação
 
-- [ ] Adicionar início futuro, recorrência, duplicação de campanha e aprovação por outro administrador.
+- [x] Adicionar início futuro, recorrência, duplicação de campanha e aprovação por outro administrador.
 
 **Critérios de aprovação**
 

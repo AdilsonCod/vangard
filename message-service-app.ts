@@ -18,12 +18,13 @@ export function createMessageServiceApp() {
     if (origin && allowedOrigins.has(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-File-Name, X-File-Type, X-Upload-Id, X-Media-Caption, X-Media-Order');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     }
     if (req.method === 'OPTIONS') { res.sendStatus(origin && allowedOrigins.has(origin) ? 204 : 403); return; }
     next();
   });
+  app.use('/api/message-dispatch/media/upload', express.raw({ type: 'application/octet-stream', limit: '25mb' }));
   app.use(express.json({ limit: '256kb' }));
   app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'message-dispatch' }));
 

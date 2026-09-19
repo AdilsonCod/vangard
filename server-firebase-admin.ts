@@ -1,6 +1,7 @@
 import { applicationDefault, cert, getApps, initializeApp, type AppOptions } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 import type { VerifiedFirebaseUser } from './server-auth.js';
 
 const DEFAULT_FIREBASE_PROJECT_ID = 'vansmanagement-6ab54';
@@ -9,29 +10,33 @@ function adminOptions(): AppOptions {
   const projectId = process.env.FIREBASE_PROJECT_ID?.trim()
     || process.env.VITE_FIREBASE_PROJECT_ID?.trim()
     || DEFAULT_FIREBASE_PROJECT_ID;
+  const storageBucket = process.env.FIREBASE_STORAGE_BUCKET?.trim()
+    || process.env.VITE_FIREBASE_STORAGE_BUCKET?.trim()
+    || `${projectId}.firebasestorage.app`;
   const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
 
   if (rawServiceAccount) {
     try {
-      return { credential: cert(JSON.parse(rawServiceAccount)), projectId };
+      return { credential: cert(JSON.parse(rawServiceAccount)), projectId, storageBucket };
     } catch {
       throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON contém um JSON inválido.');
     }
   }
 
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()) {
-    return { credential: applicationDefault(), projectId };
+    return { credential: applicationDefault(), projectId, storageBucket };
   }
 
   // A verificação de ID tokens funciona com o projectId. Operações administrativas
   // exigem uma das credenciais seguras acima ou a identidade gerenciada do ambiente.
-  return { projectId };
+  return { projectId, storageBucket };
 }
 
 const adminApp = getApps()[0] ?? initializeApp(adminOptions());
 
 export const adminAuth = getAuth(adminApp);
 export const adminDb = getFirestore(adminApp);
+export const adminBucket = getStorage(adminApp).bucket();
 
 function normalizedRole(value: unknown) {
   return typeof value === 'string' ? value.trim().toUpperCase() : undefined;
@@ -63,5 +68,6 @@ export async function verifyFirebaseIdToken(token: string): Promise<VerifiedFire
     role: normalizedRole(profile.role),
     unitId: typeof unitId === 'string' ? unitId : undefined,
     profileId: typeof profile?.id === 'string' ? profile.id : undefined,
+    dispatchPermissions: profile.dispatchPermissions && typeof profile.dispatchPermissions === 'object' ? profile.dispatchPermissions : undefined,
   };
 }

@@ -43,13 +43,23 @@ test('auditoria reconstrói a situação em qualquer data', () => {
 });
 
 test('retenção anonimiza telefones antigos sem apagar métricas', async () => {
-  await db.collection('message_campaign_recipients').doc('old-recipient').set({ normalizedPhone: '5511999990002', maskedPhone: '5511*****0002', processedAt: '2024-01-01T00:00:00.000Z', variables: { nome: 'Ana' } });
+  await db.collection('message_campaign_recipients').doc('old-recipient').set({ normalizedPhone: '5511999990002', maskedPhone: '5511*****0002', processedAt: '2024-01-01T00:00:00.000Z', variables: { nome: 'Ana' }, personalizedMessage: 'Olá Ana', sentCount: 1 });
   await db.collection('message_dispatch_history').doc('old-history').set({ finishedAt: '2024-01-01T00:00:00.000Z', contacts: ['5511999990002'], deliveryDetails: [{ contact: '5511999990002' }], successCount: 1, total: 1 });
+  await db.collection('message_contact_directory').doc('old-contact').set({ updatedAt: '2024-01-01T00:00:00.000Z', normalizedPhone: '5511999990002' });
+  await db.collection('message_contact_consents').doc('old-consent').set({ updatedAt: '2024-01-01T00:00:00.000Z', normalizedPhone: '5511999990002' });
   const result = await applyMessagePhoneRetention(db, new Date('2026-09-17T12:00:00.000Z'), 365);
   assert.equal(result.anonymizedRecipients, 1);
   assert.equal(result.anonymizedHistories, 1);
-  assert.match(String((await db.collection('message_campaign_recipients').doc('old-recipient').get()).data()?.normalizedPhone), /^anon_/);
+  assert.equal(result.deletedDirectoryContacts, 1);
+  assert.equal(result.deletedConsents, 1);
+  const recipient = (await db.collection('message_campaign_recipients').doc('old-recipient').get()).data();
+  assert.match(String(recipient?.normalizedPhone), /^anon_/);
+  assert.equal(recipient?.personalizedMessage, '');
+  assert.deepEqual(recipient?.variables, {});
+  assert.equal(recipient?.sentCount, 1);
   const history = (await db.collection('message_dispatch_history').doc('old-history').get()).data();
   assert.deepEqual(history?.contacts, []);
   assert.equal(history?.successCount, 1);
+  assert.equal((await db.collection('message_contact_directory').doc('old-contact').get()).exists, false);
+  assert.equal((await db.collection('message_contact_consents').doc('old-consent').get()).exists, false);
 });
