@@ -12,6 +12,7 @@ import { useConfirmation } from './ui/ConfirmationDialog';
 import { loadPdfExporter, loadXlsx } from '../services/lazyLibraries';
 import { detectMessageContactMapping, mapMessageContactRows, validateMessageContactContent, validateMessageContactFile, type ImportedMessageContact } from '../services/messageContactImport';
 import { materializeMessage } from '../../message-personalization';
+import { messageReconnectDelay, resolveMessageServiceUrl } from '../services/messageServiceConfig';
 
 type LogEntry={id:string;time:string;text:string;type:'info'|'success'|'warning'};
 type BackendState={enabled:boolean;connectionStatus:'disconnected'|'connecting'|'qr'|'connected';currentQr:string;qrExpiresAt:string|null;accountPhone:string;accountName:string;lastConnectedAt:string|null;disconnectReason:string;disconnectKind:'none'|'intentional'|'abnormal'|'expired';isSending:boolean;progress:number;total:number;currentAction:string;logs:LogEntry[];campaignStatus:'idle'|'running'|'paused'|'completed'|'stopped';successCount:number;errorCount:number;errorDetails:{contact:string;error:string}[];runId:string;lastError:string;requiresNewQr:boolean;policyBlockReason:string;policyBlockedUntil:string|null};
@@ -27,7 +28,7 @@ type ManagedCampaign={id:string;name:string;status:string;scheduledAt:string|nul
 type CampaignMetrics={unitId:string;summary:{campaigns:number;total:number;sent:number;delivered:number;read:number;responded:number;failed:number;averageProcessingMs:number;failureReasons:Record<string,number>};campaigns:{id:string;name:string;status:string;total:number;sent:number;delivered:number;read:number;responded:number;failed:number;averageProcessingMs:number;estimatedRemainingMs:number|null;failureReasons:Record<string,number>}[];recipients:{campaignId:string;contact:string;status:string;processedAt:string;attempts:number;error:string}[];alerts:{abnormalDisconnect:string|null;accountBlocked:string|null;interruptedCampaigns:{id:string;name:string;status:string;reason:string|null}[]}};
 
 const initialBackend:BackendState={enabled:false,connectionStatus:'disconnected',currentQr:'',qrExpiresAt:null,accountPhone:'',accountName:'',lastConnectedAt:null,disconnectReason:'',disconnectKind:'none',isSending:false,progress:0,total:0,currentAction:'Conecte o serviço para começar.',logs:[],campaignStatus:'idle',successCount:0,errorCount:0,errorDetails:[],runId:'',lastError:'',requiresNewQr:false,policyBlockReason:'',policyBlockedUntil:null};
-const messageServiceUrl=String(import.meta.env.VITE_MESSAGE_SERVICE_URL||(import.meta.env.DEV?'http://127.0.0.1:3101':'')).replace(/\/$/,'');
+const messageServiceUrl=resolveMessageServiceUrl(import.meta.env.VITE_MESSAGE_SERVICE_URL,import.meta.env.DEV);
 const messageApi=(path:string)=>`${messageServiceUrl}/api/message-dispatch/${path}`;
 const normalizeContacts=(value:string)=>{
   const raw=value.split(/[\n,;]+/).map(item=>item.trim()).filter(Boolean);
@@ -112,23 +113,24 @@ export default function MessageDispatchDashboard(){
   useEffect(()=>{const update=()=>setQrSeconds(backend.qrExpiresAt?Math.max(0,Math.ceil((new Date(backend.qrExpiresAt).getTime()-Date.now())/1000)):0);update();const timer=setInterval(update,1000);return()=>clearInterval(timer);},[backend.qrExpiresAt]);
   useEffect(()=>{
     if(unitId==='ALL')return;
-    let cancelled=false;let reconnectTimer:ReturnType<typeof setTimeout>|null=null;let controller:AbortController|null=null;let cursor='';
+    let cancelled=false;let reconnectTimer:ReturnType<typeof setTimeout>|null=null;let controller:AbortController|null=null;let cursor='';let reconnectAttempt=0;
     const connectStream=async()=>{
-      if(!messageServiceUrl){setServiceAvailability('not-configured');setBackend(initialBackend);setApiError('O endereço do serviço de mensagens não foi configurado neste ambiente. Informe VITE_MESSAGE_SERVICE_URL no deploy.');return;}
       controller=new AbortController();
+      let healthConfirmed=false;
       try{
-        const health=await fetch(`${messageServiceUrl}/health`,{headers:{Accept:'application/json'},signal:controller.signal});
-        if(!health.ok)throw new Error(`serviço respondeu com status ${health.status}`);
-        const healthData=await health.json() as {status?:string;service?:string};
-        if(healthData.status!=='ok'||healthData.service!=='message-dispatch')throw new Error('resposta de saúde inválida');
+        let lastHealthError:unknown;
+        for(let attempt=0;attempt<3&&!healthConfirmed;attempt++){
+          try{const timeout=AbortSignal.timeout(8_000),signal=AbortSignal.any([controller.signal,timeout]);const health=await fetch(`${messageServiceUrl}/health`,{headers:{Accept:'application/json'},signal});if(!health.ok)throw new Error(`serviço respondeu com status ${health.status}`);const healthData=await health.json() as {status?:string;service?:string};if(healthData.status!=='ok'||healthData.service!=='message-dispatch')throw new Error('resposta de saúde inválida');healthConfirmed=true;}catch(error){lastHealthError=error;if(attempt<2)await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));}
+        }
+        if(!healthConfirmed)throw lastHealthError instanceof Error?lastHealthError:new Error('health check indisponível');
         const headers:Record<string,string>={Accept:'text/event-stream'};if(cursor)headers['Last-Event-ID']=cursor;
         const response=await authenticatedApi.requestWithoutLogout(`${messageApi('events')}?unitId=${encodeURIComponent(unitId)}`,{headers,signal:controller.signal});
         if(!response.body)throw new Error('O navegador não disponibilizou o canal em tempo real.');
-        if(!cancelled){setServiceAvailability('available');setApiError('');}
+        if(!cancelled){reconnectAttempt=0;setServiceAvailability('available');setApiError('');}
         const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
         while(!cancelled){const {done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true}).replace(/\r\n/g,'\n');let boundary=buffer.indexOf('\n\n');while(boundary>=0){const frame=buffer.slice(0,boundary);buffer=buffer.slice(boundary+2);const idLine=frame.split('\n').find(line=>line.startsWith('id:'));const dataLines=frame.split('\n').filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trim());if(idLine)cursor=idLine.slice(3).trim();if(dataLines.length){const event=JSON.parse(dataLines.join('\n')) as {id?:number;data?:BackendState};if(event.id!==undefined)cursor=String(event.id);if(event.data&&!cancelled){setBackend(event.data);setServiceAvailability('available');setApiError('');}}boundary=buffer.indexOf('\n\n');}}
         if(!cancelled)throw new Error('Canal em tempo real encerrado.');
-      }catch(error){if(cancelled||controller?.signal.aborted)return;setServiceAvailability('unavailable');setApiError(`Reconectando ao serviço de mensagens. ${error instanceof Error?error.message:'Tente novamente em instantes.'}`);reconnectTimer=setTimeout(()=>void connectStream(),2000);}
+      }catch(error){if(cancelled||controller?.signal.aborted)return;const detail=error instanceof Error?error.message:'Tente novamente em instantes.';if(healthConfirmed){setServiceAvailability('available');setApiError(`O servidor está online. Reconectando apenas a atualização em tempo real: ${detail}`);}else{setServiceAvailability('unavailable');setApiError(`Tentando restabelecer o servidor de mensagens: ${detail}`);}const delay=messageReconnectDelay(reconnectAttempt++);reconnectTimer=setTimeout(()=>void connectStream(),delay);}
     };
     void connectStream();return()=>{cancelled=true;controller?.abort();if(reconnectTimer)clearTimeout(reconnectTimer);};
   },[unitId]);

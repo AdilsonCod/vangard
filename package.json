@@ -59,6 +59,7 @@
     "test:message-auth-store": "tsx --test scripts/message-auth-store.test.ts",
     "test:message-dispatch-policy": "tsx --test scripts/message-dispatch-policy.test.ts",
     "test:message-service-health": "tsx --test scripts/message-service-health.test.ts",
+    "test:message-service-config": "tsx --test scripts/message-service-config.test.ts",
     "messages:migrate:v1:dry": "tsx scripts/migrate-message-campaigns-v1.ts",
     "messages:migrate:v1:apply": "tsx scripts/migrate-message-campaigns-v1.ts --apply",
     "test:message-campaign-migration": "tsx --test scripts/message-campaign-migration.test.ts",
@@ -82,7 +83,7 @@
     "test:message-campaign-scheduling": "tsx --test scripts/message-campaign-scheduling.test.ts",
     "test:message-campaign-permissions": "tsx --test scripts/message-campaign-permissions.test.ts",
     "test:message-campaign-analytics": "tsx --test scripts/message-campaign-analytics.test.ts",
-    "test:message-release": "npm run typecheck && npm run lint && npm run test:message-service-health && npm run test:message-campaign-analytics && npm run test:message-session-scope && npm run test:message-session-lifecycle && npm run test:message-realtime && npm run test:message-campaign-permissions && npm run test:message-campaign-scheduling && npm run test:message-campaign-worker && npm run test:message-campaign-recovery && npm run test:message-session-lock && npm run test:message-campaign-retry && npm run build",
+    "test:message-release": "npm run typecheck && npm run lint && npm run test:message-service-health && npm run test:message-service-config && npm run test:message-campaign-analytics && npm run test:message-session-scope && npm run test:message-session-lifecycle && npm run test:message-realtime && npm run test:message-campaign-permissions && npm run test:message-campaign-scheduling && npm run test:message-campaign-worker && npm run test:message-campaign-recovery && npm run test:message-session-lock && npm run test:message-campaign-retry && npm run build",
     "test:smart-link-security": "tsx --test scripts/smart-link-security.test.ts",
     "preview": "vite preview",
     "test:admin-sdk": "firebase emulators:exec --only firestore --project demo-vans-admin-sdk \"tsx --test scripts/admin-sdk-compatibility.test.ts\""
