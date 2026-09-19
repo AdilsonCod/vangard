@@ -2,7 +2,12 @@ FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json message-service-server.ts message-service-app.ts message-dispatch-service.ts message-dispatch-policy.ts message-auth-store.ts server-auth.ts server-firebase-admin.ts firebase-applet-config.json ./
+# Os módulos do worker evoluem em conjunto e possuem imports cruzados. Copiar
+# todos os arquivos TypeScript da raiz evita que um novo módulo fique fora da
+# imagem enquanto o .dockerignore continua protegendo credenciais e dados locais.
+COPY tsconfig.json firebase-applet-config.json ./
+COPY *.ts ./
+COPY src/services/messageCampaignSchema.ts ./src/services/
 RUN npm run build:messages
 
 FROM node:22-bookworm-slim
