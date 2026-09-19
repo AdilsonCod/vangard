@@ -706,7 +706,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 60 — Criar métricas, alertas e relatórios completos
 
-- [ ] Consolidar painel de desempenho, comparação de campanhas, alertas e exportações XLSX, CSV e PDF.
+- [x] Consolidar painel de desempenho, comparação de campanhas, alertas e exportações XLSX, CSV e PDF.
 
 **Critérios de aprovação**
 
