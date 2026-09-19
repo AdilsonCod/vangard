@@ -717,7 +717,7 @@ As tarefas 40–61 implementam o [Anexo do PRD — Plataforma de campanhas e men
 
 ### Tarefa 61 — Validar Railway, observabilidade e release
 
-- [ ] Executar testes de reinício, concorrência e carga, publicar a versão e validar observabilidade.
+- [x] Executar testes de reinício, concorrência e carga, publicar a versão e validar observabilidade.
 
 **Critérios de aprovação**
 
